@@ -14,7 +14,6 @@ import { addDays, dayKey, firstName, fmtDay, fmtLongDay, fmtTime, greeting, init
 import { useNow } from '../lib/hooks.js';
 import { Avatar, Group, Row, Sheet } from '../components/ui.jsx';
 import { Bar, BigButton, Card, Detail, Dial, Label, Pill, Well } from '../components/Soft.jsx';
-import '../operator.css';
 
 // The operator's page. Everyone signs in as themselves, on their phone or on the
 // lab laptop; the laptop signs the operator out again after each clock-in or out.

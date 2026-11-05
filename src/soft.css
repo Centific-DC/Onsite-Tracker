@@ -1,0 +1,219 @@
+/* ---------- Soft theme for the whole app ----------
+   The operator page's neumorphic style, applied to the admin views too. The
+   house tokens in styles.css are remapped onto the soft palette (operator.css
+   defines --op-*), then the shared building blocks get raised and sunken
+   surfaces in place of flat cards and hairlines. Loaded after styles.css. */
+
+:root {
+  --bg: var(--op-bg);
+  --surface: var(--op-bg);
+  --surface-2: color-mix(in srgb, var(--op-ink) 3%, var(--op-bg));
+  --fill: color-mix(in srgb, var(--op-ink) 6%, var(--op-bg));
+  --fill-hover: color-mix(in srgb, var(--op-ink) 9%, var(--op-bg));
+  --sep: color-mix(in srgb, var(--op-ink) 8%, transparent);
+  --ink: var(--op-ink);
+  --ink-2: color-mix(in srgb, var(--op-sub) 80%, var(--op-ink));
+  --ink-3: var(--op-sub);
+  --blue: var(--op-coral);
+  --blue-hover: color-mix(in srgb, var(--op-coral) 88%, var(--op-ink));
+  --blue-text: var(--op-coral-text);
+  --blue-soft: color-mix(in srgb, var(--op-coral) 14%, var(--op-bg));
+  --on-blue: #ffffff;
+  --green: var(--op-green-text);
+  --green-dot: var(--op-green);
+  --green-soft: color-mix(in srgb, var(--op-green) 16%, var(--op-bg));
+  --yellow: var(--op-yellow);
+  --yellow-text: var(--op-yellow-text);
+  --yellow-soft: color-mix(in srgb, var(--op-yellow) 18%, var(--op-bg));
+  --red: var(--op-red);
+  --red-hover: color-mix(in srgb, var(--op-red) 88%, var(--op-ink));
+  --red-text: var(--op-red-text);
+  --red-soft: color-mix(in srgb, var(--op-red) 13%, var(--op-bg));
+  --on-red: #ffffff;
+  --pill: var(--op-bg);
+  --bar-bg: color-mix(in srgb, var(--op-bg) 84%, transparent);
+  --edge: color-mix(in srgb, var(--op-ink) 6%, transparent);
+  --edge-strong: color-mix(in srgb, var(--op-ink) 12%, transparent);
+  --neu-dark: var(--op-dark);
+  --neu-light: var(--op-light);
+  --shadow-sm: var(--op-out-small);
+  --shadow-md: var(--op-out-soft);
+  --shadow-lg: 12px 12px 32px var(--op-dark), -10px -10px 28px var(--op-light);
+  --raise: var(--op-out-hard);
+  --well: var(--op-in-shallow);
+  --glow-blue: var(--op-out-small);
+  --glow-red: var(--op-out-small);
+  --radius: 20px;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+/* The dark soft palette comes from operator.css; these keep the house dark
+   tokens from winning back. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --on-blue: #1a1c1a; --on-red: #1a1c1a; --logo: #ffffff; }
+}
+:root[data-theme="dark"] { --on-blue: #1a1c1a; --on-red: #1a1c1a; --logo: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--op-bg); --surface: var(--op-bg); --ink: var(--op-ink); --ink-3: var(--op-sub);
+    --surface-2: color-mix(in srgb, var(--op-ink) 3%, var(--op-bg));
+    --fill: color-mix(in srgb, var(--op-ink) 6%, var(--op-bg));
+    --fill-hover: color-mix(in srgb, var(--op-ink) 10%, var(--op-bg));
+    --ink-2: color-mix(in srgb, var(--op-sub) 80%, var(--op-ink));
+    --blue: var(--op-coral); --blue-text: var(--op-coral-text); --blue-soft: color-mix(in srgb, var(--op-coral) 16%, var(--op-bg));
+    --blue-hover: color-mix(in srgb, var(--op-coral) 88%, var(--op-ink));
+    --green: var(--op-green-text); --green-dot: var(--op-green); --green-soft: color-mix(in srgb, var(--op-green) 16%, var(--op-bg));
+    --yellow: var(--op-yellow); --yellow-text: var(--op-yellow-text); --yellow-soft: color-mix(in srgb, var(--op-yellow) 16%, var(--op-bg));
+    --red: var(--op-red); --red-text: var(--op-red-text); --red-soft: color-mix(in srgb, var(--op-red) 15%, var(--op-bg));
+    --red-hover: color-mix(in srgb, var(--op-red) 88%, var(--op-ink));
+    --pill: var(--op-bg); --bar-bg: color-mix(in srgb, var(--op-bg) 84%, transparent);
+    --edge: color-mix(in srgb, var(--op-ink) 7%, transparent); --edge-strong: color-mix(in srgb, var(--op-ink) 14%, transparent);
+    --sep: color-mix(in srgb, var(--op-ink) 8%, transparent);
+    --neu-dark: var(--op-dark); --neu-light: var(--op-light);
+    --shadow-sm: var(--op-out-small); --shadow-md: var(--op-out-soft); --shadow-lg: 12px 12px 32px var(--op-dark), -10px -10px 28px var(--op-light);
+    --raise: var(--op-out-hard); --well: var(--op-in-shallow); --glow-blue: var(--op-out-small); --glow-red: var(--op-out-small);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: var(--op-bg); --surface: var(--op-bg); --ink: var(--op-ink); --ink-3: var(--op-sub);
+  --surface-2: color-mix(in srgb, var(--op-ink) 3%, var(--op-bg));
+  --fill: color-mix(in srgb, var(--op-ink) 6%, var(--op-bg));
+  --fill-hover: color-mix(in srgb, var(--op-ink) 10%, var(--op-bg));
+  --ink-2: color-mix(in srgb, var(--op-sub) 80%, var(--op-ink));
+  --blue: var(--op-coral); --blue-text: var(--op-coral-text); --blue-soft: color-mix(in srgb, var(--op-coral) 16%, var(--op-bg));
+  --blue-hover: color-mix(in srgb, var(--op-coral) 88%, var(--op-ink));
+  --green: var(--op-green-text); --green-dot: var(--op-green); --green-soft: color-mix(in srgb, var(--op-green) 16%, var(--op-bg));
+  --yellow: var(--op-yellow); --yellow-text: var(--op-yellow-text); --yellow-soft: color-mix(in srgb, var(--op-yellow) 16%, var(--op-bg));
+  --red: var(--op-red); --red-text: var(--op-red-text); --red-soft: color-mix(in srgb, var(--op-red) 15%, var(--op-bg));
+  --red-hover: color-mix(in srgb, var(--op-red) 88%, var(--op-ink));
+  --pill: var(--op-bg); --bar-bg: color-mix(in srgb, var(--op-bg) 84%, transparent);
+  --edge: color-mix(in srgb, var(--op-ink) 7%, transparent); --edge-strong: color-mix(in srgb, var(--op-ink) 14%, transparent);
+  --sep: color-mix(in srgb, var(--op-ink) 8%, transparent);
+  --neu-dark: var(--op-dark); --neu-light: var(--op-light);
+  --shadow-sm: var(--op-out-small); --shadow-md: var(--op-out-soft); --shadow-lg: 12px 12px 32px var(--op-dark), -10px -10px 28px var(--op-light);
+  --raise: var(--op-out-hard); --well: var(--op-in-shallow); --glow-blue: var(--op-out-small); --glow-red: var(--op-out-small);
+}
+
+body { letter-spacing: -0.005em; }
+
+/* Titles: Inter, tight. Inline numbers stay in Inter so a line reads in one face. */
+.large-title { font-weight: 600; letter-spacing: -0.03em; }
+.side-name { font-weight: 600; letter-spacing: -0.02em; }
+.group-title { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--op-sub); }
+.group-head { padding: 0 6px 12px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Cards: raised, no hairline. Rows divide with a soft line. */
+.group { margin-bottom: 32px; }
+.group-body { background: var(--op-bg); border-radius: 22px; box-shadow: var(--op-out-soft); overflow: hidden; }
+.group-urgent .group-body { box-shadow: var(--op-out-soft), inset 0 0 0 1.5px color-mix(in srgb, var(--op-yellow) 55%, transparent); }
+.row-btn:active { background: var(--fill); }
+@media (hover: hover) and (pointer: fine) { .row-btn:hover { background: color-mix(in srgb, var(--op-ink) 3%, transparent); } }
+.row-icon { border-radius: 50%; background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+.row-icon.icon-in, .row-icon.icon-out, .row-icon.icon-warn, .row-icon.icon-bad { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+
+/* Buttons: raised cream with coloured text; pressed into the page when tapped. */
+.btn { border-radius: 16px; transition: box-shadow 200ms var(--ease-out), scale 150ms var(--ease-out), color 150ms var(--ease-out); }
+.btn-primary, .btn-plain, .btn-danger { background: var(--op-bg); box-shadow: var(--op-out-small); }
+.btn-primary { color: var(--op-coral-text); }
+.btn-danger { color: var(--op-red-text); }
+.btn-plain { color: var(--op-ink); }
+.btn-lg { box-shadow: var(--op-out-hard); border-radius: 20px; }
+.btn-primary:active:not(:disabled), .btn-plain:active:not(:disabled), .btn-danger:active:not(:disabled) { box-shadow: var(--op-in-shallow); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled) { background: var(--op-bg); color: var(--op-coral); }
+  .btn-danger:hover:not(:disabled) { background: var(--op-bg); color: var(--op-red); }
+  .btn-plain:hover:not(:disabled) { background: var(--op-bg); }
+}
+.btn:disabled { box-shadow: var(--op-in-shallow); }
+.icon-btn { border-radius: 50%; }
+@media (hover: hover) and (pointer: fine) { .icon-btn:hover:not(:disabled) { background: var(--op-bg); box-shadow: var(--op-out-small); } }
+.icon-btn:active:not(:disabled) { box-shadow: var(--op-in-shallow); }
+
+/* Segmented control: a sunken track with a raised pill. */
+.seg { background: var(--op-bg); box-shadow: var(--op-in-shallow); border-radius: 14px; max-width: 100%; }
+@media (max-width: 480px) { .seg button { padding: 0 10px; } }
+.seg-pill { background: var(--op-bg); border-radius: 10px; box-shadow: var(--op-out-small); }
+.seg button[aria-pressed="true"] { color: var(--op-coral-text); }
+
+/* Fields: sunken wells. */
+.search, .side-search { background: var(--op-bg); box-shadow: var(--op-in-shallow); border-radius: 14px; }
+.search:focus-within { box-shadow: var(--op-in-shallow), 0 0 0 2px color-mix(in srgb, var(--op-coral) 60%, transparent); }
+.field-row:focus-within { background: color-mix(in srgb, var(--op-ink) 2%, var(--op-bg)); box-shadow: inset 3px 0 0 var(--op-coral); }
+.reason, textarea.reason { background: var(--op-bg); box-shadow: var(--op-in-shallow); border-radius: 14px; }
+.exp-select, .field-select { background-color: var(--op-bg); box-shadow: var(--op-in-shallow); border-radius: 10px; }
+.chip-btn { background: var(--op-bg); box-shadow: var(--op-out-small); }
+.chip-btn:active { box-shadow: var(--op-in-shallow); }
+
+/* Tags: small sunken pills with coloured text. */
+.tag { background: var(--op-bg); box-shadow: var(--op-in-shallow); padding: 3px 9px; font-weight: 600; }
+.tag-warn { color: var(--op-yellow-text); }
+.tag-bad { color: var(--op-red-text); }
+.tag-on { color: var(--op-green-text); }
+.tag-muted { background: var(--op-bg); color: var(--op-sub); }
+.chip-new { background: var(--op-bg); box-shadow: var(--op-in-shallow); color: var(--op-yellow-text); }
+
+/* Avatars: raised discs. */
+.avatar { background: var(--op-bg); color: var(--op-coral-text); box-shadow: var(--op-out-small); }
+.avatar-on { background: var(--op-bg); color: var(--op-green-text); }
+.avatar-warn { background: var(--op-bg); color: var(--op-yellow-text); }
+.avatar-bad { background: var(--op-bg); color: var(--op-red-text); }
+.avatar-muted { background: var(--op-bg); color: var(--op-sub); }
+.avatars .avatar { box-shadow: 0 0 0 2px var(--op-bg); }
+
+/* Shell */
+.sidebar { background: var(--op-bg); border-right: 0; box-shadow: 1px 0 0 color-mix(in srgb, var(--op-ink) 5%, transparent); }
+.side-link { border-radius: 14px; transition: box-shadow 200ms var(--ease-out), color 150ms var(--ease-out); }
+.side-link.is-active { background: var(--op-bg); color: var(--op-coral-text); box-shadow: var(--op-out-small); }
+.side-link.is-active svg { color: var(--op-coral-text); }
+@media (hover: hover) and (pointer: fine) { .side-link:not(.is-active):hover { background: transparent; box-shadow: var(--op-in-shallow); } }
+.side-search { color: var(--op-sub); }
+.topbar { border-bottom: 0; }
+.topbar[data-collapsed] { box-shadow: 0 6px 14px -8px var(--op-dark); }
+.tabbar { background: var(--bar-bg); border-top: 0; box-shadow: 0 -6px 16px -10px var(--op-dark); }
+.tab.is-active { color: var(--op-coral-text); }
+.sync { border-radius: 12px; }
+
+/* Sheets and toasts */
+.sheet { background: var(--op-bg); border-radius: 28px; box-shadow: var(--shadow-lg); }
+.sheet .group-body { box-shadow: var(--op-out-small); }
+.scrim { background: color-mix(in srgb, var(--op-ink) 22%, transparent); }
+.toast { border-radius: 18px !important; }
+
+/* Robot tiles (Today, off-shift sheet) and the old ring */
+.robot { background: var(--op-bg); box-shadow: var(--op-out-small); border-radius: 18px; }
+.robot.is-on { background: var(--op-bg); box-shadow: var(--op-in-shallow), inset 0 0 0 2px var(--op-coral); }
+.robot.is-on .robot-name { color: var(--op-coral-text); }
+.ring { background: var(--op-bg); box-shadow: var(--op-out-hard); }
+.ring-track { stroke: color-mix(in srgb, var(--op-ink) 8%, var(--op-bg)); }
+
+/* Bars and tracks */
+.compare-track, .bar-track { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+
+/* Schedule grid: cells sit on the card; people are raised chips; open places
+   are sunken, waiting to be filled. */
+.sched-row > * { border-top-color: color-mix(in srgb, var(--op-ink) 6%, transparent); }
+.sched-cell { border-left-color: color-mix(in srgb, var(--op-ink) 6%, transparent); }
+.sched-cell.is-past, .sched-cell.is-closed { background: color-mix(in srgb, var(--op-ink) 2.5%, var(--op-bg)); }
+.slot { background: var(--op-bg); box-shadow: var(--op-out-small); border-radius: 10px; }
+@media (hover: hover) and (pointer: fine) { .slot:hover { background: var(--op-bg); color: var(--op-coral-text); } }
+.slot:active { box-shadow: var(--op-in-shallow); }
+.slot[data-status="noshow"] { background: var(--op-bg); color: var(--op-red-text); }
+.slot.is-warn { box-shadow: var(--op-out-small), inset 0 0 0 1.5px var(--op-yellow); }
+.slot.is-risk { box-shadow: var(--op-out-small), inset 0 0 0 1.5px var(--op-red); }
+.slot-open { background: var(--op-bg); box-shadow: var(--op-in-shallow); color: var(--op-coral-text); }
+@media (hover: hover) and (pointer: fine) { .slot-open:hover { background: var(--op-bg); box-shadow: var(--op-in-shallow), inset 0 0 0 1.5px var(--op-coral); } }
+.slot-robot { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+.slot-robot.is-new { background: var(--op-bg); color: var(--op-yellow-text); box-shadow: var(--op-in-shallow), inset 0 0 0 1px color-mix(in srgb, var(--op-yellow) 60%, transparent); }
+.sched-day.is-today strong { background: var(--op-coral); color: #fff; }
+.sched-day.is-focus, .sched-cell.is-focus { background: color-mix(in srgb, var(--op-coral) 8%, var(--op-bg)); }
+.day-pick button { background: var(--op-bg); box-shadow: var(--op-out-small); }
+.day-pick button[aria-pressed="true"] { background: var(--op-bg); color: var(--op-coral-text); box-shadow: var(--op-in-shallow); }
+.day-pick button[aria-pressed="true"] strong { color: var(--op-coral-text); }
+
+/* Search and profile */
+.search-row.is-active { background: color-mix(in srgb, var(--op-ink) 4%, var(--op-bg)); }
+.profile-stats > div { background: var(--op-bg); box-shadow: var(--op-out-small); border-radius: 16px; }
+.profile-stats strong { font-family: var(--op-serif); font-weight: 500; font-variant-numeric: lining-nums tabular-nums; font-size: 1.25rem; }
+
+.skeleton { background: var(--op-bg); box-shadow: var(--op-in-shallow); }

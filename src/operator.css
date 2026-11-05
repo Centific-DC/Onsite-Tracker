@@ -1,9 +1,9 @@
 /* ---------- Operator page: soft (neumorphic) style ----------
    Raised surfaces are lit from the top left; sunken ones are pressed into the
    page. Everything sits on one cream ground, so depth comes from shadow alone.
-   Scoped to the operator page (.app-checkin / .op); admin keeps the house style. */
+   The --op-* tokens are global; soft.css maps the rest of the app onto them. */
 
-.app-checkin {
+:root {
   --op-bg: #f1f3f1;
   --op-ink: #1a1c1a;
   --op-sub: #7a807a;
@@ -24,20 +24,22 @@
   --op-in-shallow: inset 3px 3px 8px var(--op-dark), inset -3px -3px 8px var(--op-light);
   --op-sans: "Inter", var(--font);
   --op-serif: "Playfair Display", Georgia, "Times New Roman", serif;
+}
+.app-checkin {
   --bg: var(--op-bg);
   --bar-bg: color-mix(in srgb, var(--op-bg) 82%, transparent);
   background: var(--op-bg);
   min-height: 100dvh;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .app-checkin {
+  :root:not([data-theme="light"]) {
     --op-bg: #222523; --op-ink: #ecefec; --op-sub: #9aa19a;
     --op-coral: #f0906f; --op-coral-text: #f0a184; --op-green: #6fd9a0; --op-green-text: #7fe0ab;
     --op-yellow: #fbc56f; --op-yellow-text: #f6c470; --op-red: #ec6f6f; --op-red-text: #f28b8b;
     --op-dark: rgb(0 0 0 / 0.55); --op-light: rgb(255 255 255 / 0.06);
   }
 }
-:root[data-theme="dark"] .app-checkin {
+:root[data-theme="dark"] {
   --op-bg: #222523; --op-ink: #ecefec; --op-sub: #9aa19a;
   --op-coral: #f0906f; --op-coral-text: #f0a184; --op-green: #6fd9a0; --op-green-text: #7fe0ab;
   --op-yellow: #fbc56f; --op-yellow-text: #f6c470; --op-red: #ec6f6f; --op-red-text: #f28b8b;

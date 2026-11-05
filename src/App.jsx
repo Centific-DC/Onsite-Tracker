@@ -52,7 +52,7 @@ export default function App() {
     const el = document.documentElement;
     if (theme === 'system') el.removeAttribute('data-theme');
     else el.setAttribute('data-theme', theme);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#131314' : '#f3f4f6');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#222523' : '#f1f3f1');
   }, [theme, resolved]);
 
   useEffect(() => { init(); }, [init]);

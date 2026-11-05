@@ -2,7 +2,7 @@ import clsx from 'clsx';
 
 // The operator page's soft (neumorphic) building blocks: raised cards, sunken
 // wells, pills, a progress bar and the clock dial. Styles live in operator.css,
-// scoped under `.op` so the admin views keep the house style.
+// and the rest of the app picks up the same tokens through soft.css.
 
 export const Label = ({ children, className, ...rest }) => <div className={clsx('op-label', className)} {...rest}>{children}</div>;
 
