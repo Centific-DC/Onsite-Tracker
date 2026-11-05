@@ -17,4 +17,9 @@ describe('partnersOf', () => {
     const data = { schedule: [mine], partners: [{ shiftId: 'S1', name: 'Avery Lin' }, { shiftId: 'S9', name: 'Someone Else' }] };
     expect(partnersOf(data, mine)).toEqual(['Avery Lin']);
   });
+  it('gives no partners to a shift with no robot set', () => {
+    const blank = { ...mine, station: '' };
+    const data = { schedule: [blank, s('S2', 'a@x.com', 'Avery Lin', '', '17:00', '23:00')] };
+    expect(partnersOf(data, blank)).toEqual([]);
+  });
 });
