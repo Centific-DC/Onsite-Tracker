@@ -10,14 +10,18 @@ export const WRITE_URL = String(CFG.writeUrl || '').trim();
 export const LIVE_READY = !!(READ_URL && WRITE_URL);
 // Demo data on a live site (Settings > Data, per browser, as in Project Atlas): sample
 // operators and shifts kept in this browser; nothing is saved to SharePoint or emailed.
-// Sign-in stays real. Read once at load; switching reloads the page.
+// Sign-in stays real. These are live bindings: setDemo() flips them in place and the
+// store reloads the data, with no page reload.
 const DEMO_KEY = 'lotus-demo-on';
 const readDemo = () => { try { return localStorage.getItem(DEMO_KEY) === 'on'; } catch { return false; } };
-export const DEMO_CHOSEN = LIVE_READY && typeof window !== 'undefined' && readDemo();
-export const DEMO = !LIVE_READY || DEMO_CHOSEN;
+export let DEMO_CHOSEN = LIVE_READY && typeof window !== 'undefined' && readDemo();
+export let DEMO = !LIVE_READY || DEMO_CHOSEN;
 export function setDemo(on) {
-  try { if (on) localStorage.setItem(DEMO_KEY, 'on'); else localStorage.removeItem(DEMO_KEY); } catch { /* storage off: stays as it is */ }
-  window.location.reload();
+  if (!LIVE_READY) return DEMO;
+  try { if (on) localStorage.setItem(DEMO_KEY, 'on'); else localStorage.removeItem(DEMO_KEY); } catch { /* storage off: this tab only */ }
+  DEMO_CHOSEN = !!on;
+  DEMO = DEMO_CHOSEN;
+  return DEMO;
 }
 // The Lotus Auth flow (usernames and passwords). Empty = accounts kept in this browser.
 export const AUTH_URL = String(CFG.authUrl || '').trim();

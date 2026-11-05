@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api, demo, setDemoActor, storage } from './api.js';
-import { DEMO } from './config.js';
+import { DEMO, setDemo } from './config.js';
 import * as auth from './auth/api.js';
 import { getAuth, setAuth } from './auth/session.js';
 
@@ -19,6 +19,9 @@ export const useStore = create((set, get) => ({
   loadedAt: cached?.at ? new Date(cached.at) : null,
   syncing: false,
   error: '',
+  // Demo data on or off in this browser (see config.js). Components read DEMO; this
+  // copy is here so they re-render when it flips.
+  demo: DEMO,
 
   // Who is signed in (see sessionOf), and where sign-in stands: checking | setup |
   // signedOut | mustChange | pick (demo operator account) | signedIn.
@@ -40,21 +43,34 @@ export const useStore = create((set, get) => ({
     if (get().syncing) return;
     if (!['signedIn', 'pick'].includes(get().authStage)) return;
     set({ syncing: true, ...(manual ? { error: '' } : {}) });
+    const wasDemo = DEMO;
     try {
       const data = await api.all();
+      // The switch flipped while this load ran: drop it, the next load is already on its way.
+      if (DEMO !== wasDemo) return;
       const at = new Date();
       if (!DEMO) storage.set('onsite-cache', { data, at: at.toISOString() });
       const patch = { data, loadedAt: at, error: '' };
       if (data.me?.email && get().session && !get().session.demoPicker) patch.session = { ...get().session, ...data.me, roles: data.me.roles || get().session.roles };
       set(patch);
     } catch (e) {
+      if (DEMO !== wasDemo) return;
       // The first quiet load never shows an error; a manual sync, or a failed
       // refresh over data already on screen, reports it.
       if (manual || get().data || e.status === 403) set({ error: e.message || 'Unknown error' });
       if (manual) throw e;
     } finally {
       set({ syncing: false });
+      if (DEMO !== wasDemo) get().sync();
     }
+  },
+
+  // Demo data on or off: clear what's on screen and load the other source, in place.
+  async switchDemo(on) {
+    if (setDemo(on) !== !!on) return;
+    const cache = !on ? storage.get('onsite-cache', null) : null;
+    set({ demo: !!on, data: cache?.data || null, loadedAt: cache?.at ? new Date(cache.at) : null, error: '' });
+    await get().sync({ manual: true });
   },
 
   keepAuth(a) {
