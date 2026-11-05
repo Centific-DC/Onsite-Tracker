@@ -4,6 +4,7 @@
 
 import { AUTH_URL } from '../config.js';
 import { hashPassword, saltedHash } from './crypto.js';
+import { timed } from '../timing.js';
 import { localAuth, localUsernames, seedLocalUsers } from './localFlow.js';
 
 const TIMEOUT_MS = 20000;
@@ -47,7 +48,7 @@ async function call(req) {
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
     // text/plain: the flow's HTTP trigger answers no CORS preflight, which application/json would trigger.
-    const res = await fetch(AUTH_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ schemaVersion: 1, ...req }), signal: ctrl.signal, cache: 'no-store' });
+    const res = await timed(`Sign-in · ${req.op}`, fetch(AUTH_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ schemaVersion: 1, ...req }), signal: ctrl.signal, cache: 'no-store' }));
     let body = {};
     try { body = await res.json(); } catch { /* no body: go by the status */ }
     if (!res.ok) throw new AuthError(res.status, body.message || body.error || `Sign-in service answered ${res.status}`);
@@ -108,7 +109,7 @@ export async function signIn(username, password) {
   const salt = await saltFor(username);
   let r;
   try {
-    r = await call({ op: 'signin', username: clean(username), hash: await hashPassword(password, salt) });
+    r = await call({ op: 'signin', username: clean(username), hash: await timed('Sign-in · password hash (this device)', hashPassword(password, salt)) });
   } catch (err) {
     // The salt may be stale (an admin reset the password since): ask afresh next time.
     salts.delete(clean(username));

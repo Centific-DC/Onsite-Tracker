@@ -832,3 +832,6 @@ p.err { text-align: center; margin: 0 0 12px; }
   @keyframes updateOut { to { opacity: 0; transform: translateY(8px); } }
 }
 @media (prefers-reduced-motion: reduce) { .update-notice, .update-notice[data-leaving] { animation: none; } }
+.load-fail { display: grid; gap: 10px; justify-items: start; }
+.load-fail .lede { margin: 0; overflow-wrap: anywhere; }
+.load-slow { margin-top: 12px; }

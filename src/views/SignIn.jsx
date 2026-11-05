@@ -35,7 +35,7 @@ function PasswordInput({ label, value, onChange, autoComplete, autoFocus, placeh
 
 export function SignIn() {
   const { authStage } = useStore();
-  if (authStage === 'checking') return <div className="view view-narrow"><div className="skeleton" /><div className="skeleton tall" /></div>;
+
   if (authStage === 'pick') return <DemoOperatorPick />;
   return <SignInForm key={authStage} stage={COPY[authStage] ? authStage : 'signedOut'} />;
 }

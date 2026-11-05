@@ -1,3 +1,4 @@
+import { timed } from './timing.js';
 import { CFG, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationName, locationOfRobot } from './config.js';
 import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
@@ -10,8 +11,13 @@ export const storage = {
 };
 
 async function paPost(url, body) {
+  return timed(`${url === READ_URL ? 'Read' : 'Write'} · ${body.action || 'call'}`, paPostRaw(url, body));
+}
+
+async function paPostRaw(url, body) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 30000);
+  // A flow can take a while; Power Automate itself gives up on an HTTP response at about two minutes.
+  const t = setTimeout(() => ctrl.abort(), 110000);
   try {
     // Every call carries the sign-in token; the flow looks up who it belongs to.
     // text/plain: the HTTP trigger answers no CORS preflight, which application/json would trigger.
@@ -26,7 +32,9 @@ async function paPost(url, body) {
     if (!r.ok || out?.error) { const e = new Error(out?.error || `HTTP ${r.status}`); e.code = out?.code; e.status = r.status; throw e; }
     return out;
   } catch (e) {
-    throw e.name === 'AbortError' ? new Error('timed out') : e;
+    if (e.name === 'AbortError') throw new Error('The flow took longer than 110 seconds to answer.');
+    if (e instanceof TypeError) throw new Error('Couldn’t reach the flow. It may be off, or not allow calls from this site (CORS).');
+    throw e;
   } finally {
     clearTimeout(t);
   }
