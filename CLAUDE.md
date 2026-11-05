@@ -11,3 +11,4 @@ Its own project, separate from Atlas/Twilight.
 - The flows enforce roles; hiding a screen is never the only protection. Operators only ever see their own rows; the one exception is the names of the operators sharing their shift (same robot, same shift), never their times or hours. No rates, pay or markups anywhere.
 - The live data contract is docs/lotus-flows.md. Change it together with src/lib/api.js.
 - Demo data is synthetic and must stay labelled as demo.
+- Bump `VERSION` in src/version.js (major.minor.MMDDYY plus a letter per release that day, as in Atlas) with every merge to main.
