@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
-import { Check, Clock, LogIn, MapPin } from 'lucide-react';
+import { Check, Clock, LogIn, MapPin, Users } from 'lucide-react';
 import { useStore } from '../lib/store.js';
 import { CFG, DEMO, LOCATIONS, locationName, locOf } from '../lib/config.js';
 import { hasRole } from '../lib/auth.js';
 import { SignIn } from './SignIn.jsx';
 import { statusOf } from '../lib/hours.js';
 import { myShiftsToday, nextShift } from '../lib/attendance.js';
-import { shiftTimes } from '../lib/schedule.js';
+import { partnersOf, shiftTimes } from '../lib/schedule.js';
 import { FLAG, reviewDays } from '../lib/review.js';
 import { addDays, dayKey, firstName, fmtDay, fmtLongDay, fmtTime, greeting, initials, mondayOf, fmtHrsU } from '../lib/time.js';
 import { useNow } from '../lib/hooks.js';
@@ -64,6 +64,7 @@ const clockParts = (ms) => {
   const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
   return [`${h}:${String(m).padStart(2, '0')}`, `:${String(sec).padStart(2, '0')}`];
 };
+const andList = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 const hm = (ms) => { const m = Math.max(0, Math.round(ms / 6e4)); return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`; };
 const shiftLabel = (r) => LOCATIONS.find((l) => l.id === locOf(r))?.templates.find((t) => t.id === r.template || (t.start === r.start && t.end === r.end))?.label || 'Shift';
 
@@ -235,6 +236,7 @@ function Person({ person, onDone, laptop }) {
           <div className="op-details">
             <Detail icon={<Clock size={18} />}><strong>{shiftLabel(card)}</strong> · {fmtTime(card.window.start)}–{fmtTime(card.window.end)}</Detail>
             <Detail icon={<MapPin size={18} />}>{locationName(locOf(card))} · {card.station}</Detail>
+            {partnersOf(data, card).length > 0 && <Detail icon={<Users size={18} />}>With {andList(partnersOf(data, card))}</Detail>}
           </div>
         ) : (
           <p className="op-body">Nothing booked for today. If your lead asked you to come in, you can still clock in and your manager will review it.</p>
@@ -370,6 +372,7 @@ function MyTime({ person }) {
                   <div className="op-day-col">
                     <span className="op-day-name">{t.start.toLocaleDateString([], { weekday: 'long' })}</span>
                     <Label>{fmtDay(t.start).split(', ').slice(1).join(', ')} · {locationName(locOf(r))} · {r.station}</Label>
+                    {partnersOf(data, r).length > 0 && <span className="op-day-with">With {andList(partnersOf(data, r))}</span>}
                   </div>
                   <div className="op-day-right"><span className="op-upcoming-time op-num">{shiftLabel(r)} · {fmtTime(t.start)}</span></div>
                 </Card>

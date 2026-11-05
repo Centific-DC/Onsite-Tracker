@@ -110,7 +110,7 @@ The first admin is created by the Auth flow's `bootstrap` op (below). After that
 | `Reason` | multi-line text | required, never empty |
 | `EndTime` | text | ISO UTC. Only for a missing clock-out, when the manager enters the real end |
 | `By` | text | `callerEmail` |
-| `At` | text | `utcNow()` |
+| `RecordedAt` | text | `utcNow()`; returned as `at` |
 
 If a flag is resolved again, update the existing row with the same `Title`. The audit row keeps the history.
 
@@ -129,7 +129,7 @@ If a flag is resolved again, update the existing row with the same `Title`. The 
 | `Note` | multi-line text | required when `Hours` differs from `ComputedHours`, or when reopening |
 | `Final` | yes/no | set when monthly reporting locks the month |
 | `By` | text | `callerEmail` |
-| `At` | text | `utcNow()` |
+| `RecordedAt` | text | `utcNow()`; returned as `at` |
 
 The latest row per `DayKey` is the current state.
 
@@ -138,7 +138,7 @@ The latest row per `DayKey` is the current state.
 | Column | Type | Example |
 |---|---|---|
 | `Title` | text | `guid()` |
-| `At` | text | `utcNow()` |
+| `RecordedAt` | text | `utcNow()`; returned as `at` |
 | `By` | text | `callerEmail` |
 | `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client`, `email_send`, `template_save` |
 | `Target` | text | the row key it touched |
@@ -220,6 +220,7 @@ Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action":
 1. The token check above gives `callerEmail` and the caller's row. Compose `roles` = `split(Roles, ';')`.
 2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` from `Lotus_Settings`.
 3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
+   - **The one exception is partners' names** (user decision, 2026-11-05). Before filtering, for each of the caller's shifts, find the other `Lotus_Shifts` rows with the same `Date`, `Location` and `Station`, a different `Email`, whose time overlaps at least half of the caller's shift (so the half-hour handover between Morning and Afternoon doesn't count; an end at or before the start runs past midnight). Return them as `partners`: `[{ "shiftId": "<the caller's shift id>", "name": "<the partner's Name>" }]`. Send only these two fields: never the partner's email, operator ID, times, punches or hours. Staff callers get `partners: []` (they already have the whole schedule).
 4. Response 200 (field names are lower camel case, exactly):
 
 ```json
@@ -227,6 +228,7 @@ Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action":
   "me": { "email": "", "name": "", "operatorId": "", "roles": ["operator"], "location": "RED" },
   "operators": [{ "id": "OP-0007", "email": "", "name": "", "location": "RED", "roles": ["operator"], "cohort": "", "completedSessions": 4, "completedAsOf": "", "training": "", "active": true }],
   "schedule": [{ "id": "S-…", "date": "", "operatorId": "", "email": "", "name": "", "location": "RED", "station": "Robot 1", "template": "RED-AM", "start": "07:00", "end": "12:30", "note": "" }],
+  "partners": [{ "shiftId": "S-…", "name": "Avery Lin" }],
   "punches": [{ "id": "", "ts": "", "operatorId": "", "email": "", "name": "", "type": "in", "location": "RED", "station": "Robot 1", "shiftId": "", "grace": 0, "source": "laptop", "flag": "", "note": "" }],
   "resolutions": [{ "key": "", "outcome": "accept", "reason": "", "endTime": "", "by": "", "at": "" }],
   "approvals": [{ "email": "", "operatorId": "", "date": "", "status": "approved", "hours": 5.5, "computed": 5.5, "note": "", "final": false, "by": "", "at": "" }],

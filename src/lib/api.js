@@ -101,6 +101,8 @@ const normAll = (d) => ({
   punches: (d.punches || []).filter((p) => p.ts ?? p.Timestamp).map(normPunch),
   client: (d.client || []).map((c) => ({ week: String(c.week ?? c.Week ?? '').slice(0, 10), hours: Number(c.hours ?? c.SuccessfulHours) || 0 })),
   schedule: (d.schedule || []).map(normShift).filter((r) => r.date && r.email),
+  // Operators only: the names of whoever shares each of their shifts (see partnersOf).
+  partners: (d.partners || []).map((p) => ({ shiftId: String(p.shiftId ?? p.ShiftId ?? ''), name: String(p.name ?? p.Name ?? '').trim() })).filter((p) => p.shiftId && p.name),
   resolutions: d.resolutions || [],
   approvals: (d.approvals || []).map((a) => ({ ...a, hours: Number(a.hours) || 0, computed: Number(a.computed) || 0 })),
   audit: d.audit || [],

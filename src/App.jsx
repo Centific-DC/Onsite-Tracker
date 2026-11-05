@@ -22,6 +22,8 @@ import { Users as UsersView } from './views/Users.jsx';
 import { OperatorSheet, SearchSheet } from './components/Search.jsx';
 import centificMark from './assets/centific-mark.png';
 import { Tour } from './tour/Tour.jsx';
+import { UpdateNotice, hardRefresh, useUpdate } from './components/UpdateNotice.jsx';
+import { VERSION } from './version.js';
 import { useTour } from './tour/tourStore.js';
 
 // Centific mark, drawn as a mask so it takes the theme's logo color (dark grey / white).
@@ -172,6 +174,7 @@ export default function App() {
       <SettingsSheet open={settings} onOpenChange={setSettings} admin={isAdmin} onTour={signedIn ? fullTour : null} />
       <Tour />
       <DemoBanner />
+      <UpdateNotice />
       {canSearch && data && <><SearchSheet /><OperatorSheet /></>}
       {/* On phones the check-in actions sit at the bottom, so toasts come in from the top. */}
       <Toaster position={phone ? 'top-center' : 'bottom-center'} duration={6000} theme={resolved} offset={24} mobileOffset={{ top: 64 }} toastOptions={{ className: 'toast' }} />
@@ -238,6 +241,7 @@ export default function App() {
           <span className="row-sub">{(session.roles || []).map((r) => ROLES[r]).join(' · ')}</span>
         </div>
         <div className="side-foot">{actions(false)}</div>
+        <span className="app-version side-version" title={`Lotus ${VERSION}`}>v{VERSION}</span>
       </aside>
 
       <header className="topbar" data-collapsed={collapsed || undefined}>
@@ -300,6 +304,7 @@ function NoAccess() {
 
 function SettingsSheet({ open, onOpenChange, admin, onTour }) {
   const { theme, setTheme, device, setDevice, session, signOut, resetDemo } = useStore();
+  const latest = useUpdate((s) => s.latest);
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title="Settings">
       <Group title="Appearance">
@@ -356,6 +361,10 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
         )}
         <Row title="Sign-in" trailing={LOCAL_AUTH ? 'Demo · this browser' : 'Lotus username'} />
         {DEMO && <Row title="Reset sample data" onClick={() => { resetDemo(); toast('Sample data reset'); }} className="row-action" />}
+      </Group>
+      <Group title="About">
+        <Row title="Version" trailing={<span className="mono-num">{VERSION}</span>} />
+        {latest && <Row title={`Refresh to update to ${latest}`} onClick={hardRefresh} className="row-action" />}
       </Group>
     </Sheet>
   );

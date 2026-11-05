@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { VERSION } from '../version.js';
 import { ArrowLeft, ChevronRight, Eye, EyeOff, LogIn, Search } from 'lucide-react';
 import { useStore } from '../lib/store.js';
 import { locationName } from '../lib/config.js';
@@ -123,6 +124,7 @@ function SignInForm({ stage }) {
           {stage === 'mustChange' && <button type="button" className="link-quiet" onClick={signOut}>Not you? Sign out</button>}
         </div>
         {LOCAL_AUTH && <p className="login-local">Demo mode: sign-ins are kept in this browser only, until the Lotus Auth flow is connected. Demo accounts: Lotus-admin and Lotus-operator.</p>}
+        <p className="app-version login-version">Lotus {VERSION}</p>
       </form>
     </div>
   );

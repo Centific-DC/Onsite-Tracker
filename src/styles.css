@@ -806,3 +806,29 @@ p.err { text-align: center; margin: 0 0 12px; }
 .switch.is-on { background: var(--green); }
 .switch.is-on > span { transform: translateX(16px); }
 @media (prefers-reduced-motion: reduce) { .switch, .switch > span { transition: none; } }
+
+/* ---------- Version and the "new version" notice ---------- */
+.app-version { font-size: 0.6875rem; line-height: 1.3; color: var(--ink-3); font-variant-numeric: tabular-nums; user-select: text; }
+.side-version { padding: 0 16px 4px; }
+.login-version { text-align: center; margin-top: 16px; }
+.update-notice {
+  position: fixed; z-index: 70; top: 16px; left: 50%; translate: -50% 0;
+  display: flex; align-items: center; gap: 16px; width: max-content; max-width: calc(100vw - 32px);
+  padding: 12px 12px 12px 18px; border-radius: 18px; background: var(--surface); box-shadow: 0 10px 30px rgb(0 0 0 / 0.16), 0 0 0 0.5px var(--edge);
+  animation: updateIn 240ms var(--ease-out) both;
+}
+.update-notice[data-leaving] { animation: updateOut 180ms var(--ease-exit) forwards; }
+@keyframes updateIn { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes updateOut { to { opacity: 0; transform: translateY(-8px); } }
+.update-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.update-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 0.875rem; }
+.update-sub { font-size: 0.75rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.update-actions { display: flex; align-items: center; gap: 12px; flex: none; }
+.update-actions .link { font-size: 0.8125rem; min-height: 44px; }
+@media (max-width: 639px) {
+  .update-notice { top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); width: calc(100vw - 24px); flex-wrap: wrap; gap: 8px 12px; }
+  .update-actions { width: 100%; justify-content: flex-end; }
+  @keyframes updateIn { from { opacity: 0; transform: translateY(8px); } }
+  @keyframes updateOut { to { opacity: 0; transform: translateY(8px); } }
+}
+@media (prefers-reduced-motion: reduce) { .update-notice, .update-notice[data-leaving] { animation: none; } }
