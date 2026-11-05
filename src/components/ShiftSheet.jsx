@@ -6,7 +6,7 @@ import { buildSessions } from '../lib/hours.js';
 import { checkNewShift, isNew, sharesShift } from '../lib/rules.js';
 import { fmtDay, fmtTime, mondayOf, parseDay } from '../lib/time.js';
 import { shiftTimes } from '../lib/schedule.js';
-import { Group, Sheet } from './ui.jsx';
+import { Group, Select, Sheet } from './ui.jsx';
 
 const CUSTOM = '__custom__';
 
@@ -20,7 +20,7 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
   const [err, setErr] = useState('');
   const [warn, setWarn] = useState(null);
   const [busy, setBusy] = useState(false);
-  const set = (k) => (e) => { const v = e.target.value; setWarn(null); setF((x) => ({ ...x, [k]: v })); };
+  const set = (k) => (e) => { const v = typeof e === 'string' ? e : e.target.value; setWarn(null); setF((x) => ({ ...x, [k]: v })); };
 
   useEffect(() => {
     if (!open) return;
@@ -47,8 +47,8 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
   const needExperienced = partners.length > 0 && partners.every((r) => isNew(byEmail.get(r.email), sessions));
   const sorted = needExperienced ? [...choices.filter((o) => !isNew(o, sessions)), ...choices.filter((o) => isNew(o, sessions))] : choices;
 
-  const changeLocation = (e) => {
-    const NL = locationById(e.target.value);
+  const changeLocation = (v) => {
+    const NL = locationById(v);
     setWarn(null);
     setF((x) => ({ ...x, location: NL.id, station: NL.robots[0], template: NL.templates[0]?.id || CUSTOM }));
   };
@@ -94,22 +94,24 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
         <label className="field-row"><span>Date</span><input type="date" value={f.date || ''} onChange={set('date')} disabled={!!backfill} /></label>
         <label className="field-row">
           <span>Lab</span>
-          <select value={f.location || ''} onChange={changeLocation} className="field-select" disabled={!!backfill}>
-            {LOCATIONS.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
+          <Select className="sel-field" label="Lab" value={f.location || ''} onChange={changeLocation} disabled={!!backfill} options={LOCATIONS.map((l) => ({ value: l.id, label: l.name }))} />
         </label>
         <label className="field-row">
           <span>Robot</span>
-          <select value={f.station || ''} onChange={set('station')} className="field-select" disabled={!!backfill}>
-            {L.robots.map((s) => <option key={s}>{s}</option>)}
-          </select>
+          <Select className="sel-field" label="Robot" value={f.station || ''} onChange={set('station')} disabled={!!backfill} options={L.robots.map((r) => ({ value: r, label: r }))} />
         </label>
         <label className="field-row">
           <span>Shift</span>
-          <select value={f.template || CUSTOM} onChange={set('template')} className="field-select">
-            {L.templates.map((t) => <option key={t.id} value={t.id}>{t.label} · {fmtTime(shiftTimes({ date: '2026-01-05', start: t.start, end: t.end }).start)}–{fmtTime(shiftTimes({ date: '2026-01-05', start: t.start, end: t.end }).end)}</option>)}
-            <option value={CUSTOM}>Custom time…</option>
-          </select>
+          <Select
+            className="sel-field"
+            label="Shift"
+            value={f.template || CUSTOM}
+            onChange={set('template')}
+            options={[
+              ...L.templates.map((t) => ({ value: t.id, label: `${t.label} · ${fmtTime(shiftTimes({ date: '2026-01-05', start: t.start, end: t.end }).start)}–${fmtTime(shiftTimes({ date: '2026-01-05', start: t.start, end: t.end }).end)}` })),
+              { value: CUSTOM, label: 'Custom time…' },
+            ]}
+          />
         </label>
         {!tpl && (
           <>
@@ -119,10 +121,14 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
         )}
         <label className="field-row">
           <span>Operator</span>
-          <select value={f.who || ''} onChange={set('who')} className="field-select">
-            <option value="" disabled>Choose…</option>
-            {sorted.map((p) => <option key={p.email} value={p.email}>{p.name}{isNew(p, sessions) ? ' · New' : ''}{p.location !== f.location ? ` (${locationById(p.location)?.name || 'no home lab'})` : ''}</option>)}
-          </select>
+          <Select
+            className="sel-field"
+            label="Operator"
+            value={f.who || ''}
+            onChange={set('who')}
+            placeholder="Choose…"
+            options={sorted.map((p) => ({ value: p.email, label: `${p.name}${isNew(p, sessions) ? ' · New' : ''}${p.location !== f.location ? ` (${locationById(p.location)?.name || 'no home lab'})` : ''}` }))}
+          />
         </label>
         {partners.length > 0 && (
           <p className={needExperienced ? 'hint hint-warn field-hint' : 'hint field-hint'}>

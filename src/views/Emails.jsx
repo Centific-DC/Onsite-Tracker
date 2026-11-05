@@ -11,7 +11,7 @@ import { useTemplates } from '../lib/email/useTemplates.js';
 import { noticeStatus, scheduleValues } from '../lib/email/notices.js';
 import { reviewDays } from '../lib/review.js';
 import { addDays, firstName, mondayOf, weekLabel } from '../lib/time.js';
-import { Segmented } from '../components/ui.jsx';
+import { Segmented, Select } from '../components/ui.jsx';
 import TemplateEditor from '../components/email/TemplateEditor.jsx';
 import logoPng from '../assets/centific-logo.png';
 
@@ -183,13 +183,10 @@ export function Emails() {
             <div key={meta.id} className="em-pane">
               <div className="em-bar">
                 {meta.audience === 'operator' ? (
-                  <label className="em-fill">
+                  <div className="em-fill">
                     <span className="em-eyebrow">Preview for</span>
-                    <select className="em-input em-select" value={person?.id || ''} onChange={(e) => setPersonId(e.target.value)}>
-                      {!options.length && <option value="">No operators booked next week</option>}
-                      {options.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-                    </select>
-                  </label>
+                    <Select className="sel-input" label="Preview for" align="start" value={person?.id || ''} onChange={setPersonId} placeholder="No operators booked next week" options={options.map((p) => ({ value: p.id, label: p.label }))} />
+                  </div>
                 ) : (
                   <p className="em-note">The scheduled flow sends this to each approver on Monday at 8:00 AM, with last week’s numbers.</p>
                 )}
@@ -217,13 +214,10 @@ export function Emails() {
                   <span className="em-eyebrow">Subject</span>
                   <input ref={subjectRef} className="em-input" value={draft.subject} maxLength={160} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} />
                 </label>
-                <label className="em-subject-add">
+                <div className="em-subject-add">
                   <span className="em-eyebrow">Add field</span>
-                  <select className="em-input em-select" value="" onChange={(e) => addSubjectField(e.target.value)}>
-                    <option value="">Choose…</option>
-                    {fields.filter((id) => !isBlockField(id)).map((id) => <option key={id} value={id}>{FIELD_LABEL[id]}</option>)}
-                  </select>
-                </label>
+                  <Select className="sel-input" label="Add field to subject" align="start" value="" onChange={addSubjectField} placeholder="Choose…" options={fields.filter((id) => !isBlockField(id)).map((id) => ({ value: id, label: FIELD_LABEL[id] }))} />
+                </div>
               </div>
 
               <TemplateEditor key={`${meta.id}-${editorKey}`} initialHtml={draft.html} onChange={onBody} fields={fields} />

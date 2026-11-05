@@ -218,3 +218,48 @@ body { letter-spacing: -0.005em; }
 
 .skeleton { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
 [data-sonner-toast] [data-description] { color: inherit !important; opacity: 0.75; }
+
+/* ---------- Dropdowns: the app's own select (components/ui.jsx Select) ---------- */
+.sel {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; color: var(--ink); font: inherit;
+  transition: box-shadow 200ms var(--ease-out), scale 150ms var(--ease-out);
+}
+.sel:focus-visible { outline: 2px solid color-mix(in srgb, var(--op-coral) 70%, transparent); outline-offset: 2px; }
+.sel[data-disabled] { cursor: default; color: var(--ink-2); }
+.sel-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: inherit; }
+.sel-value[data-placeholder] { color: var(--ink-3); }
+.sel-icon { display: flex; color: var(--ink-3); flex: none; }
+.sel[data-popup-open] .sel-icon { color: var(--op-coral-text); }
+/* In a form row: plain text on the right, like the other fields. */
+.sel-field { flex: 1; height: 52px; justify-content: flex-end; text-align: right; font-size: 1rem; background: transparent; }
+.sel-field[data-disabled] .sel-icon { display: none; }
+/* A small sunken pill (Roster experience). */
+.sel-pill { text-align: left; padding: 6px 10px 6px 12px; border-radius: 10px; font-size: 0.875rem; background: var(--op-bg); box-shadow: var(--op-in-shallow); min-width: 172px; }
+.sel-pill:active { scale: 0.97; }
+/* A full field (Emails page). */
+.sel-input { width: 100%; height: 44px; padding: 0 14px; border-radius: 14px; font-size: 14px; background: var(--op-bg); box-shadow: var(--op-in-shallow); text-align: left; }
+
+.sel-pos { z-index: 60; outline: 0; }
+.sel-pop {
+  min-width: max(var(--anchor-width), 200px); max-width: min(360px, calc(100vw - 24px)); max-height: min(var(--available-height), 340px);
+  overflow-y: auto; padding: 6px; border-radius: 16px; background: var(--op-bg); outline: 0;
+  box-shadow: 10px 10px 26px var(--op-dark), -8px -8px 22px var(--op-light), 0 0 0 0.5px var(--edge-strong);
+  transform-origin: var(--transform-origin);
+  transition: opacity 160ms var(--ease-out), scale 160ms var(--ease-out);
+}
+.sel-pop[data-starting-style], .sel-pop[data-ending-style] { opacity: 0; scale: 0.96; }
+.sel-pop[data-ending-style] { transition-duration: 120ms; }
+.sel-list { display: flex; flex-direction: column; gap: 2px; }
+.sel-item {
+  display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px 8px 10px;
+  border-radius: 10px; font-size: 0.9375rem; color: var(--ink); cursor: pointer; outline: 0; user-select: none;
+  transition: background-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.sel-item[data-highlighted] { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+.sel-item[data-selected] { color: var(--op-coral-text); font-weight: 600; }
+.sel-item[data-disabled] { opacity: 0.45; cursor: default; }
+.sel-check { grid-column: 1; display: flex; color: var(--op-coral-text); }
+.sel-text { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-hint { grid-column: 3; font-size: 12px; font-weight: 400; color: var(--ink-3); }
+@media (prefers-reduced-motion: reduce) { .sel-pop { transition: none; } .sel, .sel-item { transition: none; } }
+@media (pointer: coarse) { .sel-item { min-height: 44px; } }

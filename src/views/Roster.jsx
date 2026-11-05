@@ -9,7 +9,7 @@ import { ExperienceSelect } from '../components/Experience.jsx';
 import { planRosterImport, planScheduleImport } from '../lib/importer.js';
 import { claimName } from '../lib/onboarding.js';
 import { dayKey, mondayOf, fmtHrsU } from '../lib/time.js';
-import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx';
+import { Avatar, Group, Row, Segmented, Select, Sheet, Tag } from '../components/ui.jsx';
 
 // Who can be scheduled: operator IDs, home lab, experience and this week's load.
 // Recruiting's Active Roster 2 and scheduling tracker come in through Import.
@@ -131,7 +131,7 @@ function AddOperatorSheet({ open, onOpenChange }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (open) { setF({ name: '', email: '', location: LOCATIONS[0]?.id || '', completed: '0' }); setNote(''); setErr(''); } }, [open]);
-  const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); if (k === 'name') setNote(''); };
+  const set = (k) => (e) => { setF((x) => ({ ...x, [k]: typeof e === 'string' ? e : e.target.value })); if (k === 'name') setNote(''); };
   const save = async () => {
     if (!f.name.trim()) return setErr('Add a full name.');
     if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) return setErr('Add a valid email.');
@@ -154,7 +154,7 @@ function AddOperatorSheet({ open, onOpenChange }) {
       <Group footer={err ? <span className="err" role="alert">{err}</span> : note ? <span role="status">{note}</span> : undefined}>
         <label className="field-row"><span>Name</span><input value={f.name} onChange={set('name')} placeholder="Full name" autoComplete="off" /></label>
         <label className="field-row"><span>Email</span><input value={f.email} onChange={set('email')} type="email" inputMode="email" placeholder="name@centific.com" autoComplete="off" /></label>
-        <label className="field-row"><span>Home lab</span><select className="field-select" value={f.location} onChange={set('location')}>{LOCATIONS.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
+        <label className="field-row"><span>Home lab</span><Select className="sel-field" label="Home lab" value={f.location} onChange={set('location')} options={LOCATIONS.map((l) => ({ value: l.id, label: l.name }))} /></label>
         <label className="field-row"><span>Sessions done</span><input className="num-input" type="number" min="0" value={f.completed} onChange={set('completed')} /></label>
       </Group>
     </Sheet>
