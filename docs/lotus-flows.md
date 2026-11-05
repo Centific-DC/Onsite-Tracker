@@ -110,7 +110,7 @@ The first admin is created by the Auth flow's `bootstrap` op (below). After that
 | `Reason` | multi-line text | required, never empty |
 | `EndTime` | text | ISO UTC. Only for a missing clock-out, when the manager enters the real end |
 | `By` | text | `callerEmail` |
-| `At` | text | `utcNow()` |
+| `RecordedAt` | text | `utcNow()`; returned as `at` |
 
 If a flag is resolved again, update the existing row with the same `Title`. The audit row keeps the history.
 
@@ -129,7 +129,7 @@ If a flag is resolved again, update the existing row with the same `Title`. The 
 | `Note` | multi-line text | required when `Hours` differs from `ComputedHours`, or when reopening |
 | `Final` | yes/no | set when monthly reporting locks the month |
 | `By` | text | `callerEmail` |
-| `At` | text | `utcNow()` |
+| `RecordedAt` | text | `utcNow()`; returned as `at` |
 
 The latest row per `DayKey` is the current state.
 
@@ -138,7 +138,7 @@ The latest row per `DayKey` is the current state.
 | Column | Type | Example |
 |---|---|---|
 | `Title` | text | `guid()` |
-| `At` | text | `utcNow()` |
+| `RecordedAt` | text | `utcNow()`; returned as `at` |
 | `By` | text | `callerEmail` |
 | `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client`, `email_send`, `template_save` |
 | `Target` | text | the row key it touched |
