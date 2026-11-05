@@ -69,7 +69,7 @@ export function Users() {
           <p className="lede">Who can sign in, and what they see.{auth.LOCAL_AUTH ? ' Demo mode: sign-ins are kept in this browser until the Lotus Auth flow is connected.' : ''}</p>
         </div>
         <div className="stepper">
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setSheet({ mode: 'add' })}><UserPlus size={16} aria-hidden="true" /> Add person</button>
+          <button type="button" className="btn btn-primary btn-sm" data-tour="users-add" onClick={() => setSheet({ mode: 'add' })}><UserPlus size={16} aria-hidden="true" /> Add person</button>
         </div>
       </header>
       {loadError && <p className="login-error" role="alert">{loadError} <button type="button" className="link" onClick={load}>Try again</button></p>}

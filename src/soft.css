@@ -298,3 +298,46 @@ body { letter-spacing: -0.005em; }
 .tag-btn:hover { color: var(--ink); }
 .tag-btn:focus-visible { outline: 2px solid var(--op-coral); outline-offset: 2px; }
 .field-row:has(.mono-input) > span { width: 118px; white-space: nowrap; }
+
+/* ---------- Tour (as in Project Atlas) ----------
+   The page dims around a spotlight with a soft coral ring; a raised card explains
+   the step. Under 640px the card is a bottom sheet. */
+.tour { position: fixed; inset: 0; z-index: 1100; animation: tourFade 200ms var(--ease-out) both; }
+.tour-block { position: fixed; inset: 0; }
+.tour-spot {
+  position: fixed; border-radius: 18px; pointer-events: none;
+  box-shadow: 0 0 0 200vmax rgb(16 18 17 / 0.58), 0 0 0 2px var(--op-coral), 0 0 22px color-mix(in srgb, var(--op-coral) 45%, transparent);
+}
+.tour-spot.is-none { box-shadow: 0 0 0 200vmax rgb(16 18 17 / 0.58); }
+.tour-spot::after { content: ''; position: absolute; inset: -2px; border-radius: inherit; box-shadow: 0 0 0 2px var(--op-coral); animation: tourPulse 1800ms var(--ease-out) infinite; }
+.tour-spot.is-none::after { content: none; }
+.tour.is-moving .tour-spot { transition: left 360ms var(--ease-out), top 360ms var(--ease-out), width 360ms var(--ease-out), height 360ms var(--ease-out); }
+.tour.is-moving .tour-card:not(.is-sheet) { transition: left 360ms var(--ease-out), top 360ms var(--ease-out); }
+.tour-card {
+  position: fixed; display: flex; flex-direction: column; gap: 16px; padding: 20px;
+  width: min(22rem, calc(100vw - 24px)); border-radius: 22px;
+  background: var(--op-bg); box-shadow: 0 18px 50px rgb(0 0 0 / 0.28), 0 2px 6px rgb(0 0 0 / 0.12);
+  animation: tourIn 260ms var(--ease-out) both;
+}
+.tour-card.is-sheet { left: 0; right: 0; bottom: 0; width: 100%; border-radius: 26px 26px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); animation: tourUp 320ms var(--ease-out) both; }
+.tour-content { display: flex; flex-direction: column; gap: 6px; animation: tourFade 200ms var(--ease-out) both; }
+.tour-title { margin: 0; font-size: 18px; font-weight: 650; color: var(--ink); }
+.tour-body { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink-2); }
+.tour-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tour-count { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--op-sub); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tour-dots { display: flex; gap: 4px; }
+.tour-dot { width: 6px; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 18%, transparent); transition: width 240ms var(--ease-out), background-color 240ms var(--ease-out); }
+.tour-dot.is-on { width: 16px; background: var(--op-coral); }
+.tour-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.tour-skip { padding: 8px 6px; font-size: 14px; font-weight: 600; color: var(--op-sub); }
+.tour-skip:hover { color: var(--ink); }
+@keyframes tourFade { from { opacity: 0; } }
+@keyframes tourIn { from { opacity: 0; transform: translateY(6px) scale(0.97); } }
+@keyframes tourUp { from { transform: translateY(100%); } }
+@keyframes tourPulse { from { opacity: 0.9; scale: 1; } to { opacity: 0; scale: 1.06; } }
+@media (pointer: coarse) { .tour-actions .btn, .tour-skip { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) {
+  .tour, .tour-card, .tour-card.is-sheet, .tour-content { animation: tourFade 120ms linear both; }
+  .tour-spot::after { animation: none; opacity: 0; }
+  .tour.is-moving .tour-spot, .tour.is-moving .tour-card:not(.is-sheet) { transition: none; }
+}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
-import { CalendarDays, ChevronRight, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
+import { CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
 import { CFG, DEMO } from './lib/config.js';
 import { ROLES, hasRole } from './lib/auth.js';
@@ -21,6 +21,8 @@ import { Emails } from './views/Emails.jsx';
 import { Users as UsersView } from './views/Users.jsx';
 import { OperatorSheet, SearchSheet } from './components/Search.jsx';
 import centificMark from './assets/centific-mark.png';
+import { Tour } from './tour/Tour.jsx';
+import { useTour } from './tour/tourStore.js';
 
 // Centific mark, drawn as a mask so it takes the theme's logo color (dark grey / white).
 const Logo = ({ size = 28 }) => (
@@ -104,6 +106,30 @@ export default function App() {
     return () => { cancelAnimationFrame(id); io?.disconnect(); };
   }, [item.id, data]);
   const View = item.view;
+
+  // The tour: the welcome tour on first sign-in, then each page's own tour on its
+  // first visit. Seen tours are remembered per username in this browser.
+  const tour = useTour();
+  const section = isAdmin ? item.id : 'checkin';
+  const signedIn = authStage === 'signedIn';
+  useEffect(() => { if (signedIn) tour.setWho(session.username || session.email, session.roles || []); }, [signedIn, session?.username, session?.email, (session?.roles || []).join()]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { useTour.getState().stop(); }, [section, authStage]);
+  useEffect(() => {
+    if (!signedIn || !data || tour.run || tour.who !== (session.username || session.email)) return undefined;
+    const first = isAdmin ? (!tour.seen.has('welcome') && tour.has('welcome') ? 'welcome' : null) : null;
+    const page = !tour.seen.has(section) && tour.has(section) && (isAdmin || hasRole(session, 'operator')) ? section : null;
+    if (!first && !page) return undefined;
+    // Let the page settle in, and wait while a sheet or menu is open.
+    const t = setInterval(() => {
+      if (document.querySelector('[role="dialog"], [role="listbox"]')) return;
+      clearInterval(t);
+      if (first) tour.start(first, page);
+      else tour.start(page);
+    }, 700);
+    return () => clearInterval(t);
+  }, [signedIn, data, section, tour.run, tour.seen, tour.who]); // eslint-disable-line react-hooks/exhaustive-deps
+  const replayTour = () => (tour.has(section) ? tour.start(section) : tour.start(isAdmin ? 'welcome' : 'checkin'));
+  const fullTour = () => (isAdmin ? tour.start('welcome', section) : tour.start('checkin'));
   // Search is for the people who schedule and review; ⌘K or Ctrl+K opens it anywhere, and so does / outside a field.
   const canSearch = isAdmin && hasRole(session, 'scheduler', 'approver');
   useEffect(() => {
@@ -135,14 +161,16 @@ export default function App() {
   );
   const actions = (compact) => (
     <>
-      {compact && canSearch && <button type="button" className="icon-btn" aria-label="Search" onClick={() => setSearching(true)}><Search size={18} /></button>}
+      {compact && canSearch && <button type="button" className="icon-btn" aria-label="Search" data-tour="search" onClick={() => setSearching(true)}><Search size={18} /></button>}
+      {signedIn && <button type="button" className="icon-btn" aria-label="Tour of this page" title="Tour of this page" data-tour="help" onClick={replayTour}><CircleHelp size={18} /></button>}
       <SyncButton syncing={syncing} onClick={manualSync} status={status} error={error} compact={compact} />
-      <button type="button" className="icon-btn" aria-label="Settings" onClick={() => setSettings(true)}><Settings size={18} /></button>
+      <button type="button" className="icon-btn" aria-label="Settings" data-tour="settings" onClick={() => setSettings(true)}><Settings size={18} /></button>
     </>
   );
   const toaster = (
     <>
-      <SettingsSheet open={settings} onOpenChange={setSettings} admin={isAdmin} />
+      <SettingsSheet open={settings} onOpenChange={setSettings} admin={isAdmin} onTour={signedIn ? fullTour : null} />
+      <Tour />
       {canSearch && data && <><SearchSheet /><OperatorSheet /></>}
       {/* On phones the check-in actions sit at the bottom, so toasts come in from the top. */}
       <Toaster position={phone ? 'top-center' : 'bottom-center'} duration={6000} theme={resolved} offset={24} mobileOffset={{ top: 64 }} toastOptions={{ className: 'toast' }} />
@@ -189,13 +217,13 @@ export default function App() {
           </div>
         </div>
         {canSearch && (
-          <button type="button" className="side-search" onClick={() => setSearching(true)}>
+          <button type="button" className="side-search" data-tour="search" onClick={() => setSearching(true)}>
             <Search size={16} aria-hidden="true" /> Search <kbd>{mac ? '⌘K' : 'Ctrl K'}</kbd>
           </button>
         )}
         <nav className="side-nav" aria-label="Admin">
           {nav.filter((n) => !n.hidden).map((n) => (
-            <a key={n.id} href={`#/${n.id}`} className={clsx('side-link', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
+            <a key={n.id} href={`#/${n.id}`} data-tour={`nav-${n.id}`} className={clsx('side-link', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
               <n.icon size={18} aria-hidden="true" />
               {n.label}
             </a>
@@ -224,7 +252,7 @@ export default function App() {
 
       <nav className="tabbar" aria-label="Admin" style={{ gridTemplateColumns: `repeat(${nav.filter((n) => n.phone !== false && !n.hidden).length || 1}, 1fr)` }}>
         {nav.filter((n) => n.phone !== false && !n.hidden).map((n) => (
-          <a key={n.id} href={`#/${n.id}`} className={clsx('tab', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
+          <a key={n.id} href={`#/${n.id}`} data-tour={`nav-${n.id}`} className={clsx('tab', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
             <n.icon size={22} aria-hidden="true" />
             <span>{n.label}</span>
           </a>
@@ -269,7 +297,7 @@ function NoAccess() {
   );
 }
 
-function SettingsSheet({ open, onOpenChange, admin }) {
+function SettingsSheet({ open, onOpenChange, admin, onTour }) {
   const { theme, setTheme, device, setDevice, session, signOut, resetDemo } = useStore();
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title="Settings">
@@ -300,6 +328,11 @@ function SettingsSheet({ open, onOpenChange, admin }) {
               ]}
             />
           </div>
+        </Group>
+      )}
+      {onTour && (
+        <Group title="Help">
+          <Row leading={<CircleHelp size={18} aria-hidden="true" />} title="Take the tour" subtitle={admin ? 'A short walk through Lotus admin' : 'A short walk through clocking in'} trailing={<ChevronRight size={18} aria-hidden="true" />} onClick={() => { onOpenChange(false); setTimeout(onTour, 250); }} />
         </Group>
       )}
       {hasRole(session, 'admin') && (

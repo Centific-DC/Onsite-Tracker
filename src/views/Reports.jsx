@@ -44,7 +44,7 @@ export function Reports() {
           <label className="field-row"><span>To</span><input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} /></label>
         </Group>
       )}
-      <Group title="Approved hours export" footer="One row per operator per day, with stable operator IDs and fixed column names for the agency-reporting sheet. No rates or pay.">
+      <Group tour="reports-export" title="Approved hours export" footer="One row per operator per day, with stable operator IDs and fixed column names for the agency-reporting sheet. No rates or pay.">
         <Row title="Approved" subtitle={`${rows.length} operator-days · ${byOp.length} operators`} trailing={<span className="mono-num">{fmtHrsU(total)}</span>} />
         {pending.length > 0 && <Row title={<>Not approved yet <Tag tone="warn">{pending.length} days</Tag></>} subtitle="Left out of the export until a manager approves them on Review" />}
         <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Download approved hours" subtitle={APPROVED_COLUMNS.join(', ')} trailing="CSV" onClick={exportCsv} />

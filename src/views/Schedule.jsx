@@ -125,11 +125,11 @@ export function Schedule() {
           <button type="button" className="btn btn-plain btn-sm" disabled={thisWeek} onClick={() => setWk0(mondayOf(new Date()))}>This week</button>
           <button type="button" className="icon-btn" aria-label="Next week" onClick={() => setWk0(addDays(wk0, 7))}><ChevronRight size={18} /></button>
           {canSend && !weekOver && (
-            <button type="button" className="btn btn-primary btn-sm" aria-label={phone ? 'Email schedules' : undefined} onClick={() => setMailing(true)}>
+            <button type="button" className="btn btn-primary btn-sm" data-tour="sched-mail" aria-label={phone ? 'Email schedules' : undefined} onClick={() => setMailing(true)}>
               <Mail size={16} />{!phone && ' Email schedules'}{unsent + changedN > 0 && <span className="mail-count" aria-label={`${unsent + changedN} to send`}>{unsent + changedN}</span>}
             </button>
           )}
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setAdding({ date: dayKey(thisWeek ? now : wk0) })}><Plus size={16} /> Add shift</button>
+          <button type="button" className="btn btn-primary btn-sm" data-tour="sched-add" onClick={() => setAdding({ date: dayKey(thisWeek ? now : wk0) })}><Plus size={16} /> Add shift</button>
         </div>
       </header>
 
@@ -166,7 +166,7 @@ export function Schedule() {
       </div>
 
       {attention.length > 0 && (
-        <Group title="Needs a look" className="group-urgent">
+        <Group title="Needs a look" className="group-urgent" tour="sched-attention">
           {attention.map((a) => <Row key={a.label} title={<Tag tone={a.tone}>{a.label}</Tag>} subtitle={a.text} />)}
         </Group>
       )}

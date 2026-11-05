@@ -73,9 +73,9 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
 }
 
 // Inset grouped list, iOS-style.
-export function Group({ title, action, children, footer, className }) {
+export function Group({ title, action, children, footer, className, tour }) {
   return (
-    <section className={clsx('group', className)}>
+    <section className={clsx('group', className)} data-tour={tour}>
       {(title || action) && (
         <div className="group-head">
           {title && <h2 className="group-title">{title}</h2>}

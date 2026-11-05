@@ -91,7 +91,7 @@ export function Review() {
           ]}
         />
         {ready.length > 0 && (
-          <button type="button" className="btn btn-primary btn-sm" disabled={busy} aria-busy={busy} onClick={approveReady}>
+          <button type="button" className="btn btn-primary btn-sm" data-tour="review-approve-all" disabled={busy} aria-busy={busy} onClick={approveReady}>
             {busy ? 'Approving…' : `Approve ${ready.length} ready`}
           </button>
         )}

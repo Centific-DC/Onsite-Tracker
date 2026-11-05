@@ -88,7 +88,7 @@ export function Records() {
         </label>
       </div>
 
-      <Group title="Raw exports" className="export-group" footer="Unapproved, straight from the clock-ins. For approved hours use Reports.">
+      <Group tour="records-export" title="Raw exports" className="export-group" footer="Unapproved, straight from the clock-ins. For approved hours use Reports.">
         <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Raw check-in log" subtitle="One row per tap, with location, shift and grace" trailing="CSV" onClick={exportLog} />
         <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Raw sessions" subtitle="In, out and recorded hours per operator, for badge reconciliation" trailing="CSV" onClick={exportShifts} />
         <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Schedule vs actual" subtitle="Every scheduled shift with its status (worked, no-show) and actual in/out" trailing="CSV" onClick={exportPlan} />

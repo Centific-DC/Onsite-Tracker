@@ -89,7 +89,7 @@ export function Today() {
       </header>
 
       {needFill.length > 0 && (
-        <Group title="Needs a backfill" className="group-urgent">
+        <Group title="Needs a backfill" className="group-urgent" tour="today-backfill">
           {needFill.flatMap((b) => b.missing.map((r) => (
             <Row
               key={r.id}
@@ -136,7 +136,7 @@ export function Today() {
           )) : <div className="empty-row">{isToday ? 'Nothing in the last 7 days. Missing operators, early check-outs and missed check-outs land here.' : 'Nothing on this day.'}</div>}
         </Group>
         {isToday && (
-          <Group title="On site">
+          <Group title="On site" tour="today-onsite">
             {live.length ? live.sort((a, b) => a.start - b.start).map((s, i) => (
               <Row
                 key={s.email}

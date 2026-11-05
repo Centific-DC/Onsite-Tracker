@@ -52,8 +52,8 @@ export function Roster() {
           <p className="lede">{ops.length} operators · operator IDs are permanent and go in every export</p>
         </div>
         <div className="stepper">
-          <button type="button" className="btn btn-plain btn-sm" onClick={() => setImporting(true)}><Upload size={16} /> Import</button>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><UserPlus size={16} /> Add operator</button>
+          <button type="button" className="btn btn-plain btn-sm" data-tour="roster-import" onClick={() => setImporting(true)}><Upload size={16} /> Import</button>
+          <button type="button" className="btn btn-primary btn-sm" data-tour="roster-add" onClick={() => setAdding(true)}><UserPlus size={16} /> Add operator</button>
         </div>
       </header>
       <div className="toolbar">

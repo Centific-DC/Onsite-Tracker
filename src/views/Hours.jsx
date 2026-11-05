@@ -69,7 +69,7 @@ export function Hours() {
       </header>
 
       <div className="split">
-        <Group title="This week" footer="Hours worked count robot time, so a pair working together counts once. Operator hours add up each operator's own time.">
+        <Group tour="hours-week" title="This week" footer="Hours worked count robot time, so a pair working together counts once. Operator hours add up each operator's own time.">
           <div className="compare">
             <div className="compare-row">
               <span className="compare-label">Hours worked</span>
@@ -111,7 +111,7 @@ export function Hours() {
         </Group>
       </div>
 
-      <Group title="Operators" footer="Tap an operator to see their shifts.">
+      <Group tour="hours-ops" title="Operators" footer="Tap an operator to see their shifts.">
         <div className="week-head" aria-hidden="true">
           <span />
           {days.map((d) => <span key={+d} className={dayKey(d) === dayKey(now) ? 'is-today' : ''}>{d.toLocaleDateString([], { weekday: 'narrow' })}</span>)}
