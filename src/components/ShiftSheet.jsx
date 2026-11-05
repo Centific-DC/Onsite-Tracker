@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { DatePicker } from './DatePicker.jsx';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { LOCATIONS, locationById, locationOfRobot } from '../lib/config.js';
@@ -91,7 +92,7 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
         </Group>
       )}
       <Group footer={err ? <span className="err" role="alert">{err}</span> : undefined}>
-        <label className="field-row"><span>Date</span><input type="date" value={f.date || ''} onChange={set('date')} disabled={!!backfill} /></label>
+        <label className="field-row"><span>Date</span><DatePicker label="Date" value={f.date || ''} onChange={set('date')} disabled={!!backfill} /></label>
         <label className="field-row">
           <span>Lab</span>
           <Select className="sel-field" label="Lab" value={f.location || ''} onChange={changeLocation} disabled={!!backfill} options={LOCATIONS.map((l) => ({ value: l.id, label: l.name }))} />

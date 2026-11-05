@@ -5,6 +5,7 @@ import { APPROVED_COLUMNS, approvedRows, reviewDays } from '../lib/review.js';
 import { download } from '../lib/csv.js';
 import { addDays, dayKey, mondayOf, parseDay, fmtHrsU, fmtDay } from '../lib/time.js';
 import { Group, Row, Segmented, Tag } from '../components/ui.jsx';
+import { DatePicker } from '../components/DatePicker.jsx';
 
 const firstOfMonth = (d, n = 0) => new Date(d.getFullYear(), d.getMonth() + n, 1);
 // "Mon, Nov 2 – Sun, Nov 8, 2026": the downloader's check that it's the right range.
@@ -43,8 +44,8 @@ export function Reports() {
       </div>
       {preset === 'custom' && (
         <Group>
-          <label className="field-row"><span>From</span><input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} /></label>
-          <label className="field-row"><span>To</span><input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} /></label>
+          <label className="field-row"><span>From</span><DatePicker label="From" value={custom.from} max={custom.to} onChange={(v) => setCustom((c) => ({ ...c, from: v }))} /></label>
+          <label className="field-row"><span>To</span><DatePicker label="To" value={custom.to} min={custom.from} onChange={(v) => setCustom((c) => ({ ...c, to: v }))} /></label>
         </Group>
       )}
       <Group tour="reports-export" title="Approved hours export" footer="One row per operator per day, with stable operator IDs and fixed column names for the agency-reporting sheet. No rates or pay.">
