@@ -1,9 +1,9 @@
 // Site settings, read at page load. Edit this file on GitHub (or in dist/ after a
 // build) to reconfigure the live site; no rebuild needed.
 window.ONSITE_CONFIG = {
-  // Keep these three empty. The flow URLs are secrets: on Render the Lotus server fills
-  // these in with its own addresses (api/read, api/write, api/auth) and keeps the real
-  // URLs to itself. Empty here = demo mode: sample data, saved only in this browser.
+  // Keep these three empty in the repo. The GitHub Pages deploy fills them in from the
+  // repo's Actions secrets (LOTUS_READ_URL, LOTUS_WRITE_URL, LOTUS_AUTH_URL).
+  // Empty = demo mode: sample data, saved only in this browser.
   readUrl: '',
   writeUrl: '',
 

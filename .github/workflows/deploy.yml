@@ -25,6 +25,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # The flow URLs come from the repo's Actions secrets and go only into the built
+      # config.js. Unset secrets leave that flow in demo mode.
+      - name: Fill in the flow addresses
+        run: node scripts/pages-config.mjs
+        env:
+          LOTUS_AUTH_URL: ${{ secrets.LOTUS_AUTH_URL }}
+          LOTUS_READ_URL: ${{ secrets.LOTUS_READ_URL }}
+          LOTUS_WRITE_URL: ${{ secrets.LOTUS_WRITE_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

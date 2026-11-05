@@ -1,6 +1,6 @@
 # Lotus on-site time tracking
 
-Scheduling, attendance and approved hours for the Google Lotus on-site project (Redmond Lab and Mountain View Lab). React + Vite. The live app runs on Render, behind a small server that keeps the flow URLs secret; GitHub Pages hosts the demo. Each person signs in with a username and password that a Lotus admin gives them (the Project Atlas pattern); the data lives in SharePoint lists, read and written through Power Automate flows ([docs/lotus-flows.md](docs/lotus-flows.md)).
+Scheduling, attendance and approved hours for the Google Lotus on-site project (Redmond Lab and Mountain View Lab). React + Vite. The live app runs on GitHub Pages; the flow URLs come from the repo's Actions secrets at deploy time, never from the repo. Each person signs in with a username and password that a Lotus admin gives them (the Project Atlas pattern); the data lives in SharePoint lists, read and written through Power Automate flows ([docs/lotus-flows.md](docs/lotus-flows.md)).
 
 Raw clock-ins are never payable hours. Each operator-day is reviewed and approved by a manager, and only approved hours reach the reporting export.
 
@@ -29,14 +29,16 @@ Once the flows are connected, staff can still switch to sample data in **Setting
 
 ## Go live
 
-The flow trigger URLs are secrets: anyone holding one can call the flow. They never go in this repo or in the page. The live app runs on Render, where [server/index.mjs](server/index.mjs) serves the built app and forwards its calls to the flows, so the browser only ever sees `api/auth`, `api/read` and `api/write`.
+The live app is the GitHub Pages site. The flow trigger URLs never go in this repo: the deploy workflow reads them from the repo's Actions secrets and writes them only into the built `config.js` ([scripts/pages-config.mjs](scripts/pages-config.mjs)).
 
 1. Build the lists and flows with [docs/lotus-flows.md](docs/lotus-flows.md).
-2. In Render: **New > Blueprint**, pick this repo ([render.yaml](render.yaml)), and paste the three URLs when asked: `LOTUS_AUTH_URL`, `LOTUS_READ_URL`, `LOTUS_WRITE_URL`. A flow left empty stays in demo mode. To change a URL later, edit it under the service's **Environment** and Render restarts it.
-3. Open the Render site with `?setup=1` once to create the first admin. Admins then give people sign-ins from Roster (Add operator, Set up sign-in) or Settings → Users and sign-ins. Adjust `locations` in `public/config.js` (robots, shift templates and how many operators each needs, the days each lab runs, grace) as labs change.
-4. Pushes to `main` redeploy Render (and the GitHub Pages demo, which never gets the URLs).
+2. On GitHub: **Settings > Secrets and variables > Actions > New repository secret**, three times: `LOTUS_AUTH_URL`, `LOTUS_READ_URL`, `LOTUS_WRITE_URL`. A secret left unset keeps that flow in demo mode.
+3. **Actions > Deploy to GitHub Pages > Run workflow** (or push to `main`). The build log says which flows were set, never the URLs.
+4. Open the site with `?setup=1` once to create the first admin. Admins then give people sign-ins from Roster (Add operator, Set up sign-in) or Settings → Users and sign-ins. Adjust `locations` in `public/config.js` (robots, shift templates and how many operators each needs, the days each lab runs, grace) as labs change.
 
-Leave `authUrl`, `readUrl` and `writeUrl` empty in `public/config.js`; the Render server fills them in with its own addresses. Run it locally with `npm run build && npm start`.
+Leave `authUrl`, `readUrl` and `writeUrl` empty in `public/config.js`. Note that the built site's `config.js` is public, so anyone who opens the site can read the URLs there; what protects the data is the sign-in token every Read and Write call needs, and the flows' role checks. To change a URL, update its secret and re-run the workflow. To block an exposed URL, regenerate the flow's trigger.
+
+[server/index.mjs](server/index.mjs) and [render.yaml](render.yaml) remain as an option for hosting on Render, where the server keeps the URLs out of the page.
 
 ## Install as an app
 
