@@ -6,7 +6,19 @@ export const CFG = Object.assign(
 );
 export const READ_URL = String(CFG.readUrl || '').trim();
 export const WRITE_URL = String(CFG.writeUrl || '').trim();
-export const DEMO = !READ_URL || !WRITE_URL;
+// Live once both data flow URLs are set. Until then the app always shows demo data.
+export const LIVE_READY = !!(READ_URL && WRITE_URL);
+// Demo data on a live site (Settings > Data, per browser, as in Project Atlas): sample
+// operators and shifts kept in this browser; nothing is saved to SharePoint or emailed.
+// Sign-in stays real. Read once at load; switching reloads the page.
+const DEMO_KEY = 'lotus-demo-on';
+const readDemo = () => { try { return localStorage.getItem(DEMO_KEY) === 'on'; } catch { return false; } };
+export const DEMO_CHOSEN = LIVE_READY && typeof window !== 'undefined' && readDemo();
+export const DEMO = !LIVE_READY || DEMO_CHOSEN;
+export function setDemo(on) {
+  try { if (on) localStorage.setItem(DEMO_KEY, 'on'); else localStorage.removeItem(DEMO_KEY); } catch { /* storage off: stays as it is */ }
+  window.location.reload();
+}
 // The Lotus Auth flow (usernames and passwords). Empty = accounts kept in this browser.
 export const AUTH_URL = String(CFG.authUrl || '').trim();
 // Where emails send people: the operator page and the admin Review view.

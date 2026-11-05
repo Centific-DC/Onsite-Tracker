@@ -32,7 +32,7 @@ export function Roster() {
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [settingUp, setSettingUp] = useState(null); // an operator without a sign-in
-  const signIns = useSignIns();
+  const signIns = useSignIns({ roster: true });
   const signInOf = useMemo(() => new Map((signIns.users || []).map((u) => [u.email, u])), [signIns.users]);
   const now = new Date();
   const { sessions } = useMemo(() => buildSessions(data.punches, now), [data.punches]); // eslint-disable-line react-hooks/exhaustive-deps

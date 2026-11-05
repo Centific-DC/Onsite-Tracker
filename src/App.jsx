@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
 import { CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
-import { CFG, DEMO } from './lib/config.js';
+import { CFG, DEMO, DEMO_CHOSEN, LIVE_READY, setDemo } from './lib/config.js';
 import { ROLES, hasRole } from './lib/auth.js';
 import { LOCAL_AUTH } from './lib/auth/api.js';
 import { go, useMedia, useRoute } from './lib/hooks.js';
@@ -171,6 +171,7 @@ export default function App() {
     <>
       <SettingsSheet open={settings} onOpenChange={setSettings} admin={isAdmin} onTour={signedIn ? fullTour : null} />
       <Tour />
+      <DemoBanner />
       {canSearch && data && <><SearchSheet /><OperatorSheet /></>}
       {/* On phones the check-in actions sit at the bottom, so toasts come in from the top. */}
       <Toaster position={phone ? 'top-center' : 'bottom-center'} duration={6000} theme={resolved} offset={24} mobileOffset={{ top: 64 }} toastOptions={{ className: 'toast' }} />
@@ -345,11 +346,30 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
           <Row title={session.name} subtitle={`${session.username || session.email} · ${(session.roles || []).map((r) => ROLES[r]).join(', ')}${LOCAL_AUTH ? ' · demo' : ''}`} trailing={<button type="button" className="link" onClick={() => { onOpenChange(false); signOut(); }}><LogOut size={14} /> Sign out</button>} />
         </Group>
       )}
-      <Group title="Data" footer={DEMO ? 'Sample data saved only in this browser. Add the Power Automate flow URLs to config.js to go live.' : 'Reads and writes the Lotus lists on SharePoint through Power Automate.'}>
+      <Group title="Data" footer={!LIVE_READY ? 'Sample data saved only in this browser. Add the Power Automate flow URLs to go live.' : DEMO ? 'Sample operators and shifts, kept in this browser. Nothing is saved to SharePoint or emailed. Sign-in stays real.' : 'Reads and writes the Lotus lists on SharePoint through Power Automate.'}>
         <Row title="Source" trailing={DEMO ? 'Demo' : 'Live · SharePoint'} />
+        {LIVE_READY && admin && (
+          <button type="button" role="switch" aria-checked={DEMO} className="row row-btn" onClick={() => setDemo(!DEMO)}>
+            <span className="row-main"><span className="row-title">Demo data</span><span className="row-sub">{DEMO ? 'On in this browser. Switch off for the real data.' : 'Try things out with sample data in this browser'}</span></span>
+            <span className="row-trail"><span className={clsx('switch', DEMO && 'is-on')} aria-hidden="true"><span /></span></span>
+          </button>
+        )}
         <Row title="Sign-in" trailing={LOCAL_AUTH ? 'Demo · this browser' : 'Lotus username'} />
         {DEMO && <Row title="Reset sample data" onClick={() => { resetDemo(); toast('Sample data reset'); }} className="row-action" />}
       </Group>
     </Sheet>
+  );
+}
+
+// On a live site with demo data switched on, always on screen, so nobody mistakes
+// sample operators for real ones. (Without flow URLs the Demo tag says it instead.)
+function DemoBanner() {
+  if (!DEMO_CHOSEN) return null;
+  return (
+    <div className="demo-banner" role="status">
+      <span className="demo-banner-dot" aria-hidden="true" />
+      <span><strong>Demo data</strong><span className="demo-banner-more"> · sample operators, nothing is saved or emailed</span></span>
+      <button type="button" className="link" onClick={() => setDemo(false)}>Show real data</button>
+    </div>
   );
 }

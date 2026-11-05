@@ -6,6 +6,7 @@ import { hasRole } from '../lib/auth.js';
 import * as auth from '../lib/auth/api.js';
 import { passwordProblem, tempPassword } from '../lib/auth/crypto.js';
 import { firstName } from '../lib/time.js';
+import { DEMO } from '../lib/config.js';
 import { Group, Row } from './ui.jsx';
 
 // Sign-in set-up shared by Roster (Add operator, Set up sign-in) and Users.
@@ -14,10 +15,11 @@ import { Group, Row } from './ui.jsx';
 
 export const suggestUsername = (email) => String(email || '').split('@')[0].trim();
 
-/** Everyone's sign-in, for admins (null while loading, [] for everyone else). */
-export function useSignIns() {
+/** Everyone's sign-in, for admins (null while loading, [] for everyone else).
+ *  `roster`: the sample operators of demo data never get real sign-ins. */
+export function useSignIns({ roster = false } = {}) {
   const session = useStore((s) => s.session);
-  const admin = hasRole(session, 'admin');
+  const admin = hasRole(session, 'admin') && !(roster && DEMO && !auth.LOCAL_AUTH);
   const [users, setUsers] = useState(null);
   const [error, setError] = useState('');
   const load = useCallback(async () => {

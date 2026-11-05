@@ -785,3 +785,14 @@ p.err { text-align: center; margin: 0 0 12px; }
 .slot-robot.is-new { color: var(--yellow-text); background: var(--yellow-soft); box-shadow: 0 0 0 1px color-mix(in srgb, var(--yellow) 60%, transparent); }
 .sched-legend > span > .slot-robot + .chip-new { margin-left: 4px; }
 .exp-select { min-width: 172px; }
+
+/* Demo data on a live site (Settings > Data) */
+.demo-banner { position: fixed; z-index: 60; top: 0; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 32px); padding: 4px 12px; border-radius: 0 0 12px 12px; font-size: 0.75rem; line-height: 1.3; white-space: nowrap; background: var(--yellow-soft); color: var(--yellow-text); box-shadow: 0 4px 14px rgb(0 0 0 / 0.12); }
+.demo-banner .link { font-size: 0.75rem; }
+.demo-banner-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
+@media (max-width: 640px) { .demo-banner-more { display: none; } }
+.switch { position: relative; display: inline-block; width: 40px; height: 24px; border-radius: 999px; background: var(--sep); }
+.switch > span { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); transition: transform 350ms var(--ease-slide); }
+.switch.is-on { background: var(--green); }
+.switch.is-on > span { transform: translateX(16px); }
+@media (prefers-reduced-motion: reduce) { .switch, .switch > span { transition: none; } }

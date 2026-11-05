@@ -25,6 +25,8 @@ npm test
 
 With the flow URLs empty in [public/config.js](public/config.js), the app runs in **demo mode** on sample data saved in the browser (reset it in Settings). With `authUrl` empty, sign-ins are kept in this browser too, with two demo accounts: **Lotus-admin** and **Lotus-operator**, both with the password `Testing12345` (Lotus-operator then picks which operator to be). These are demo-only; the live Lotus Auth flow has no such accounts.
 
+Once the flows are connected, staff can still switch to sample data in **Settings > Data > Demo data**, as in Project Atlas. It applies to that browser only, shows a "Demo data" banner on every page, and nothing is saved to SharePoint or emailed. Sign-in stays real, and the sample operators never get real sign-ins.
+
 ## Go live
 
 1. Build the lists and flows with [docs/lotus-flows.md](docs/lotus-flows.md).
