@@ -10,7 +10,8 @@ export function ExperienceSelect({ op, sessions, className = 'sel-pill' }) {
   const x = experience(op, sessions);
   const save = async (v) => {
     try {
-      await upsertUsers([{ ...op, experience: v }]);
+      // Only the email and the mark: the flow changes just the fields it's sent.
+      await upsertUsers([{ email: op.email, experience: v }]);
       const now = experience({ ...op, experience: v }, sessions);
       toast(`${op.name}: ${now.level === 'new' ? 'New' : 'Experienced'}`, { description: v ? 'Set by you. Re-importing the roster keeps it.' : `Decided by completed sessions (${x.done}).` });
     } catch (err) {

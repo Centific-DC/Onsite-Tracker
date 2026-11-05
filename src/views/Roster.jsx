@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KeyRound, Search, Upload, UserPlus } from 'lucide-react';
+import { KeyRound, PencilLine, Search, Upload, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS, locationName } from '../lib/config.js';
@@ -7,7 +7,8 @@ import { buildSessions } from '../lib/hours.js';
 import { completedSessions, experience, weeklyLoad } from '../lib/rules.js';
 import { ExperienceSelect } from '../components/Experience.jsx';
 import { planRosterImport, planScheduleImport } from '../lib/importer.js';
-import { claimName } from '../lib/onboarding.js';
+import { claimName, strayNumber } from '../lib/onboarding.js';
+import { EditOperatorSheet } from '../components/EditOperator.jsx';
 import { dayKey, mondayOf, fmtHrsU } from '../lib/time.js';
 import { Avatar, Group, Row, Segmented, Select, Sheet, Tag } from '../components/ui.jsx';
 import * as auth from '../lib/auth/api.js';
@@ -25,13 +26,15 @@ function signInTag(u) {
 // Who can be scheduled: operator IDs, home lab, experience and this week's load.
 // Recruiting's Active Roster 2 and scheduling tracker come in through Import.
 export function Roster() {
-  const { data, openProfile } = useStore();
+  const { data, openProfile, upsertUsers } = useStore();
   const [q, setQ] = useState('');
   const [lab, setLab] = useState('all');
   const [level, setLevel] = useState('all');
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [settingUp, setSettingUp] = useState(null); // an operator without a sign-in
+  const [editing, setEditing] = useState(null);
+  const [fixing, setFixing] = useState(false);
   const signIns = useSignIns({ roster: true });
   const signInOf = useMemo(() => new Map((signIns.users || []).map((u) => [u.email, u])), [signIns.users]);
   const now = new Date();
@@ -43,6 +46,21 @@ export function Roster() {
     .filter((o) => `${o.name} ${o.email} ${o.id} ${o.cohort}`.toLowerCase().includes(q.toLowerCase()))
     .filter((o) => level === 'all' || experience(o, sessions).level === level)
     .sort((a, b) => a.name.localeCompare(b.name));
+  // Names with a number nobody else needs ("Brian Leong 2"), from the 2026-11-05 import.
+  const stray = (data.operators || []).map((o) => ({ o, plain: strayNumber(o, data.operators || []) })).filter((x) => x.plain);
+  const fixNames = async () => {
+    setFixing(true);
+    try {
+      const saved = await upsertUsers(stray.map(({ o, plain }) => ({ email: o.email, name: plain })));
+      const still = saved.filter((o) => /\s\d+$/.test(o.name)).length;
+      if (still) toast.warning(`${still} names still have a number`, { description: 'The server added it again. That needs a backend fix first.' });
+      else toast.success(`Fixed ${saved.length} names`);
+    } catch (e) {
+      toast.error("Names didn't save", { description: e.message });
+    } finally {
+      setFixing(false);
+    }
+  };
 
   return (
     <div className="view view-enter">
@@ -64,6 +82,11 @@ export function Roster() {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, email, ID or cohort" aria-label="Search roster" />
         </label>
       </div>
+      {stray.length > 0 && (
+        <Group footer={`${stray.slice(0, 3).map((x) => `${x.o.name} → ${x.plain}`).join(', ')}${stray.length > 3 ? `, and ${stray.length - 3} more` : ''}`}>
+          <Row title={`${stray.length} ${stray.length === 1 ? 'name has' : 'names have'} a number added by mistake`} subtitle="Nobody else on the roster has the plain name." trailing={<button type="button" className="btn btn-plain btn-sm" disabled={fixing} onClick={fixNames}>{fixing ? 'Fixing…' : 'Fix names'}</button>} className="row-wrap" />
+        </Group>
+      )}
       <Group footer={`Every pair needs at least one experienced operator. Pick Experienced or New for anyone, or leave it on Auto, where fewer than ${CFG.pairingMinSessions} completed sessions means new. Your choice stays when the roster is re-imported. The weekly limit is ${CFG.weeklyHourCap} hrs.`}>
         {ops.map((o) => {
           const done = completedSessions(o, sessions);
@@ -75,7 +98,7 @@ export function Roster() {
               leading={<Avatar name={o.name} tone={x.level === 'new' ? 'warn' : undefined} />}
               title={<><button type="button" className="name-link" onClick={() => openProfile(o.email)}>{o.name}</button> {x.level === 'new' && <Tag tone="warn">New</Tag>}{w?.over && <Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}{signIns.admin && signIns.users && (signInOf.has(o.email) ? signInTag(signInOf.get(o.email)) : o.active !== false && <button type="button" className="tag-btn" onClick={() => setSettingUp(o)}><KeyRound size={12} aria-hidden="true" /> Set up sign-in</button>)}</>}
               subtitle={`${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${done} sessions completed · ${w ? fmtHrsU(w.hours) : '0 hrs'} this week`}
-              trailing={<ExperienceSelect op={o} sessions={sessions} />}
+              trailing={<span className="row-actions"><ExperienceSelect op={o} sessions={sessions} /><button type="button" className="icon-btn" aria-label={`Edit ${o.name}`} onClick={() => setEditing(o)}><PencilLine size={16} aria-hidden="true" /></button></span>}
               className="row-wrap"
             />
           );
@@ -85,6 +108,7 @@ export function Roster() {
       <ImportSheet open={importing} onOpenChange={setImporting} />
       <AddOperatorSheet open={adding} onOpenChange={setAdding} signIns={signIns} />
       <SetUpSignInSheet op={settingUp} onClose={() => setSettingUp(null)} signIns={signIns} />
+      <EditOperatorSheet op={editing} onClose={() => setEditing(null)} />
     </div>
   );
 }
