@@ -1,14 +1,14 @@
 // Site settings, read at page load. Edit this file on GitHub (or in dist/ after a
 // build) to reconfigure the live site; no rebuild needed.
 window.ONSITE_CONFIG = {
-  // Power Automate HTTP trigger URLs for Lotus Read and Lotus Write (docs/lotus-flows.md).
-  // Leave either empty and the app runs in demo mode: sample data, saved only in this browser.
+  // Keep these three empty. The flow URLs are secrets: on Render the Lotus server fills
+  // these in with its own addresses (api/read, api/write, api/auth) and keeps the real
+  // URLs to itself. Empty here = demo mode: sample data, saved only in this browser.
   readUrl: '',
   writeUrl: '',
 
-  // Lotus Auth flow URL: usernames and passwords that a Lotus admin hands out
-  // (docs/lotus-flows.md). Empty = sign-ins kept in this browser only, with the demo
-  // accounts Lotus-admin and Lotus-operator.
+  // Lotus Auth (usernames and passwords that a Lotus admin hands out). Empty = sign-ins
+  // kept in this browser only, with the demo accounts Lotus-admin and Lotus-operator.
   authUrl: '',
 
   project: 'Google Lotus on-site',

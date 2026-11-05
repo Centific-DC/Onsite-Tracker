@@ -1,0 +1,24 @@
+# Render Blueprint for the Lotus on-site app. In Render: New > Blueprint, pick this repo.
+# The three flow URLs are secrets: Render asks for them when the Blueprint is created
+# (sync: false keeps them out of this file). Leave one empty and that part stays in demo.
+services:
+  - type: web
+    name: lotus-onsite
+    runtime: node
+    # The free plan sleeps after 15 idle minutes, so the first clock-in after a quiet
+    # spell waits about a minute. Change to starter in Render to keep it awake.
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci && npm run build
+    startCommand: node server/index.mjs
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: LOTUS_AUTH_URL
+        sync: false
+      - key: LOTUS_READ_URL
+        sync: false
+      - key: LOTUS_WRITE_URL
+        sync: false

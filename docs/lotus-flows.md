@@ -376,6 +376,6 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:
-- the three HTTP trigger URLs (Lotus Auth, Lotus Read, Lotus Write)
+- the three HTTP trigger URLs (Lotus Auth, Lotus Read, Lotus Write), in a private file only, never in chat or in the repo. David pastes them into the Lotus server's environment on Render, which forwards the app's calls, so the URLs never reach the browser. Calls arrive from Render's servers, not from people's browsers, with the same text/plain body.
 - the expression you used to parse the text/plain body
 - anything you couldn't build as specified

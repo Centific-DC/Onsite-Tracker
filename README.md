@@ -1,6 +1,6 @@
 # Lotus on-site time tracking
 
-Scheduling, attendance and approved hours for the Google Lotus on-site project (Redmond Lab and Mountain View Lab). React + Vite, built to static files for GitHub Pages. Each person signs in with a username and password that a Lotus admin gives them (the Project Atlas pattern); the data lives in SharePoint lists, read and written through Power Automate flows ([docs/lotus-flows.md](docs/lotus-flows.md)).
+Scheduling, attendance and approved hours for the Google Lotus on-site project (Redmond Lab and Mountain View Lab). React + Vite. The live app runs on Render, behind a small server that keeps the flow URLs secret; GitHub Pages hosts the demo. Each person signs in with a username and password that a Lotus admin gives them (the Project Atlas pattern); the data lives in SharePoint lists, read and written through Power Automate flows ([docs/lotus-flows.md](docs/lotus-flows.md)).
 
 Raw clock-ins are never payable hours. Each operator-day is reviewed and approved by a manager, and only approved hours reach the reporting export.
 
@@ -29,10 +29,14 @@ Once the flows are connected, staff can still switch to sample data in **Setting
 
 ## Go live
 
+The flow trigger URLs are secrets: anyone holding one can call the flow. They never go in this repo or in the page. The live app runs on Render, where [server/index.mjs](server/index.mjs) serves the built app and forwards its calls to the flows, so the browser only ever sees `api/auth`, `api/read` and `api/write`.
+
 1. Build the lists and flows with [docs/lotus-flows.md](docs/lotus-flows.md).
-2. Put the Auth, Read and Write trigger URLs into `public/config.js` (`authUrl`, `readUrl`, `writeUrl`).
-3. Open the site with `?setup=1` once to create the first admin. Admins then give people sign-ins from Roster (Add operator, Set up sign-in) or Settings → Users and sign-ins. Adjust `locations` (robots, shift templates and how many operators each needs, the days each lab runs, grace) as labs change.
-4. Push to `main`; GitHub Pages redeploys. `config.js` is copied as is, so settings can change without a rebuild.
+2. In Render: **New > Blueprint**, pick this repo ([render.yaml](render.yaml)), and paste the three URLs when asked: `LOTUS_AUTH_URL`, `LOTUS_READ_URL`, `LOTUS_WRITE_URL`. A flow left empty stays in demo mode. To change a URL later, edit it under the service's **Environment** and Render restarts it.
+3. Open the Render site with `?setup=1` once to create the first admin. Admins then give people sign-ins from Roster (Add operator, Set up sign-in) or Settings → Users and sign-ins. Adjust `locations` in `public/config.js` (robots, shift templates and how many operators each needs, the days each lab runs, grace) as labs change.
+4. Pushes to `main` redeploy Render (and the GitHub Pages demo, which never gets the URLs).
+
+Leave `authUrl`, `readUrl` and `writeUrl` empty in `public/config.js`; the Render server fills them in with its own addresses. Run it locally with `npm run build && npm start`.
 
 ## Design
 
