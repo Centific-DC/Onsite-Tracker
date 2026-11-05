@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
-import { CalendarDays, ChartColumn, Clock, ExternalLink, List, Monitor, Moon, RefreshCw, Settings, Smartphone, Sun, Tablet, Users } from 'lucide-react';
+import { CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
-import { CFG, DEMO } from './lib/config.js';
+import { CFG, DEMO, DEMO_CHOSEN, LIVE_READY, setDemo } from './lib/config.js';
+import { ROLES, hasRole } from './lib/auth.js';
+import { LOCAL_AUTH } from './lib/auth/api.js';
 import { go, useMedia, useRoute } from './lib/hooks.js';
 import { fmtTime } from './lib/time.js';
 import { Group, Row, Segmented, Sheet, StatusLine, Tag } from './components/ui.jsx';
@@ -12,27 +14,45 @@ import { Today } from './views/Today.jsx';
 import { Hours } from './views/Hours.jsx';
 import { Records } from './views/Records.jsx';
 import { Schedule } from './views/Schedule.jsx';
+import { Review } from './views/Review.jsx';
+import { Roster } from './views/Roster.jsx';
+import { Reports } from './views/Reports.jsx';
+import { Emails } from './views/Emails.jsx';
+import { Users as UsersView } from './views/Users.jsx';
+import { OperatorSheet, SearchSheet } from './components/Search.jsx';
 import centificMark from './assets/centific-mark.png';
+import { Tour } from './tour/Tour.jsx';
+import { useTour } from './tour/tourStore.js';
 
 // Centific mark, drawn as a mask so it takes the theme's logo color (dark grey / white).
 const Logo = ({ size = 28 }) => (
   <span className="logo" role="img" aria-label="Centific" style={{ '--logo-src': `url(${centificMark})`, width: size, height: size }} />
 );
 
-// Two separate experiences: the check-in page everyone uses (#/), and the admin
-// views for leads (#/admin/...). Nothing on the check-in page links to admin.
+// Two separate experiences: the operator page (#/), and the staff views
+// (#/admin/...), each shown only to the roles that use it. The flows enforce the
+// same roles on the data, so hiding a tab is never the only protection.
 const ADMIN_NAV = [
-  { id: 'admin/today', label: 'Today', icon: Users, view: Today },
-  { id: 'admin/schedule', label: 'Schedule', icon: CalendarDays, view: Schedule },
-  { id: 'admin/hours', label: 'Hours', icon: ChartColumn, view: Hours },
-  { id: 'admin/records', label: 'Records', icon: List, view: Records },
+  { id: 'admin/today', label: 'Today', icon: Users, view: Today, roles: ['scheduler', 'approver'] },
+  { id: 'admin/schedule', label: 'Schedule', icon: CalendarDays, view: Schedule, roles: ['scheduler', 'approver'] },
+  { id: 'admin/roster', label: 'Roster', icon: IdCard, view: Roster, roles: ['scheduler'] },
+  { id: 'admin/review', label: 'Review', icon: ClipboardCheck, view: Review, roles: ['approver'] },
+  { id: 'admin/hours', label: 'Hours', icon: ChartColumn, view: Hours, roles: ['scheduler', 'approver'] },
+  { id: 'admin/records', label: 'Records', icon: List, view: Records, roles: ['scheduler', 'approver'] },
+  { id: 'admin/reports', label: 'Reports', icon: FileSpreadsheet, view: Reports, roles: ['approver', 'reporting'] },
+  // Editing templates is desk work, so it stays off the phone tab bar.
+  { id: 'admin/emails', label: 'Emails', icon: Mail, view: Emails, roles: ['scheduler', 'approver'], phone: false },
+  // Who can sign in, and with which roles: opened from Settings, not the sidebar.
+  // The Lotus Auth flow checks the admin role too.
+  { id: 'admin/users', label: 'Users', icon: KeyRound, view: UsersView, roles: ['admin'], phone: false, hidden: true },
 ];
-const CHECKIN = { id: 'checkin', label: 'Check in', icon: Clock, view: CheckIn };
+const CHECKIN = { id: 'checkin', label: 'Clock in', icon: Clock, view: CheckIn };
+const NO_ACCESS = { id: 'admin/none', label: 'Admin', view: NoAccess };
 const LEGACY = { today: 'admin/today', schedule: 'admin/schedule', hours: 'admin/hours', records: 'admin/records', admin: 'admin/today' };
 
 export default function App() {
   const route = useRoute();
-  const { sync, theme, data, syncing, error, loadedAt } = useStore();
+  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching } = useStore();
   const [settings, setSettings] = useState(false);
   const systemDark = useMedia('(prefers-color-scheme: dark)');
   const phone = useMedia('(max-width: 767px)');
@@ -42,17 +62,26 @@ export default function App() {
     const el = document.documentElement;
     if (theme === 'system') el.removeAttribute('data-theme');
     else el.setAttribute('data-theme', theme);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#131314' : '#f3f4f6');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#222523' : '#f1f3f1');
   }, [theme, resolved]);
 
+  useEffect(() => { init(); }, [init]);
+  // A sign-in lasts 12 hours, then it's back to the sign-in screen without a reload.
+  useEffect(() => {
+    if (!session?.expiresAt) return undefined;
+    const ms = Date.parse(session.expiresAt) - Date.now();
+    const t = setTimeout(() => { signOut(); toast('Signed out', { description: 'Your sign-in ran out after 12 hours. Sign in again to carry on.' }); }, Math.max(0, Math.min(ms, 2 ** 31 - 1)));
+    return () => clearTimeout(t);
+  }, [session?.expiresAt, signOut]);
   // Load now, then refresh every minute while the page is visible.
   useEffect(() => {
+    if (authStage !== 'signedIn' && authStage !== 'pick') return undefined;
     sync();
     const id = setInterval(() => { if (!document.hidden) sync(); }, 60000);
     const onVis = () => { if (!document.hidden) sync(); };
     document.addEventListener('visibilitychange', onVis);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
-  }, [sync]);
+  }, [sync, authStage, session?.email]);
 
   // Older links (#/today, #/hours, #/records) and a bare #/admin land on the admin views.
   useEffect(() => {
@@ -60,7 +89,8 @@ export default function App() {
     if (to) location.replace(`${location.pathname}${location.search}#/${to}${location.hash.includes('?') ? location.hash.slice(location.hash.indexOf('?')) : ''}`);
   }, [route]);
   const isAdmin = route.startsWith('admin') || route in LEGACY;
-  const item = isAdmin ? ADMIN_NAV.find((n) => n.id === (LEGACY[route] || route)) || ADMIN_NAV[0] : CHECKIN;
+  const nav = ADMIN_NAV.filter((n) => hasRole(session, ...n.roles));
+  const item = isAdmin ? nav.find((n) => n.id === (LEGACY[route] || route)) || nav[0] || NO_ACCESS : CHECKIN;
 
   // The page's large title folds into the phone top bar once it scrolls under it.
   const [collapsed, setCollapsed] = useState(false);
@@ -76,6 +106,45 @@ export default function App() {
     return () => { cancelAnimationFrame(id); io?.disconnect(); };
   }, [item.id, data]);
   const View = item.view;
+
+  // The tour: the welcome tour on first sign-in, then each page's own tour on its
+  // first visit. Seen tours are remembered per username in this browser.
+  const tour = useTour();
+  const section = isAdmin ? item.id : 'checkin';
+  const signedIn = authStage === 'signedIn';
+  useEffect(() => { if (signedIn) tour.setWho(session.username || session.email, session.roles || []); }, [signedIn, session?.username, session?.email, (session?.roles || []).join()]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { useTour.getState().stop(); }, [section, authStage]);
+  useEffect(() => {
+    if (!signedIn || !data || tour.run || tour.who !== (session.username || session.email)) return undefined;
+    const first = isAdmin ? (!tour.seen.has('welcome') && tour.has('welcome') ? 'welcome' : null) : null;
+    const page = !tour.seen.has(section) && tour.has(section) && (isAdmin || hasRole(session, 'operator')) ? section : null;
+    if (!first && !page) return undefined;
+    // Let the page settle in, and wait while a sheet or menu is open.
+    const t = setInterval(() => {
+      if (document.querySelector('[role="dialog"], [role="listbox"]')) return;
+      clearInterval(t);
+      if (first) tour.start(first, page);
+      else tour.start(page);
+    }, 700);
+    return () => clearInterval(t);
+  }, [signedIn, data, section, tour.run, tour.seen, tour.who]); // eslint-disable-line react-hooks/exhaustive-deps
+  const replayTour = () => (tour.has(section) ? tour.start(section) : tour.start(isAdmin ? 'welcome' : 'checkin'));
+  const fullTour = () => (isAdmin ? tour.start('welcome', section) : tour.start('checkin'));
+  // Search is for the people who schedule and review; ⌘K or Ctrl+K opens it anywhere, and so does / outside a field.
+  const canSearch = isAdmin && hasRole(session, 'scheduler', 'approver');
+  useEffect(() => {
+    if (!canSearch) return undefined;
+    const onKey = (e) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '') || document.activeElement?.isContentEditable;
+      if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey)) {
+        e.preventDefault();
+        setSearching(true);
+      }
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [canSearch, setSearching]);
+  const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   const manualSync = async () => {
     try { await sync({ manual: true }); } catch (e) { toast.error("Couldn't refresh", { description: e.message }); }
   };
@@ -87,18 +156,23 @@ export default function App() {
 
   const main = (
     <main className="main" key={item.id}>
-      {data ? <View /> : <div className="view"><div className="skeleton" /><div className="skeleton tall" /></div>}
+      {data || (!isAdmin && authStage !== 'signedIn') ? <View /> : <div className="view"><div className="skeleton" /><div className="skeleton tall" /></div>}
     </main>
   );
   const actions = (compact) => (
     <>
+      {compact && canSearch && <button type="button" className="icon-btn" aria-label="Search" data-tour="search" onClick={() => setSearching(true)}><Search size={18} /></button>}
+      {signedIn && <button type="button" className="icon-btn" aria-label="Tour of this page" title="Tour of this page" data-tour="help" onClick={replayTour}><CircleHelp size={18} /></button>}
       <SyncButton syncing={syncing} onClick={manualSync} status={status} error={error} compact={compact} />
-      <button type="button" className="icon-btn" aria-label="Settings" onClick={() => setSettings(true)}><Settings size={18} /></button>
+      <button type="button" className="icon-btn" aria-label="Settings" data-tour="settings" onClick={() => setSettings(true)}><Settings size={18} /></button>
     </>
   );
   const toaster = (
     <>
-      <SettingsSheet open={settings} onOpenChange={setSettings} admin={isAdmin} />
+      <SettingsSheet open={settings} onOpenChange={setSettings} admin={isAdmin} onTour={signedIn ? fullTour : null} />
+      <Tour />
+      <DemoBanner />
+      {canSearch && data && <><SearchSheet /><OperatorSheet /></>}
       {/* On phones the check-in actions sit at the bottom, so toasts come in from the top. */}
       <Toaster position={phone ? 'top-center' : 'bottom-center'} duration={6000} theme={resolved} offset={24} mobileOffset={{ top: 64 }} toastOptions={{ className: 'toast' }} />
     </>
@@ -110,12 +184,24 @@ export default function App() {
         <header className="topbar topbar-checkin">
           <div className="top-left">
             <Logo size={26} />
-            <span className="top-brand">On-site Check-in</span>
+            <span className="top-brand">Lotus on-site</span>
             {DEMO && <Tag tone="warn">Demo</Tag>}
           </div>
           <div className="top-actions">{actions(true)}</div>
         </header>
         {main}
+        {toaster}
+      </div>
+    );
+  }
+
+  if (authStage !== 'signedIn') {
+    return (
+      <div className="app app-checkin">
+        <header className="topbar topbar-checkin">
+          <div className="top-left"><Logo size={26} /><span className="top-brand">Lotus admin</span>{DEMO && <Tag tone="warn">Demo</Tag>}</div>
+        </header>
+        <main className="main"><CheckIn /></main>
         {toaster}
       </div>
     );
@@ -127,21 +213,30 @@ export default function App() {
         <div className="side-brand">
           <Logo size={30} />
           <div className="side-titles">
-            <span className="side-name">On-site Admin</span>
+            <span className="side-name">Lotus admin</span>
             <span className="side-project">{CFG.project}</span>
           </div>
         </div>
+        {canSearch && (
+          <button type="button" className="side-search" data-tour="search" onClick={() => setSearching(true)}>
+            <Search size={16} aria-hidden="true" /> Search <kbd>{mac ? '⌘K' : 'Ctrl K'}</kbd>
+          </button>
+        )}
         <nav className="side-nav" aria-label="Admin">
-          {ADMIN_NAV.map((n) => (
-            <a key={n.id} href={`#/${n.id}`} className={clsx('side-link', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
+          {nav.filter((n) => !n.hidden).map((n) => (
+            <a key={n.id} href={`#/${n.id}`} data-tour={`nav-${n.id}`} className={clsx('side-link', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
               <n.icon size={18} aria-hidden="true" />
               {n.label}
             </a>
           ))}
         </nav>
         <a className="side-out" href="#/" target="_blank" rel="noopener">
-          <ExternalLink size={15} aria-hidden="true" /> Open the check-in page
+          <ExternalLink size={15} aria-hidden="true" /> Open the operator page
         </a>
+        <div className="side-who">
+          <span className="row-title">{session.name}</span>
+          <span className="row-sub">{(session.roles || []).map((r) => ROLES[r]).join(' · ')}</span>
+        </div>
         <div className="side-foot">{actions(false)}</div>
       </aside>
 
@@ -156,9 +251,9 @@ export default function App() {
 
       {main}
 
-      <nav className="tabbar" aria-label="Admin">
-        {ADMIN_NAV.map((n) => (
-          <a key={n.id} href={`#/${n.id}`} className={clsx('tab', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
+      <nav className="tabbar" aria-label="Admin" style={{ gridTemplateColumns: `repeat(${nav.filter((n) => n.phone !== false && !n.hidden).length || 1}, 1fr)` }}>
+        {nav.filter((n) => n.phone !== false && !n.hidden).map((n) => (
+          <a key={n.id} href={`#/${n.id}`} data-tour={`nav-${n.id}`} className={clsx('tab', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
             <n.icon size={22} aria-hidden="true" />
             <span>{n.label}</span>
           </a>
@@ -189,8 +284,22 @@ function SyncButton({ syncing, onClick, status, error, compact }) {
   );
 }
 
-function SettingsSheet({ open, onOpenChange, admin }) {
-  const { theme, setTheme, device, setDevice, me, forgetMe, resetDemo } = useStore();
+function NoAccess() {
+  const { session, signOut } = useStore();
+  return (
+    <div className="view view-narrow view-enter center-col">
+      <h1 className="large-title">No admin access</h1>
+      <p className="lede">{session?.name} is signed in as an operator. Admin views are for schedulers, approvers and reporting.</p>
+      <div className="dock">
+        <a className="btn btn-primary btn-block" href="#/">Open the operator page</a>
+        <button type="button" className="link-quiet" onClick={signOut}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsSheet({ open, onOpenChange, admin, onTour }) {
+  const { theme, setTheme, device, setDevice, session, signOut, resetDemo } = useStore();
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title="Settings">
       <Group title="Appearance">
@@ -208,27 +317,59 @@ function SettingsSheet({ open, onOpenChange, admin }) {
         </div>
       </Group>
       {!admin && (
-        <Group title="This device" footer={device === 'shared' ? 'Everyone picks their name each time. Nothing about a person is remembered here.' : 'Remembers one person, so checking in is one tap.'}>
+        <Group title="This device" footer={device === 'shared' ? 'The lab laptop signs each operator out after they clock in or out, so the next one signs in as themselves.' : 'Your own phone stays signed in.'}>
           <div className="pad">
             <Segmented
               label="This device"
               value={device || 'personal'}
-              onChange={(v) => { setDevice(v); if (v === 'shared') forgetMe(); }}
+              onChange={setDevice}
               options={[
                 { value: 'personal', label: 'My phone', icon: <Smartphone size={15} /> },
-                { value: 'shared', label: 'Shared tablet', icon: <Tablet size={15} /> },
+                { value: 'shared', label: 'Lab laptop', icon: <Laptop size={15} /> },
               ]}
             />
           </div>
-          {device !== 'shared' && me && (
-            <Row title={me.name} subtitle={me.email} trailing={<button type="button" className="link" onClick={forgetMe}>Forget</button>} />
-          )}
         </Group>
       )}
-      <Group title="Data" footer={DEMO ? 'Sample data saved only in this browser. Add the Power Automate flow URLs to config.js to go live.' : 'Reads and writes the Excel workbook on SharePoint through Power Automate.'}>
-        <Row title="Source" trailing={DEMO ? 'Demo' : 'Live · Excel'} />
+      {onTour && (
+        <Group title="Help">
+          <Row leading={<CircleHelp size={18} aria-hidden="true" />} title="Take the tour" subtitle={admin ? 'A short walk through Lotus admin' : 'A short walk through clocking in'} trailing={<ChevronRight size={18} aria-hidden="true" />} onClick={() => { onOpenChange(false); setTimeout(onTour, 250); }} />
+        </Group>
+      )}
+      {hasRole(session, 'admin') && (
+        <Group title="Admin" footer="Add people, set their roles, and reset passwords.">
+          <Row leading={<KeyRound size={18} aria-hidden="true" />} title="Users and sign-ins" trailing={<ChevronRight size={18} aria-hidden="true" />} onClick={() => { onOpenChange(false); go('admin/users'); }} />
+        </Group>
+      )}
+      {session && (
+        <Group title="Signed in">
+          <Row title={session.name} subtitle={`${session.username || session.email} · ${(session.roles || []).map((r) => ROLES[r]).join(', ')}${LOCAL_AUTH ? ' · demo' : ''}`} trailing={<button type="button" className="link" onClick={() => { onOpenChange(false); signOut(); }}><LogOut size={14} /> Sign out</button>} />
+        </Group>
+      )}
+      <Group title="Data" footer={!LIVE_READY ? 'Sample data saved only in this browser. Add the Power Automate flow URLs to go live.' : DEMO ? 'Sample operators and shifts, kept in this browser. Nothing is saved to SharePoint or emailed. Sign-in stays real.' : 'Reads and writes the Lotus lists on SharePoint through Power Automate.'}>
+        <Row title="Source" trailing={DEMO ? 'Demo' : 'Live · SharePoint'} />
+        {LIVE_READY && admin && (
+          <button type="button" role="switch" aria-checked={DEMO} className="row row-btn" onClick={() => setDemo(!DEMO)}>
+            <span className="row-main"><span className="row-title">Demo data</span><span className="row-sub">{DEMO ? 'On in this browser. Switch off for the real data.' : 'Try things out with sample data in this browser'}</span></span>
+            <span className="row-trail"><span className={clsx('switch', DEMO && 'is-on')} aria-hidden="true"><span /></span></span>
+          </button>
+        )}
+        <Row title="Sign-in" trailing={LOCAL_AUTH ? 'Demo · this browser' : 'Lotus username'} />
         {DEMO && <Row title="Reset sample data" onClick={() => { resetDemo(); toast('Sample data reset'); }} className="row-action" />}
       </Group>
     </Sheet>
+  );
+}
+
+// On a live site with demo data switched on, always on screen, so nobody mistakes
+// sample operators for real ones. (Without flow URLs the Demo tag says it instead.)
+function DemoBanner() {
+  if (!DEMO_CHOSEN) return null;
+  return (
+    <div className="demo-banner" role="status">
+      <span className="demo-banner-dot" aria-hidden="true" />
+      <span><strong>Demo data</strong><span className="demo-banner-more"> · sample operators, nothing is saved or emailed</span></span>
+      <button type="button" className="link" onClick={() => setDemo(false)}>Show real data</button>
+    </div>
   );
 }

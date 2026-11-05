@@ -1,3 +1,5 @@
+> **Superseded** by [lotus-flows.md](lotus-flows.md) (SharePoint lists, Microsoft sign-in, roles and approvals). Kept for reference; don't build these.
+
 # On-site Check-in · Power Automate flows
 
 Brief for building the two flows the On-site Check-in page needs. The page is static (GitHub Pages) and talks only to these two HTTP-triggered flows. They read and write one Excel workbook on SharePoint.

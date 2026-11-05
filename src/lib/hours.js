@@ -12,15 +12,16 @@ export function buildSessions(punches, now = new Date()) {
   const sessions = [];
   const issues = [];
   const todayK = dayKey(now);
+  const noout = (p) => ({ kind: 'noout', at: new Date(p.ts), name: p.name, email: p.email, station: p.station, location: p.location || '', shiftId: p.shiftId || '' });
   const make = (inP, end, extra) => {
     const start = new Date(inP.ts);
-    return { name: inP.name, email: inP.email, station: inP.station, start, end, day: dayKey(start), hours: hoursBetween(start, end), ...extra };
+    return { name: inP.name, email: inP.email, station: inP.station, location: inP.location || '', shiftId: inP.shiftId || '', grace: inP.grace || 0, source: inP.source || '', start, end, day: dayKey(start), hours: hoursBetween(start, end), ...extra };
   };
   for (const list of byEmail.values()) {
     let cur = null;
     for (const p of list) {
       if (p.type === 'in') {
-        if (cur) issues.push({ kind: 'noout', at: new Date(cur.ts), name: cur.name, email: cur.email, station: cur.station });
+        if (cur) issues.push(noout(cur));
         cur = p;
       } else if (cur) {
         const s = make(cur, new Date(p.ts), { early: p.flag === 'early', note: p.note, live: false });
@@ -34,7 +35,7 @@ export function buildSessions(punches, now = new Date()) {
     if (cur) {
       // A check-in stamped by the server a moment ahead of this device's clock is still zero-length, never negative.
       if (dayKey(new Date(cur.ts)) === todayK) sessions.push(make(cur, new Date(Math.max(+now, Date.parse(cur.ts))), { live: true }));
-      else issues.push({ kind: 'noout', at: new Date(cur.ts), name: cur.name, email: cur.email, station: cur.station });
+      else issues.push(noout(cur));
     }
   }
   return { sessions, issues: issues.sort((a, b) => b.at - a.at) };

@@ -1,12 +1,15 @@
 {
-  "name": "onsite-tracker",
+  "name": "lotus-onsite",
   "private": true,
+  "engines": { "node": ">=20" },
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server/index.mjs",
+    "test": "TZ=America/Los_Angeles vitest run"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -19,6 +22,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",
-    "vite": "^8.3.5"
+    "vite": "^8.3.5",
+    "vitest": "^3.2.4"
   }
 }

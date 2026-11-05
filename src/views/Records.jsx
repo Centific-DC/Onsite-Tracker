@@ -6,18 +6,9 @@ import { dayKey, fmtLongDay, fmtTime, pad, parseDay, fmtHrsU } from '../lib/time
 import { Group, Row, Segmented, Tag } from '../components/ui.jsx';
 import { ISSUE, issueDetail } from './Today.jsx';
 import { STATUS, dayPlan, unscheduledIns } from '../lib/schedule.js';
+import { download } from '../lib/csv.js';
+import { locOf, locationName } from '../lib/config.js';
 
-function download(name, rows) {
-  const csv = rows.map((r) => r.map((c) => {
-    const s = String(c ?? '');
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  }).join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
 const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 export function Records() {
@@ -28,6 +19,8 @@ export function Records() {
   const offSchedule = useMemo(() => unscheduledIns(data.schedule, data.punches), [data.schedule, data.punches]);
   const offIds = useMemo(() => new Set(offSchedule.map((p) => p.id)), [offSchedule]);
   const flags = useMemo(() => issues.concat(offSchedule.map((p) => ({ kind: 'unscheduled', name: p.name, email: p.email, station: p.station, at: new Date(p.ts) }))), [issues, offSchedule]);
+  const ids = useMemo(() => new Map((data.operators || []).map((o) => [o.email, o.id])), [data.operators]);
+  const opId = (email) => ids.get(email) || '';
   const match = (x) => `${x.name} ${x.email} ${x.station}`.toLowerCase().includes(q.toLowerCase());
 
   const groups = useMemo(() => {
@@ -45,32 +38,32 @@ export function Records() {
   }, [data.punches, flags, mode, q]);
 
   const exportLog = () => {
-    const rows = [['Date', 'Time', 'Name', 'Email', 'In/Out', 'Robot / station', 'Note', 'Flag', 'Timestamp (UTC)']];
+    const rows = [['Date', 'Time', 'Operator ID', 'Name', 'Email', 'In/Out', 'Location', 'Robot', 'Shift ID', 'Grace minutes', 'Device', 'Note', 'Flag', 'Timestamp (UTC)']];
     for (const p of [...data.punches].sort((a, b) => a.ts.localeCompare(b.ts))) {
       const t = new Date(p.ts);
-      rows.push([dayKey(t), hhmm(t), p.name, p.email, p.type.toUpperCase(), p.station, p.note, p.flag ? 'Left early' : offIds.has(p.id) ? 'Not on the schedule' : '', p.ts]);
+      rows.push([dayKey(t), hhmm(t), opId(p.email), p.name, p.email, p.type.toUpperCase(), locationName(locOf(p)), p.station, p.shiftId, p.grace || '', p.source, p.note, p.flag ? 'Left early' : offIds.has(p.id) ? 'Not on the schedule' : '', p.ts]);
     }
-    download(`onsite-checkins-${dayKey(new Date())}.csv`, rows);
+    download(`lotus-raw-checkins-${dayKey(new Date())}.csv`, rows);
   };
   const exportShifts = () => {
-    const rows = [['Date', 'Name', 'Email', 'Robot / station', 'In', 'Out', 'Operator hours', 'Left early', 'Note']];
+    const rows = [['Date', 'Operator ID', 'Name', 'Email', 'Location', 'Robot', 'In', 'Out', 'Recorded hours', 'Left early', 'Note']];
     for (const s of [...sessions].filter((x) => !x.live).sort((a, b) => a.start - b.start)) {
-      rows.push([s.day, s.name, s.email, s.station, hhmm(s.start), hhmm(s.end), s.hours.toFixed(2), s.early ? 'Yes' : '', s.note || '']);
+      rows.push([s.day, opId(s.email), s.name, s.email, locationName(locOf(s)), s.station, hhmm(s.start), hhmm(s.end), s.hours.toFixed(2), s.early ? 'Yes' : '', s.note || '']);
     }
-    download(`onsite-shifts-${dayKey(new Date())}.csv`, rows);
+    download(`lotus-raw-sessions-${dayKey(new Date())}.csv`, rows);
   };
   const exportPlan = () => {
-    const rows = [['Date', 'Name', 'Email', 'Robot / station', 'Scheduled start', 'Scheduled end', 'Status', 'Actual in', 'Actual out', 'Operator hours', 'Note']];
+    const rows = [['Date', 'Operator ID', 'Name', 'Email', 'Location', 'Robot', 'Scheduled start', 'Scheduled end', 'Status', 'Actual in', 'Actual out', 'Recorded hours', 'Note']];
     const dates = [...new Set((data.schedule || []).map((r) => r.date))].sort();
     for (const k of dates) {
       for (const r of dayPlan(data.schedule, sessions, issues, parseDay(k)).rows) {
         const worked = r.sessions.reduce((a, x) => a + x.hours, 0);
         const first = r.sessions[0];
         const last = r.sessions[r.sessions.length - 1];
-        rows.push([r.date, r.name, r.email, r.station, r.start, r.end, STATUS[r.status].label, first ? hhmm(first.start) : '', last && !last.live ? hhmm(last.end) : '', worked ? worked.toFixed(2) : '', r.note]);
+        rows.push([r.date, opId(r.email), r.name, r.email, locationName(locOf(r)), r.station, r.start, r.end, STATUS[r.status].label, first ? hhmm(first.start) : '', last && !last.live ? hhmm(last.end) : '', worked ? worked.toFixed(2) : '', r.note]);
       }
     }
-    download(`onsite-schedule-vs-actual-${dayKey(new Date())}.csv`, rows);
+    download(`lotus-raw-schedule-vs-actual-${dayKey(new Date())}.csv`, rows);
   };
 
   return (
@@ -78,7 +71,7 @@ export function Records() {
       <header className="page-head">
         <div>
           <h1 className="large-title">Records</h1>
-          <p className="lede">Every check-in, with server time. Export to compare with the client's badge records.</p>
+          <p className="lede">Raw clock-ins with server time, for badge reconciliation. These aren't approved hours: those are on Reports.</p>
         </div>
       </header>
 
@@ -95,9 +88,9 @@ export function Records() {
         </label>
       </div>
 
-      <Group title="Export" className="export-group">
-        <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Check-in log" subtitle="One row per tap, same columns as the Excel sheet" trailing="CSV" onClick={exportLog} />
-        <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Shifts" subtitle="In, out and hours per operator per day, for badge reconciliation" trailing="CSV" onClick={exportShifts} />
+      <Group tour="records-export" title="Raw exports" className="export-group" footer="Unapproved, straight from the clock-ins. For approved hours use Reports.">
+        <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Raw check-in log" subtitle="One row per tap, with location, shift and grace" trailing="CSV" onClick={exportLog} />
+        <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Raw sessions" subtitle="In, out and recorded hours per operator, for badge reconciliation" trailing="CSV" onClick={exportShifts} />
         <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Schedule vs actual" subtitle="Every scheduled shift with its status (worked, no-show) and actual in/out" trailing="CSV" onClick={exportPlan} />
       </Group>
 
@@ -111,7 +104,7 @@ export function Records() {
               key={it.p.id}
               leading={<span className={`row-icon icon-${it.p.type}`}>{it.p.type === 'in' ? <LogIn size={16} /> : <LogOut size={16} />}</span>}
               title={<>{it.p.name}{it.p.flag && <Tag tone="bad">Left early</Tag>}{offIds.has(it.p.id) && <Tag tone="warn">Not on the schedule</Tag>}</>}
-              subtitle={`${it.p.type === 'in' ? 'In' : 'Out'} · ${it.p.station}${it.p.note ? ` · “${it.p.note}”` : ''}`}
+              subtitle={`${it.p.type === 'in' ? 'In' : 'Out'} · ${locationName(locOf(it.p))} · ${it.p.station}${it.p.note ? ` · “${it.p.note}”` : ''}`}
               trailing={<span className="mono-num">{fmtTime(it.at)}</span>}
             />
           ) : (

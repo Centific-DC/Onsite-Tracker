@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef, useState, useEffect } from 'react';
 import clsx from 'clsx';
 import { Dialog } from '@base-ui/react/dialog';
-import { X } from 'lucide-react';
+import { Select as BSelect } from '@base-ui/react/select';
+import { Check, ChevronsUpDown, X } from 'lucide-react';
 import { useCountUp } from '../lib/hooks.js';
 
 // Headline number that counts from its last value. Screen readers get the final value.
@@ -41,7 +42,7 @@ export function Segmented({ label, options, value, onChange, size }) {
         />
       )}
       {options.map((o) => (
-        <button key={o.value} type="button" aria-pressed={o.value === value} onClick={() => onChange(o.value)}>
+        <button key={o.value} type="button" aria-pressed={o.value === value} aria-label={o.aria} title={o.aria} onClick={() => onChange(o.value)}>
           {o.icon}
           {o.label}
         </button>
@@ -51,12 +52,12 @@ export function Segmented({ label, options, value, onChange, size }) {
 }
 
 // Bottom sheet on phones, centred panel on larger screens.
-export function Sheet({ open, onOpenChange, title, description, children, footer }) {
+export function Sheet({ open, onOpenChange, title, description, children, footer, className, initialFocus }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Backdrop className="scrim" />
-        <Dialog.Popup className="sheet">
+        <Dialog.Popup className={clsx('sheet', className)} initialFocus={initialFocus}>
           <div className="sheet-grab" aria-hidden="true" />
           <div className="sheet-head">
             <Dialog.Title className="sheet-title">{title}</Dialog.Title>
@@ -72,9 +73,9 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
 }
 
 // Inset grouped list, iOS-style.
-export function Group({ title, action, children, footer, className }) {
+export function Group({ title, action, children, footer, className, tour }) {
   return (
-    <section className={clsx('group', className)}>
+    <section className={clsx('group', className)} data-tour={tour}>
       {(title || action) && (
         <div className="group-head">
           {title && <h2 className="group-title">{title}</h2>}
@@ -117,4 +118,35 @@ export function StatusLine({ text, className, title }) {
   const prev = useRef(text);
   useEffect(() => { if (prev.current !== text) { prev.current = text; setK((n) => n + 1); } }, [text]);
   return <span key={k} className={clsx('status-line', className)} title={title}>{text}</span>;
+}
+
+// The app's own dropdown (in place of the browser's): a soft raised list that
+// opens under the field. `options` are { value, label, disabled }; onChange
+// gets the value. An empty-string value is allowed (e.g. "Auto").
+const toB = (v) => (v === '' || v == null ? null : v);
+export function Select({ value, onChange, options, placeholder = 'Choose…', disabled, className, label, align = 'end' }) {
+  const items = options.map((o) => ({ value: toB(o.value), label: o.label }));
+  return (
+    <BSelect.Root items={items} value={toB(value)} onValueChange={(v) => onChange(v ?? '')} disabled={disabled} modal={false}>
+      <BSelect.Trigger className={clsx('sel', className)} aria-label={label} onClick={(e) => e.stopPropagation()}>
+        <BSelect.Value className="sel-value" placeholder={placeholder} />
+        <BSelect.Icon className="sel-icon"><ChevronsUpDown size={14} aria-hidden="true" /></BSelect.Icon>
+      </BSelect.Trigger>
+      <BSelect.Portal>
+        <BSelect.Positioner className="sel-pos" sideOffset={6} align={align} alignItemWithTrigger={false}>
+          <BSelect.Popup className="sel-pop">
+            <BSelect.List className="sel-list">
+              {options.map((o) => (
+                <BSelect.Item key={String(o.value)} value={toB(o.value)} disabled={o.disabled} className="sel-item" onClick={(e) => e.stopPropagation()}>
+                  <BSelect.ItemIndicator className="sel-check"><Check size={14} strokeWidth={2.5} aria-hidden="true" /></BSelect.ItemIndicator>
+                  <BSelect.ItemText className="sel-text">{o.label}</BSelect.ItemText>
+                  {o.hint && <span className="sel-hint">{o.hint}</span>}
+                </BSelect.Item>
+              ))}
+            </BSelect.List>
+          </BSelect.Popup>
+        </BSelect.Positioner>
+      </BSelect.Portal>
+    </BSelect.Root>
+  );
 }

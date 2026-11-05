@@ -1,5 +1,7 @@
-import { CFG, DEMO, READ_URL, WRITE_URL } from './config.js';
+import { CFG, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationOfRobot } from './config.js';
+import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
+import { clockInCheck } from './attendance.js';
 
 export const storage = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -11,16 +13,17 @@ async function paPost(url, body) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 30000);
   try {
+    // Every call carries the sign-in token; the flow looks up who it belongs to.
+    // text/plain: the HTTP trigger answers no CORS preflight, which application/json would trigger.
     const r = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ ...body, token: getToken() }),
       signal: ctrl.signal,
       cache: 'no-store',
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const out = await r.json();
-    if (out && out.error) throw new Error(out.error);
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok || out?.error) { const e = new Error(out?.error || `HTTP ${r.status}`); e.code = out?.code; e.status = r.status; throw e; }
     return out;
   } catch (e) {
     throw e.name === 'AbortError' ? new Error('timed out') : e;
@@ -29,17 +32,23 @@ async function paPost(url, body) {
   }
 }
 
-// Excel rows can come back with odd casing, numbers as text, or dates as serials.
+// Excel and SharePoint rows can come back with odd casing, numbers as text, or dates as serials.
 export function normPunch(p) {
   let ts = p.ts ?? p.Timestamp;
   if (typeof ts === 'number' || /^\d+(\.\d+)?$/.test(String(ts))) ts = new Date(Math.round((Number(ts) - 25569) * 864e5)).toISOString();
+  const station = String(p.station ?? p.Station ?? p.Robot ?? '');
   return {
     id: String(p.id ?? p.ID ?? ''),
     ts: new Date(ts).toISOString(),
+    operatorId: String(p.operatorId ?? p.OperatorID ?? ''),
     name: String(p.name ?? p.Name ?? '').trim(),
     email: String(p.email ?? p.Email ?? '').trim().toLowerCase(),
     type: /out/i.test(String(p.type ?? p.InOut ?? '')) ? 'out' : 'in',
-    station: String(p.station ?? p.Station ?? ''),
+    station,
+    location: String(p.location ?? p.Location ?? '') || locationOfRobot(station)?.id || '',
+    shiftId: String(p.shiftId ?? p.ShiftID ?? ''),
+    grace: Number(p.grace ?? p.GraceMinutes) || 0,
+    source: String(p.source ?? p.Device ?? ''),
     note: String(p.note ?? p.Note ?? ''),
     flag: String(p.flag ?? p.Flag ?? '').trim() ? 'early' : '',
   };
@@ -55,28 +64,77 @@ const hhmm = (v) => {
 export function normShift(r) {
   let date = r.date ?? r.Date ?? '';
   if (typeof date === 'number' || /^\d{5}$/.test(String(date))) date = new Date(Math.round((Number(date) - 25569) * 864e5)).toISOString();
+  const station = String(r.station ?? r.Station ?? r.Robot ?? '');
   return {
     id: String(r.id ?? r.ID ?? ''),
     date: String(date).slice(0, 10),
+    operatorId: String(r.operatorId ?? r.OperatorID ?? ''),
     name: String(r.name ?? r.Name ?? '').trim(),
     email: String(r.email ?? r.Email ?? '').trim().toLowerCase(),
-    station: String(r.station ?? r.Station ?? ''),
+    station,
+    location: String(r.location ?? r.Location ?? '') || locationOfRobot(station)?.id || '',
+    template: String(r.template ?? r.Template ?? ''),
     start: hhmm(r.start ?? r.Start),
     end: hhmm(r.end ?? r.End),
     note: String(r.note ?? r.Note ?? ''),
   };
 }
 
+export const normOperator = (o) => ({
+  id: String(o.id ?? o.OperatorID ?? ''),
+  email: String(o.email ?? o.Title ?? '').trim().toLowerCase(),
+  name: String(o.name ?? o.Name ?? '').trim(),
+  location: String(o.location ?? o.HomeLocation ?? ''),
+  roles: Array.isArray(o.roles) ? o.roles : String(o.roles ?? o.Roles ?? 'operator').split(';').map((r) => r.trim()).filter(Boolean),
+  cohort: String(o.cohort ?? o.Cohort ?? ''),
+  completedSessions: Number(o.completedSessions ?? o.CompletedSessions) || 0,
+  completedAsOf: String(o.completedAsOf ?? o.CompletedAsOf ?? ''),
+  training: String(o.training ?? o.TrainingStatus ?? ''),
+  // Set by an admin: 'experienced' or 'new'. Empty means decided by completed sessions.
+  experience: ['experienced', 'new'].includes(String(o.experience ?? o.Experience ?? '').toLowerCase()) ? String(o.experience ?? o.Experience).toLowerCase() : '',
+  active: o.active ?? o.Active ?? true,
+});
+
 const normAll = (d) => ({
+  me: d.me ? normOperator(d.me) : null,
+  operators: (d.operators || []).map(normOperator).filter((o) => o.email),
   punches: (d.punches || []).filter((p) => p.ts ?? p.Timestamp).map(normPunch),
   client: (d.client || []).map((c) => ({ week: String(c.week ?? c.Week ?? '').slice(0, 10), hours: Number(c.hours ?? c.SuccessfulHours) || 0 })),
   schedule: (d.schedule || []).map(normShift).filter((r) => r.date && r.email),
+  resolutions: d.resolutions || [],
+  approvals: (d.approvals || []).map((a) => ({ ...a, hours: Number(a.hours) || 0, computed: Number(a.computed) || 0 })),
+  audit: d.audit || [],
+  // Schedule emails already sent (staff only), the email templates, and whether
+  // emails still go to the project alias only (test mode).
+  notices: (d.notices || []).map(normNotice).filter((n) => n.email && n.weekStart),
+  templates: (d.templates || []).filter((t) => t && t.id),
+  emailTestMode: d.emailTestMode !== false,
 });
 
+export const normNotice = (n) => {
+  let snapshot = n.snapshot ?? n.Snapshot ?? [];
+  if (typeof snapshot === 'string') { try { snapshot = JSON.parse(snapshot); } catch { snapshot = []; } }
+  return {
+    id: n.id ?? n.Title ?? '',
+    email: String(n.email ?? n.Email ?? '').trim().toLowerCase(),
+    operatorId: n.operatorId ?? n.OperatorId ?? '',
+    weekStart: String(n.weekStart ?? n.WeekStart ?? '').slice(0, 10),
+    kind: n.kind ?? n.Kind ?? 'schedule',
+    subject: n.subject ?? n.Subject ?? '',
+    sentAt: n.sentAt ?? n.SentAt ?? '',
+    by: n.by ?? n.By ?? '',
+    test: n.test === true || n.Test === true || n.test === 'true' || n.Test === 'Yes',
+    snapshot: Array.isArray(snapshot) ? snapshot : [],
+  };
+};
+
+// Every call goes through here, so the live flows and demo mode take the same shapes
+// (docs/lotus-flows.md). In live mode the flows check the caller's role; in demo,
+// anything goes and the audit trail is kept in this browser.
 export const api = {
   async all() {
     if (DEMO) return demo.load();
-    return normAll(await paPost(READ_URL, { action: 'all' }));
+    return normAll(await paPost(READ_URL, { action: 'all', from: dayKey(addDays(new Date(), -60)) }));
   },
   async punch(body) {
     if (DEMO) return demo.punch(body);
@@ -87,119 +145,281 @@ export const api = {
     if (DEMO) return demo.clientHours(week, hours);
     await paPost(WRITE_URL, { action: 'client', week, hours });
   },
-  async addShift(shift) {
-    if (DEMO) return demo.addShift(shift);
-    const out = await paPost(WRITE_URL, { action: 'schedule_add', ...shift });
-    return normShift(out.shift);
+  async upsertShifts(shifts) {
+    if (DEMO) return demo.upsertShifts(shifts);
+    const out = await paPost(WRITE_URL, { action: 'shift_upsert', shifts });
+    return (out.shifts || []).map(normShift);
   },
   async removeShift(id) {
     if (DEMO) return demo.removeShift(id);
-    await paPost(WRITE_URL, { action: 'schedule_delete', id });
+    await paPost(WRITE_URL, { action: 'shift_delete', id });
+  },
+  async upsertUsers(users) {
+    if (DEMO) return demo.upsertUsers(users);
+    const out = await paPost(WRITE_URL, { action: 'users_upsert', users });
+    return (out.users || []).map(normOperator);
+  },
+  async resolveFlag(r) {
+    if (DEMO) return demo.resolveFlag(r);
+    return (await paPost(WRITE_URL, { action: 'resolve_flag', ...r })).resolution;
+  },
+  // One email per operator, already filled in; the flow checks each recipient
+  // is a Lotus user, sends from the shared mailbox and records a notice.
+  async sendEmails(body) {
+    if (DEMO) return demo.sendEmails(body);
+    const out = await paPost(WRITE_URL, { action: 'email_send', ...body });
+    return (out.notices || []).map(normNotice);
+  },
+  async saveTemplate(t) {
+    if (DEMO) return demo.saveTemplate(t);
+    return (await paPost(WRITE_URL, { action: 'template_save', ...t })).template;
+  },
+  async approveDay(a, status) {
+    if (DEMO) return demo.approveDay(a, status);
+    const out = await paPost(WRITE_URL, { action: status === 'approved' ? 'approve_day' : 'reopen_day', ...a });
+    return { ...out.approval, hours: Number(out.approval.hours) || 0 };
   },
 };
 
+// Who the demo is signed in as; the audit trail and approvals record it.
+let demoActor = 'demo';
+export const setDemoActor = (email) => { demoActor = email || 'demo'; };
+
 export const demo = {
-  KEY: 'onsite-demo-v3',
+  KEY: 'lotus-demo-v3',
   load() {
     let d = storage.get(this.KEY, null);
     if (!d) { d = seed(); storage.set(this.KEY, d); }
-    d.schedule ||= [];
+    for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit', 'notices', 'templates']) d[k] ||= [];
+    // Demo mode never sends email, so it behaves like test mode.
+    d.emailTestMode = true;
     return structuredClone(d);
+  },
+  save(d, action, target, before, after) {
+    d.audit.push({ id: crypto.randomUUID(), at: new Date().toISOString(), by: demoActor, action, target, before: before ?? null, after: after ?? null });
+    storage.set(this.KEY, d);
   },
   punch(b) {
     const d = this.load();
-    const p = normPunch({ id: crypto.randomUUID(), ts: new Date().toISOString(), ...b });
+    const shift = b.shiftId ? d.schedule.find((r) => r.id === b.shiftId) : null;
+    // Same checks the Write flow makes, so demo behaves like live.
+    if (b.type === 'in') {
+      const c = clockInCheck(shift, new Date());
+      if (!c.allowed) { const e = new Error(c.reason === 'early' ? `Clock-in opens at ${c.window.opensAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'That shift has ended'); e.code = c.reason; throw e; }
+      b = { ...b, grace: c.grace };
+    } else {
+      const open = [...d.punches].reverse().find((p) => p.email === b.email);
+      if (open?.type === 'in') b = { ...b, shiftId: open.shiftId, location: open.location, station: open.station };
+    }
+    // The time is always now, whatever the request says: no backdating.
+    const p = normPunch({ ...b, id: crypto.randomUUID(), ts: new Date().toISOString() });
     d.punches.push(p);
-    storage.set(this.KEY, d);
+    this.save(d, 'punch', p.id, null, p);
     return p;
   },
   clientHours(week, hours) {
     const d = this.load();
     d.client = d.client.filter((c) => c.week !== week).concat(hours == null ? [] : [{ week, hours }]);
-    storage.set(this.KEY, d);
+    this.save(d, 'client', week, null, { week, hours });
   },
-  addShift(shift) {
+  upsertShifts(shifts) {
     const d = this.load();
-    const r = normShift({ id: crypto.randomUUID(), ...shift });
-    d.schedule.push(r);
+    const out = shifts.map((s) => {
+      const i = s.id ? d.schedule.findIndex((r) => r.id === s.id) : -1;
+      const r = normShift({ ...s, id: s.id || `S-${crypto.randomUUID().slice(0, 8)}`, location: s.location || locOf(s) });
+      if (i >= 0) { const before = d.schedule[i]; d.schedule[i] = r; d.audit.push({ id: crypto.randomUUID(), at: new Date().toISOString(), by: demoActor, action: 'shift_upsert', target: r.id, before, after: r }); } else { d.schedule.push(r); d.audit.push({ id: crypto.randomUUID(), at: new Date().toISOString(), by: demoActor, action: 'shift_upsert', target: r.id, before: null, after: r }); }
+      return r;
+    });
     storage.set(this.KEY, d);
-    return r;
+    return out;
   },
   removeShift(id) {
     const d = this.load();
+    const before = d.schedule.find((r) => r.id === id);
     d.schedule = d.schedule.filter((r) => r.id !== id);
+    this.save(d, 'shift_delete', id, before, null);
+  },
+  upsertUsers(users) {
+    const d = this.load();
+    let n = Math.max(0, ...d.operators.map((o) => Number(String(o.id).replace(/\D/g, '')) || 0));
+    const out = users.map((u) => {
+      const i = d.operators.findIndex((o) => o.email === u.email);
+      const before = i >= 0 ? d.operators[i] : null;
+      const o = normOperator({ roles: ['operator'], ...before, ...u, id: before?.id || u.id || `OP-${String(++n).padStart(4, '0')}` });
+      if (i >= 0) d.operators[i] = o; else d.operators.push(o);
+      d.audit.push({ id: crypto.randomUUID(), at: new Date().toISOString(), by: demoActor, action: 'users_upsert', target: o.id, before, after: o });
+      return o;
+    });
     storage.set(this.KEY, d);
+    return out;
+  },
+  resolveFlag(r) {
+    if (!String(r.reason || '').trim()) throw new Error('Add a reason');
+    const d = this.load();
+    const res = { key: r.key, outcome: r.outcome, reason: r.reason.trim(), endTime: r.endTime || '', by: demoActor, at: new Date().toISOString() };
+    const before = d.resolutions.find((x) => x.key === r.key) || null;
+    d.resolutions = d.resolutions.filter((x) => x.key !== r.key).concat(res);
+    this.save(d, 'resolve_flag', r.key, before, res);
+    return res;
+  },
+  approveDay(a, status) {
+    const hours = Math.round(Number(a.hours) * 100) / 100;
+    if ((status !== 'approved' || Math.abs(hours - a.computed) > 0.005) && !String(a.note || '').trim()) throw new Error(status === 'approved' ? 'Add a note for the adjustment' : 'Add a reason for reopening');
+    const d = this.load();
+    const rec = { email: a.email, operatorId: a.operatorId, date: a.date, status, hours, computed: Math.round(a.computed * 100) / 100, note: String(a.note || '').trim(), final: false, by: demoActor, at: new Date().toISOString() };
+    d.approvals.push(rec);
+    this.save(d, status === 'approved' ? 'approve_day' : 'reopen_day', `${a.email}|${a.date}`, null, rec);
+    return rec;
+  },
+  sendEmails(body) {
+    const d = this.load();
+    const sentAt = new Date().toISOString();
+    const out = (body.messages || []).map((m) => {
+      if (!d.operators.some((o) => o.email === m.to)) throw new Error(`${m.to} isn't a Lotus user`);
+      const n = normNotice({ id: `N-${crypto.randomUUID().slice(0, 8)}`, email: m.to, operatorId: m.operatorId, weekStart: body.weekStart, kind: m.kind, subject: m.subject, sentAt, by: demoActor, test: true, snapshot: m.snapshot });
+      d.notices.push(n);
+      d.audit.push({ id: crypto.randomUUID(), at: sentAt, by: demoActor, action: 'email_send', target: n.id, before: null, after: { ...n, snapshot: undefined } });
+      return n;
+    });
+    storage.set(this.KEY, d);
+    return out;
+  },
+  saveTemplate(t) {
+    const d = this.load();
+    const before = d.templates.find((x) => x.id === t.id) || null;
+    const rec = { id: t.id, subject: t.subject, html: t.html, ready: t.ready, original: !!t.original, updatedAt: new Date().toISOString(), updatedBy: demoActor };
+    d.templates = d.templates.filter((x) => x.id !== t.id).concat([rec]);
+    this.save(d, 'template_save', t.id, before && { ...before, html: undefined, ready: undefined }, { ...rec, html: undefined, ready: undefined });
+    return rec;
   },
   reset() { storage.remove(this.KEY); },
 };
 
-// Two weeks of made-up pairs, so every view has something to show in demo mode.
+// Two weeks of made-up shifts at both labs, so every view and flag has something to show.
 function seed() {
-  const people = [
-    ['Avery Lin', 'avery.lin@example.com'], ['Jordan Pike', 'jordan.pike@example.com'],
-    ['Sam Okafor', 'sam.okafor@example.com'], ['Riley Chen', 'riley.chen@example.com'],
-    ['Morgan Diaz', 'morgan.diaz@example.com'], ['Casey Novak', 'casey.novak@example.com'],
+  const R = LOCATIONS.find((l) => l.id === 'RED') || LOCATIONS[0];
+  const M = LOCATIONS.find((l) => l.id === 'MTV') || LOCATIONS[LOCATIONS.length - 1];
+  const tpl = (loc, i) => loc.templates[i] || loc.templates[0] || { id: '', start: '08:00', end: `${8 + CFG.shiftHours}:00` };
+  const today = dayKey(new Date());
+  const ops = [
+    ['Avery Lin', R, 14], ['Jordan Pike', R, 12], ['Sam Okafor', R, 9], ['Riley Chen', R, 11],
+    ['Morgan Diaz', R, 16], ['Casey Novak', R, 7], ['Jamie Ortiz', R, 8], ['Priya Raman', R, 10],
+    ['Taylor Brooks', R, 13], ['Quinn Hale', R, 6], ['Drew Sato', R, 1], ['Reese Park', R, 0],
+    ['Alex Moreno', M, 9], ['Blair Kim', M, 5], ['Cameron Wu', M, 4], ['Dana Ito', M, 3],
+    ['Sky Patel', R, 2], ['Kai Tan', R, 15], ['Noor Aziz', R, 8], ['Lena Ross', R, 6], ['Omar Haddad', R, 5],
+  ].map(([name, loc, done], i) => ({
+    id: `OP-${String(i + 1).padStart(4, '0')}`, email: `${name.toLowerCase().replace(' ', '.')}@example.com`, name,
+    location: loc.id, roles: ['operator'], cohort: done >= 8 ? 'Cohort 1' : done >= 3 ? 'Cohort 2' : 'Cohort 3',
+    completedSessions: done, completedAsOf: today, training: done >= 2 ? 'Trained' : 'In training', active: true,
+    // An admin's mark: Lena has sessions on record but isn't ready to lead a pair yet.
+    experience: name === 'Lena Ross' ? 'new' : '',
+  }));
+  const op = (n) => ops.find((o) => o.name === n);
+  // Robot, template, the pair on it, and the days they work. Redmond runs every day:
+  // a pair on Morning, a pair on Afternoon and two pairs (both robots) on Night.
+  const WEEKDAYS = [1, 2, 3, 4, 5];
+  const WEEKEND = [0, 6];
+  const R2 = R.robots[1] || R.robots[0];
+  const crews = [
+    [R.robots[0], tpl(R, 0), 'Avery Lin', 'Jordan Pike', WEEKDAYS],
+    [R.robots[0], tpl(R, 1), 'Morgan Diaz', 'Casey Novak', WEEKDAYS],
+    [R.robots[0], tpl(R, 2), 'Taylor Brooks', 'Quinn Hale', WEEKDAYS],
+    // Two operators with fewer than 2 completed sessions together: a pairing risk.
+    [R2, tpl(R, 2), 'Drew Sato', 'Reese Park', WEEKDAYS],
+    [R.robots[0], tpl(R, 0), 'Sam Okafor', 'Riley Chen', WEEKEND],
+    [R.robots[0], tpl(R, 1), 'Jamie Ortiz', 'Priya Raman', WEEKEND],
+    [R.robots[0], tpl(R, 2), 'Kai Tan', 'Noor Aziz', WEEKEND],
+    [R2, tpl(R, 2), 'Lena Ross', 'Omar Haddad', WEEKEND],
+    [M.robots[0], tpl(M, 0), 'Alex Moreno', 'Blair Kim', WEEKDAYS],
+    [M.robots[0], tpl(M, 1), 'Cameron Wu', 'Dana Ito', WEEKDAYS],
   ];
-  const stations = CFG.stations.length ? CFG.stations : ['Robot 1', 'Robot 2', 'Robot 3'];
-  const punches = [];
   const schedule = [];
+  const punches = [];
   let seq = 1;
-  const plan = (d, who, station, note = '') =>
-    schedule.push({ id: `demo-s${seq++}`, date: dayKey(d), name: who[0], email: who[1], station, start: '08:00', end: `${String(8 + CFG.shiftHours).padStart(2, '0')}:00`, note });
+  const book = (k, who, robot, t, note = '') => {
+    const o = op(who);
+    const loc = locationOfRobot(robot);
+    const r = { id: `S-demo${seq++}`, date: k, operatorId: o.id, name: o.name, email: o.email, location: loc?.id || '', station: robot, template: t.id, start: t.start, end: t.end, note };
+    schedule.push(r);
+    return r;
+  };
   let s = 7;
   const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  const push = (t, who, type, station, extra = {}) =>
-    punches.push({ id: `demo-${seq++}`, ts: t.toISOString(), name: who[0], email: who[1], type, station, note: '', flag: '', ...extra });
+  const at = (k, hm, mins = 0) => { const [y, mo, da] = k.split('-').map(Number); const [h, m] = hm.split(':').map(Number); return new Date(y, mo - 1, da, h, m + mins, 0, 0); };
+  const punch = (t, r, type, extra = {}) => punches.push({ id: `P-demo${seq++}`, ts: t.toISOString(), operatorId: r.operatorId, name: r.name, email: r.email, type, location: r.location, station: r.station, shiftId: r.shiftId ?? r.id, grace: 0, source: 'laptop', note: '', flag: '', ...extra });
+
   const now = new Date();
-  const start = addDays(mondayOf(now), -7);
-  const at = (d, mins) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8, 0, 0, 0).getTime() + mins * 60000;
-  // The plan runs through next Friday: three robots, two people each. Next Thursday
-  // Robot 2 has only one person booked, so the Schedule tab shows an understaffed day.
-  const planEnd = addDays(mondayOf(now), 11);
-  for (let d = new Date(start); d <= planEnd; d = addDays(d, 1)) {
-    if (d.getDay() === 0 || d.getDay() === 6) continue;
-    const nextThu = dayKey(d) === dayKey(addDays(mondayOf(now), 10));
-    for (let pair = 0; pair < 3; pair++) {
-      const station = stations[pair % stations.length];
-      plan(d, people[pair * 2], station);
-      if (!(nextThu && pair === 1)) plan(d, people[pair * 2 + 1], station);
-    }
-  }
-  for (let d = new Date(start); dayKey(d) <= dayKey(now); d = addDays(d, 1)) {
-    if (d.getDay() === 0 || d.getDay() === 6) continue;
-    const today = dayKey(d) === dayKey(now);
-    for (let pair = 0; pair < 3; pair++) {
-      const a = people[pair * 2], b = people[pair * 2 + 1];
-      const station = stations[pair % stations.length];
-      const shift = CFG.shiftHours * 60;
-      const inA = new Date(at(d, Math.round(rnd() * 12 - 4)));
-      const inB = new Date(at(d, Math.round(rnd() * 15 - 3)));
-      const outA = new Date(at(d, shift + Math.round(rnd() * 10 - 3)));
-      const early = pair === 1 && dayKey(d) === dayKey(addDays(start, 3));
-      const outB = new Date(early ? at(d, 255) : at(d, shift + Math.round(rnd() * 10 - 2)));
-      if (today) {
-        // Today: one pair in full, one person on Robot 3 hasn't arrived.
-        if (now > inA) push(inA, a, 'in', station);
-        if (now > inB && pair !== 2) push(inB, b, 'in', station);
-        if (now > outA) push(outA, a, 'out', station);
-        if (now > outB && pair !== 2) push(outB, b, 'out', station);
-        continue;
+  const wk0 = mondayOf(now);
+  const start = addDays(wk0, -7);
+  const end = addDays(wk0, 13);
+  for (let d = new Date(start); d <= end; d = addDays(d, 1)) {
+    const k = dayKey(d);
+    const di = Math.round((d - start) / 864e5);
+    for (const [robot, t, a, b, on] of crews) {
+      if (!on.includes(d.getDay())) continue;
+      for (const who of [a, b]) {
+        const r = book(k, who, robot, t);
+        const sIn = at(k, t.start);
+        const sOut = at(k, t.end);
+        if (sIn > now) continue;
+        // Arrive a few minutes either side of the start; a tap before it uses grace.
+        const early = Math.round(rnd() * 9) - 6;
+        const tin = new Date(sIn.getTime() + early * 6e4);
+        if (who === 'Casey Novak' && k === today) continue; // a no-show today
+        if (tin > now) continue;
+        punch(tin, r, 'in', { grace: early < 0 ? -early : 0 });
+        if (who === 'Jordan Pike' && di === 2) continue; // forgot to clock out last Wednesday
+        let tout = new Date(sOut.getTime() + (Math.round(rnd() * 4) - 1) * 6e4);
+        let extra = {};
+        if (who === 'Riley Chen' && di === 5) { tout = at(k, t.start, 195); extra = { flag: 'early', note: 'Felt unwell, told the client lead' }; }
+        if (who === 'Priya Raman' && di === 6) tout = at(k, t.end, 18); // stayed late to finish a reset
+        if (who === 'Taylor Brooks' && di === 4) tout = at(k, t.end, 12);
+        if (tout > now) continue;
+        punch(tout, r, 'out', extra);
       }
-      push(inA, a, 'in', station);
-      push(inB, b, 'in', station);
-      if (!(pair === 2 && dayKey(d) === dayKey(addDays(start, 1)))) push(outA, a, 'out', station);
-      push(outB, b, 'out', station, early ? { flag: 'early', note: 'Felt unwell, told the client lead' } : {});
     }
   }
-  // Two bench people who covered Robot 4 last Friday; free today, so they can backfill.
-  const bench = [['Jamie Ortiz', 'jamie.ortiz@example.com'], ['Priya Raman', 'priya.raman@example.com']];
-  const fri = addDays(start, 4);
-  const station4 = stations[3] || stations[stations.length - 1];
-  for (const [i, who] of bench.entries()) {
-    plan(fri, who, station4);
-    push(new Date(at(fri, i * 4)), who, 'in', station4);
-    push(new Date(at(fri, CFG.shiftHours * 60 + i * 3)), who, 'out', station4);
-  }
+  // Someone who came in with no shift last Friday.
+  const fri = dayKey(addDays(start, 4));
+  const sky = op('Sky Patel');
+  punch(at(fri, '12:05'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'in');
+  punch(at(fri, '15:10'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'out');
+  // Next week: Morgan picks up extra mornings (over 37 hrs), and Alex is double-booked across labs.
+  for (let i = 0; i < 3; i++) book(dayKey(addDays(wk0, 7 + i)), 'Morgan Diaz', R.robots[0], tpl(R, 0), 'Extra cover');
+  book(dayKey(addDays(wk0, 8)), 'Alex Moreno', R.robots[1] || R.robots[0], tpl(R, 1), 'Cover');
+
   punches.sort((x, y) => x.ts.localeCompare(y.ts));
-  return { punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule };
+  // Last week Monday to Wednesday approved already; the rest waits for review.
+  const approvals = [];
+  for (let i = 0; i < 3; i++) {
+    const k = dayKey(addDays(start, i));
+    for (const o of ops) {
+      const mine = schedule.filter((r) => r.email === o.email && r.date === k);
+      if (!mine.length || (o.name === 'Jordan Pike' && i === 2)) continue;
+      const h = mine.reduce((a, r) => a + (at(k, r.end) - at(k, r.start)) / 36e5, 0);
+      approvals.push({ email: o.email, operatorId: o.id, date: k, status: 'approved', hours: h, computed: h, note: '', final: false, by: 'manager@example.com', at: at(dayKey(addDays(start, 7)), '09:30', i).toISOString() });
+    }
+  }
+  // Schedule emails: this week went to everyone last Friday. Next week went out
+  // yesterday to the weekday crews, and some shifts moved after that; the
+  // weekend crews haven't had theirs yet.
+  const notices = [];
+  const snap = (rows) => rows.map((r) => ({ id: r.id, date: r.date, start: r.start, end: r.end, station: r.station, location: r.location, template: r.template }));
+  const sendTo = (o, wk, sentAt, tweak = (x) => x) => {
+    const rows = schedule.filter((r) => r.email === o.email && r.date >= dayKey(wk) && r.date < dayKey(addDays(wk, 7)) && r.note === '');
+    if (!rows.length) return;
+    notices.push({ id: `N-demo${seq++}`, email: o.email, operatorId: o.id, weekStart: dayKey(wk), kind: 'schedule', subject: `Your Lotus schedule for ${dayKey(wk)}`, sentAt: sentAt.toISOString(), by: 'scheduler@example.com', test: true, snapshot: tweak(snap(rows)) });
+  };
+  const wk1 = addDays(wk0, 7);
+  for (const o of ops) sendTo(o, wk0, at(dayKey(addDays(wk0, -3)), '09:14'));
+  const weekday = new Set(crews.filter((c) => c[4] === WEEKDAYS).flatMap((c) => [c[2], c[3]]));
+  for (const o of ops.filter((x) => weekday.has(x.name) && !['Avery Lin', 'Jordan Pike'].includes(x.name))) {
+    sendTo(o, wk1, at(dayKey(addDays(now, -1)), '09:14'), (rows) => {
+      // Drew's Wednesday was on Robot 1 when the email went out; Reese also had a Saturday.
+      if (o.name === 'Drew Sato') return rows.map((r) => (r.date === dayKey(addDays(wk1, 2)) ? { ...r, station: R.robots[0] } : r));
+      if (o.name === 'Reese Park') return [...rows, { id: 'S-demo-gone', date: dayKey(addDays(wk1, 5)), start: tpl(R, 2).start, end: tpl(R, 2).end, station: R2, location: R.id, template: tpl(R, 2).id }];
+      return rows;
+    });
+  }
+  return { operators: ops, punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule, resolutions: [], approvals, audit: [], notices, templates: [] };
 }

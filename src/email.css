@@ -1,0 +1,184 @@
+/* ---------- Emails: templates page, editor and the schedule send sheet ----------
+   Layout follows the Project Atlas templates page; surfaces use the soft theme.
+   The email itself is always drawn in its own inline styles. */
+
+.em-layout { display: flex; gap: 28px; align-items: flex-start; }
+.em-list { width: 270px; flex: none; display: flex; flex-direction: column; gap: 24px; position: sticky; top: 24px; }
+.em-group { display: flex; flex-direction: column; gap: 12px; }
+.em-group-title { padding: 0 6px; margin: 0; }
+.em-item {
+  position: relative; display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 15px 18px;
+  border-radius: 18px; background: var(--op-bg); box-shadow: var(--op-out-small); color: var(--ink);
+  transition: scale 150ms var(--ease-out), box-shadow 200ms var(--ease-out), opacity 200ms var(--ease-out);
+}
+.em-item:active { scale: 0.98; }
+.em-item.is-active { box-shadow: var(--op-in-shallow); }
+.em-item.is-active::before { content: ''; position: absolute; left: 0; top: 16px; bottom: 16px; width: 3px; border-radius: 3px; background: var(--op-coral); }
+.em-item:disabled { opacity: 0.4; cursor: default; scale: none; }
+.em-item-name { font-size: 15px; font-weight: 600; }
+.em-item.is-active .em-item-name { color: var(--op-coral-text); }
+.em-item-when { font-size: 12.5px; color: var(--ink-2); }
+.em-item-meta { font-size: 11px; color: var(--ink-3); }
+@media (hover: hover) and (pointer: fine) { .em-item:not(.is-active):not(:disabled):hover { box-shadow: var(--op-out-soft); } }
+
+.em-work { flex: 1; min-width: 0; }
+.em-pane { display: flex; flex-direction: column; gap: 16px; animation: viewEnter 240ms var(--ease-out) both; }
+.em-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.em-fill { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 16rem; max-width: 30rem; }
+.em-note { margin: 0; font-size: 13.5px; color: var(--ink-2); flex: 1; min-width: 16rem; }
+.em-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--op-sub); }
+.em-input {
+  width: 100%; height: 44px; padding: 0 14px; border: 0; border-radius: 14px; background: var(--op-bg); box-shadow: var(--op-in-shallow);
+  color: var(--ink); font: inherit; font-size: 14px;
+}
+.em-input:focus-visible { outline: 2px solid color-mix(in srgb, var(--op-coral) 60%, transparent); outline-offset: 1px; }
+.em-select { cursor: pointer; appearance: none; padding-right: 36px; background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%); background-position: calc(100% - 20px) 19px, calc(100% - 15px) 19px; background-size: 5px 5px; background-repeat: no-repeat; }
+.em-subject { display: flex; align-items: center; gap: 16px; padding: 12px 18px; border-radius: 16px; box-shadow: var(--op-in-shallow); min-width: 0; }
+.em-subject-text { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.em-subject-edit { display: flex; align-items: flex-end; gap: 16px; }
+.em-subject-field { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.em-subject-add { display: flex; flex-direction: column; gap: 8px; width: 220px; flex: none; }
+.em-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.em-reset { margin-right: auto; font-size: 14px; font-weight: 600; color: var(--op-red-text); }
+
+/* The email preview: a sunken well holding the inbox view. */
+.em-well { box-shadow: var(--op-in-deep); background: var(--op-bg); }
+.em-canvas { position: relative; border-radius: 24px; padding: 16px; overflow: auto; }
+.em-canvas.is-dark { background: #121412; box-shadow: inset 0 2px 10px rgb(0 0 0 / 0.5); }
+.em-email { max-width: 640px; margin: 0 auto; border-radius: 16px; overflow: hidden; }
+.em-email a { pointer-events: none; }
+
+/* Editor: toolbar + an editable copy of the email, always in light mode. */
+.em-editor { display: flex; flex-direction: column; gap: 12px; }
+.em-toolbar { display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; padding: 6px; border-radius: 16px; position: sticky; top: 8px; z-index: 10; background: var(--op-bg); }
+.em-raised-sm { box-shadow: var(--op-out-small); background: var(--op-bg); }
+.em-raised { box-shadow: var(--op-out-soft); background: var(--op-bg); }
+.em-toolbar .em-group { flex-direction: row; align-items: center; gap: 2px; padding: 0 4px; border-right: 1px solid color-mix(in srgb, var(--op-ink) 8%, transparent); }
+.em-toolbar .em-group:last-child { border-right: 0; }
+.em-anchor { position: relative; }
+.em-tool, .em-select:is(button) {
+  height: 32px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink-2);
+  transition: scale 150ms var(--ease-out), background-color 200ms var(--ease-out), color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+}
+.em-tool { width: 32px; }
+button.em-select { appearance: none; background-image: none; gap: 4px; padding: 0 10px; font-size: 12.5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.em-select--block > span { min-width: 5.75rem; text-align: left; }
+button.em-select svg { width: 14px; height: 14px; color: var(--ink-3); }
+.em-tool:active, button.em-select:active { scale: 0.92; }
+.em-tool.is-on { color: var(--op-coral-text); box-shadow: var(--op-in-shallow); }
+.em-tool:focus-visible, button.em-select:focus-visible { outline: 2px solid var(--op-coral); outline-offset: 1px; }
+@media (hover: hover) and (pointer: fine) {
+  .em-tool:not(.is-on):hover, button.em-select:hover { background: color-mix(in srgb, var(--op-ink) 5%, transparent); color: var(--ink); }
+}
+
+.em-pop {
+  position: absolute; top: 100%; left: 0; margin-top: 8px; z-index: 30; min-width: 11rem; padding: 6px; border-radius: 14px;
+  display: flex; flex-direction: column; transform-origin: top left; animation: emPop 160ms var(--ease-out) backwards;
+}
+@keyframes emPop { from { opacity: 0; scale: 0.96; } }
+.em-pop--wide { min-width: 15rem; }
+.em-pop-item { display: flex; align-items: center; text-align: left; font-size: 14px; padding: 8px 12px; border-radius: 9px; color: var(--ink); transition: background-color 160ms var(--ease-out); }
+.em-pop-item.is-on { color: var(--op-coral-text); }
+.em-pop-item--two { flex-direction: column; align-items: flex-start; gap: 2px; }
+.em-pop-item--h1 { font-size: 20px; font-weight: 600; font-family: var(--op-serif); }
+.em-pop-item--h2 { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.em-pop-item--h3 { font-weight: 700; }
+.em-pop-item--blockquote { border-left: 2px solid var(--op-coral); margin-left: 12px; padding-left: 8px; border-radius: 0; }
+.em-pop-note, .em-pop-hint { font-size: 11px; color: var(--ink-2); }
+.em-pop-hint { margin: 0; padding: 6px 12px 8px; }
+@media (hover: hover) and (pointer: fine) { .em-pop-item:hover { background: color-mix(in srgb, var(--op-ink) 5%, transparent); } }
+.em-swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px; }
+.em-swatch { width: 28px; height: 28px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12); transition: scale 150ms var(--ease-out); }
+.em-swatch:active { scale: 0.9; }
+.em-swatch--none { background: linear-gradient(135deg, transparent 45%, var(--op-red) 45% 55%, transparent 55%), var(--op-bg) !important; }
+@media (hover: hover) and (pointer: fine) { .em-swatch:hover { scale: 1.1; } }
+.em-custom { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 8px; font-size: 12px; color: var(--ink-2); }
+.em-custom input { width: 36px; height: 28px; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.em-link { display: flex; gap: 8px; padding: 4px; width: 19rem; }
+.em-link-input { height: 38px; font-size: 14px; }
+.em-chip-sample { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--op-coral-text); background: color-mix(in srgb, var(--op-coral) 12%, transparent); }
+
+.em-paper { max-width: 600px; margin: 12px auto; border-radius: 14px; overflow: hidden; background: #ffffff; box-shadow: 0 0 0 12px #F1F3F1; }
+.em-head { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 24px 20px; border-bottom: 1px solid #E4E7E4; }
+.em-brand { display: flex; align-items: center; gap: 12px; }
+.em-brand-mark { display: block; width: 40px; height: 40px; background-color: #3A3D3A; -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat; }
+.em-brand-word, .em-brand-eyebrow, .em-foot, .em-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+.em-brand-word { font-size: 26px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; color: #3A3D3A; }
+.em-brand-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #B5532F; }
+.em-frame { margin: 16px; border-radius: 10px; background: #F8F9F8; border: 1px solid #E4E7E4; }
+.em-body { min-height: 24rem; outline: none; padding: 30px 36px 28px; color: #3D423D; caret-color: #B5532F; font-size: 15px; line-height: 1.6; }
+.em-body ::selection { background: rgb(229 126 93 / 0.28); }
+.em-body [data-field] {
+  display: inline-block; padding: 0 6px; border-radius: 6px; font-weight: 600; white-space: nowrap; cursor: default; line-height: 1.45;
+  background: rgb(229 126 93 / 0.14); color: #B5532F; box-shadow: inset 0 0 0 1px rgb(181 83 47 / 0.25);
+}
+.em-body [data-block="field"] { margin: 4px 0 20px; padding: 14px; border-radius: 10px; border: 1.5px dashed rgb(181 83 47 / 0.35); text-align: center; }
+.em-body img { cursor: pointer; }
+.em-body img:hover { outline: 2px solid rgb(229 126 93 / 0.5); outline-offset: 2px; }
+.em-body a { cursor: text; }
+.em-foot { text-align: center; font-size: 11px; letter-spacing: 0.04em; padding: 6px 0 28px; margin: 0; color: #6B716B; }
+.em-imgbar { position: absolute; z-index: 20; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; transform: translateY(calc(-100% - 8px)); animation: emPop 160ms var(--ease-out) backwards; }
+.em-imgbar-btn { height: 28px; min-width: 28px; padding: 0 6px; border-radius: 8px; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; color: var(--ink-2); }
+.em-imgbar-btn:active { scale: 0.92; }
+.em-imgbar-btn--danger { color: var(--op-red-text); }
+.em-imgbar-sep { width: 1px; height: 16px; margin: 0 2px; background: color-mix(in srgb, var(--op-ink) 10%, transparent); }
+@media (hover: hover) and (pointer: fine) { .em-imgbar-btn:hover { background: color-mix(in srgb, var(--op-ink) 6%, transparent); color: var(--ink); } }
+
+@media (max-width: 900px) {
+  .em-layout { flex-direction: column; align-items: stretch; }
+  .em-list { width: 100%; position: static; flex-direction: row; overflow-x: auto; gap: 12px; padding: 6px 4px 10px; }
+  .em-list .em-group { flex-direction: row; }
+  .em-group-title { display: none; }
+  .em-item { min-width: 13rem; }
+  .em-canvas { padding: 8px; }
+  .em-body { padding: 20px 18px; }
+  .em-subject-edit { flex-direction: column; align-items: stretch; }
+  .em-subject-add { width: 100%; }
+}
+
+/* ---------- Schedule: email reminder and send sheet ---------- */
+.mail-banner { display: flex; align-items: center; gap: 16px; padding: 16px 20px; margin-bottom: 28px; border-radius: 22px; background: var(--op-bg); box-shadow: var(--op-out-soft); animation: viewEnter 260ms var(--ease-out) both; }
+.mail-banner-icon { width: 42px; height: 42px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--op-coral-text); box-shadow: var(--op-in-shallow); }
+.mail-banner-text { flex: 1; min-width: 0; }
+.mail-banner-text strong { display: block; font-size: 15px; font-weight: 600; }
+.mail-banner-text span { font-size: 13.5px; color: var(--ink-2); }
+.mail-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 2px; border-radius: 99px; background: var(--op-coral); color: #fff; font-size: 11px; font-weight: 700; }
+@media (max-width: 640px) { .mail-banner { flex-wrap: wrap; } .mail-banner .btn { width: 100%; } }
+
+.send-sheet { width: min(640px, 100%); }
+.send-row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; min-height: 60px; width: 100%; text-align: left; }
+.send-row + .send-row { border-top: 1px solid var(--sep); }
+.send-check { width: 22px; height: 22px; flex: none; border-radius: 7px; display: grid; place-items: center; background: var(--op-bg); box-shadow: var(--op-in-shallow); color: transparent; transition: background-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }
+.send-check[aria-checked="true"] { background: var(--op-coral); box-shadow: none; color: #fff; }
+.send-check:focus-visible { outline: 2px solid var(--op-coral); outline-offset: 2px; }
+.send-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.send-name { font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.send-sub { font-size: 12.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.send-preview { font-size: 13px; font-weight: 600; color: var(--op-coral-text); padding: 6px 4px; }
+.send-more { display: flex; justify-content: space-between; width: 100%; padding: 13px 16px; font-size: 14px; color: var(--ink-2); }
+.send-foot { display: flex; align-items: center; gap: 14px; }
+.send-foot p { flex: 1; margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
+.send-email { border-radius: 18px; overflow: hidden; box-shadow: var(--op-in-deep); padding: 10px; }
+.send-email .em-email { border-radius: 12px; }
+.send-subject { font-size: 13.5px; margin: 0 0 12px; color: var(--ink-2); }
+.send-subject strong { color: var(--ink); }
+@media (min-width: 640px) {
+  .sheet.send-sheet { width: min(600px, calc(100vw - 48px)); }
+  .sheet.send-sheet-wide { width: min(720px, calc(100vw - 48px)); }
+}
+.send-sheet .sheet-body { max-height: 64dvh; }
+@media (max-width: 639px) {
+  .sheet.send-sheet { width: auto; max-width: calc(100vw - 16px); }
+  .send-sheet .sheet-body, .send-sheet .em-pane, .send-sheet .group, .send-sheet .group-body { min-width: 0; max-width: 100%; }
+  .send-foot { flex-wrap: wrap; }
+  .send-foot > .btn:last-child { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .em-pane, .em-pop, .em-imgbar, .mail-banner { animation: none !important; } .em-item, .em-tool, .em-swatch, .send-check { transition: none; } }
+.em-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.em-tools .seg button { padding: 0 12px; }
+.em-tools .btn svg { margin-right: 2px; }
+@media (max-width: 480px) {
+  .em-tools { width: 100%; flex-wrap: nowrap; gap: 8px; }
+  .em-tools .seg { margin-right: auto; }
+  .em-long { display: none; }
+}

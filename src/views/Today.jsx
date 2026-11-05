@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Bot, CalendarX, ChevronLeft, ChevronRight, ClockAlert, LogOut, TriangleAlert, UserX } from 'lucide-react';
 import { useStore } from '../lib/store.js';
-import { CFG } from '../lib/config.js';
+import { CFG, LOCATIONS, locationName, locationOfRobot } from '../lib/config.js';
 import { buildSessions, union } from '../lib/hours.js';
 import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, hoursBetween, fmtHrsU } from '../lib/time.js';
 import { go, useNow } from '../lib/hooks.js';
@@ -38,13 +38,6 @@ export function Today() {
   const daySessions = sessions.filter((s) => s.day === k);
   const live = sessions.filter((s) => s.live);
   const stations = CFG.stations.length ? CFG.stations : [...new Set(sessions.map((s) => s.station))];
-  const deliveredDay = useMemo(() => {
-    const by = new Map();
-    for (const s of daySessions) { if (!by.has(s.station)) by.set(s.station, []); by.get(s.station).push(s); }
-    let t = 0;
-    for (const list of by.values()) for (const [a, b] of union(list)) t += (b - a) / 36e5;
-    return t;
-  }, [daySessions]);
   const running = new Set(live.map((s) => s.station)).size;
   const schedule = data.schedule || [];
   const plan = useMemo(() => dayPlan(schedule, sessions, issues, day, now), [schedule, sessions, issues, k, now]);
@@ -96,13 +89,13 @@ export function Today() {
       </header>
 
       {needFill.length > 0 && (
-        <Group title="Needs a backfill" className="group-urgent">
+        <Group title="Needs a backfill" className="group-urgent" tour="today-backfill">
           {needFill.flatMap((b) => b.missing.map((r) => (
             <Row
               key={r.id}
               className="row-in"
               leading={<span className="row-icon icon-warn"><Bot size={18} /></span>}
-              title={<>{b.station} <Tag tone="warn">{b.here} of {b.planned} on site</Tag></>}
+              title={<>{locationName(locationOfRobot(b.station)?.id)} · {b.station} <Tag tone="warn">{b.here} of {b.planned} on site</Tag></>}
               subtitle={`${r.name} isn't here · due ${fmtTime(r.startAt)}–${fmtTime(r.endAt)}`}
               trailing={<button type="button" className="btn btn-primary btn-sm" onClick={() => setFill(r)}>Backfill</button>}
             />
@@ -110,13 +103,21 @@ export function Today() {
         </Group>
       )}
 
-      <Group
-        title="Robots"
-        action={<span className="group-aside"><Num value={deliveredDay} format={(v) => `${fmtHrsU(v)}`} /> worked</span>}
-        footer="Thin lines are each operator's time. The bar beneath is the robot's hours worked, so two operators working together count once."
-      >
-        <RobotLanes day={day} sessions={daySessions} planned={plan.rows.filter((r) => r.status === 'late' || r.status === 'noshow' || r.status === 'upcoming')} stations={stations} now={now} pairSize={2} />
-      </Group>
+      {LOCATIONS.map((l, i) => {
+        const mine = daySessions.filter((x) => l.robots.includes(x.station));
+        let worked = 0;
+        for (const r of l.robots) for (const [a, b] of union(mine.filter((x) => x.station === r))) worked += (b - a) / 36e5;
+        return (
+          <Group
+            key={l.id}
+            title={l.name}
+            action={<span className="group-aside"><Num value={worked} format={(v) => `${fmtHrsU(v)}`} /> worked · {live.filter((x) => l.robots.includes(x.station)).length} on site</span>}
+            footer={i === LOCATIONS.length - 1 ? "Thin lines are each operator's time. The bar beneath is the robot's hours worked, so two operators working together count once. Overlapping handovers are expected." : undefined}
+          >
+            <RobotLanes day={day} sessions={mine} planned={plan.rows.filter((r) => l.robots.includes(r.station) && (r.status === 'late' || r.status === 'noshow' || r.status === 'upcoming'))} stations={l.robots} now={now} pairSize={2} />
+          </Group>
+        );
+      })}
 
       <div className="split">
         <Group
@@ -135,7 +136,7 @@ export function Today() {
           )) : <div className="empty-row">{isToday ? 'Nothing in the last 7 days. Missing operators, early check-outs and missed check-outs land here.' : 'Nothing on this day.'}</div>}
         </Group>
         {isToday && (
-          <Group title="On site">
+          <Group title="On site" tour="today-onsite">
             {live.length ? live.sort((a, b) => a.start - b.start).map((s, i) => (
               <Row
                 key={s.email}
@@ -143,7 +144,7 @@ export function Today() {
                 style={{ animationDelay: `${i * 30}ms` }}
                 leading={<Avatar name={s.name} tone="on" />}
                 title={s.name}
-                subtitle={`${s.station} · since ${fmtTime(s.start)}`}
+                subtitle={`${locationName(locationOfRobot(s.station)?.id)} · ${s.station} · since ${fmtTime(s.start)}`}
                 trailing={<span className="mono-num">{fmtHrsU(hoursBetween(s.start, now))}</span>}
               />
             )) : <div className="empty-row">Check-ins show up here as operators arrive.</div>}

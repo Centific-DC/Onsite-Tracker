@@ -1,0 +1,343 @@
+/* ---------- Soft theme for the whole app ----------
+   The operator page's neumorphic style, applied to the admin views too. The
+   house tokens in styles.css are remapped onto the soft palette (operator.css
+   defines --op-*), then the shared building blocks get raised and sunken
+   surfaces in place of flat cards and hairlines. Loaded after styles.css. */
+
+:root {
+  --bg: var(--op-bg);
+  --surface: var(--op-bg);
+  --surface-2: color-mix(in srgb, var(--op-ink) 3%, var(--op-bg));
+  --fill: color-mix(in srgb, var(--op-ink) 6%, var(--op-bg));
+  --fill-hover: color-mix(in srgb, var(--op-ink) 9%, var(--op-bg));
+  --sep: color-mix(in srgb, var(--op-ink) 8%, transparent);
+  --ink: var(--op-ink);
+  --ink-2: color-mix(in srgb, var(--op-sub) 80%, var(--op-ink));
+  --ink-3: var(--op-sub);
+  --blue: var(--op-coral);
+  --blue-hover: color-mix(in srgb, var(--op-coral) 88%, var(--op-ink));
+  --blue-text: var(--op-coral-text);
+  --blue-soft: color-mix(in srgb, var(--op-coral) 14%, var(--op-bg));
+  --on-blue: #ffffff;
+  --green: var(--op-green-text);
+  --green-dot: var(--op-green);
+  --green-soft: color-mix(in srgb, var(--op-green) 16%, var(--op-bg));
+  --yellow: var(--op-yellow);
+  --yellow-text: var(--op-yellow-text);
+  --yellow-soft: color-mix(in srgb, var(--op-yellow) 18%, var(--op-bg));
+  --red: var(--op-red);
+  --red-hover: color-mix(in srgb, var(--op-red) 88%, var(--op-ink));
+  --red-text: var(--op-red-text);
+  --red-soft: color-mix(in srgb, var(--op-red) 13%, var(--op-bg));
+  --on-red: #ffffff;
+  --pill: var(--op-bg);
+  --bar-bg: color-mix(in srgb, var(--op-bg) 84%, transparent);
+  --edge: color-mix(in srgb, var(--op-ink) 6%, transparent);
+  --edge-strong: color-mix(in srgb, var(--op-ink) 12%, transparent);
+  --neu-dark: var(--op-dark);
+  --neu-light: var(--op-light);
+  --shadow-sm: var(--op-out-small);
+  --shadow-md: var(--op-out-soft);
+  --shadow-lg: 12px 12px 32px var(--op-dark), -10px -10px 28px var(--op-light);
+  --raise: var(--op-out-hard);
+  --well: var(--op-in-shallow);
+  --glow-blue: var(--op-out-small);
+  --glow-red: var(--op-out-small);
+  --radius: 20px;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+/* The dark soft palette comes from operator.css; these keep the house dark
+   tokens from winning back. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --on-blue: #1a1c1a; --on-red: #1a1c1a; --logo: #ffffff; }
+}
+:root[data-theme="dark"] { --on-blue: #1a1c1a; --on-red: #1a1c1a; --logo: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--op-bg); --surface: var(--op-bg); --ink: var(--op-ink); --ink-3: var(--op-sub);
+    --surface-2: color-mix(in srgb, var(--op-ink) 3%, var(--op-bg));
+    --fill: color-mix(in srgb, var(--op-ink) 6%, var(--op-bg));
+    --fill-hover: color-mix(in srgb, var(--op-ink) 10%, var(--op-bg));
+    --ink-2: color-mix(in srgb, var(--op-sub) 80%, var(--op-ink));
+    --blue: var(--op-coral); --blue-text: var(--op-coral-text); --blue-soft: color-mix(in srgb, var(--op-coral) 16%, var(--op-bg));
+    --blue-hover: color-mix(in srgb, var(--op-coral) 88%, var(--op-ink));
+    --green: var(--op-green-text); --green-dot: var(--op-green); --green-soft: color-mix(in srgb, var(--op-green) 16%, var(--op-bg));
+    --yellow: var(--op-yellow); --yellow-text: var(--op-yellow-text); --yellow-soft: color-mix(in srgb, var(--op-yellow) 16%, var(--op-bg));
+    --red: var(--op-red); --red-text: var(--op-red-text); --red-soft: color-mix(in srgb, var(--op-red) 15%, var(--op-bg));
+    --red-hover: color-mix(in srgb, var(--op-red) 88%, var(--op-ink));
+    --pill: var(--op-bg); --bar-bg: color-mix(in srgb, var(--op-bg) 84%, transparent);
+    --edge: color-mix(in srgb, var(--op-ink) 7%, transparent); --edge-strong: color-mix(in srgb, var(--op-ink) 14%, transparent);
+    --sep: color-mix(in srgb, var(--op-ink) 8%, transparent);
+    --neu-dark: var(--op-dark); --neu-light: var(--op-light);
+    --shadow-sm: var(--op-out-small); --shadow-md: var(--op-out-soft); --shadow-lg: 12px 12px 32px var(--op-dark), -10px -10px 28px var(--op-light);
+    --raise: var(--op-out-hard); --well: var(--op-in-shallow); --glow-blue: var(--op-out-small); --glow-red: var(--op-out-small);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: var(--op-bg); --surface: var(--op-bg); --ink: var(--op-ink); --ink-3: var(--op-sub);
+  --surface-2: color-mix(in srgb, var(--op-ink) 3%, var(--op-bg));
+  --fill: color-mix(in srgb, var(--op-ink) 6%, var(--op-bg));
+  --fill-hover: color-mix(in srgb, var(--op-ink) 10%, var(--op-bg));
+  --ink-2: color-mix(in srgb, var(--op-sub) 80%, var(--op-ink));
+  --blue: var(--op-coral); --blue-text: var(--op-coral-text); --blue-soft: color-mix(in srgb, var(--op-coral) 16%, var(--op-bg));
+  --blue-hover: color-mix(in srgb, var(--op-coral) 88%, var(--op-ink));
+  --green: var(--op-green-text); --green-dot: var(--op-green); --green-soft: color-mix(in srgb, var(--op-green) 16%, var(--op-bg));
+  --yellow: var(--op-yellow); --yellow-text: var(--op-yellow-text); --yellow-soft: color-mix(in srgb, var(--op-yellow) 16%, var(--op-bg));
+  --red: var(--op-red); --red-text: var(--op-red-text); --red-soft: color-mix(in srgb, var(--op-red) 15%, var(--op-bg));
+  --red-hover: color-mix(in srgb, var(--op-red) 88%, var(--op-ink));
+  --pill: var(--op-bg); --bar-bg: color-mix(in srgb, var(--op-bg) 84%, transparent);
+  --edge: color-mix(in srgb, var(--op-ink) 7%, transparent); --edge-strong: color-mix(in srgb, var(--op-ink) 14%, transparent);
+  --sep: color-mix(in srgb, var(--op-ink) 8%, transparent);
+  --neu-dark: var(--op-dark); --neu-light: var(--op-light);
+  --shadow-sm: var(--op-out-small); --shadow-md: var(--op-out-soft); --shadow-lg: 12px 12px 32px var(--op-dark), -10px -10px 28px var(--op-light);
+  --raise: var(--op-out-hard); --well: var(--op-in-shallow); --glow-blue: var(--op-out-small); --glow-red: var(--op-out-small);
+}
+
+body { letter-spacing: -0.005em; }
+
+/* Titles: Inter, tight. Inline numbers stay in Inter so a line reads in one face. */
+.large-title { font-weight: 600; letter-spacing: -0.03em; }
+.side-name { font-weight: 600; letter-spacing: -0.02em; }
+.group-title { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--op-sub); }
+.group-head { padding: 0 6px 12px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Cards: raised, no hairline. Rows divide with a soft line. */
+.group { margin-bottom: 32px; }
+.group-body { background: var(--op-bg); border-radius: 22px; box-shadow: var(--op-out-soft); overflow: hidden; }
+.group-urgent .group-body { box-shadow: var(--op-out-soft), inset 0 0 0 1.5px color-mix(in srgb, var(--op-yellow) 55%, transparent); }
+.row-btn:active { background: var(--fill); }
+@media (hover: hover) and (pointer: fine) { .row-btn:hover { background: color-mix(in srgb, var(--op-ink) 3%, transparent); } }
+.row-icon { border-radius: 50%; background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+.row-icon.icon-in, .row-icon.icon-out, .row-icon.icon-warn, .row-icon.icon-bad { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+
+/* Buttons: raised cream with coloured text; pressed into the page when tapped. */
+.btn { border-radius: 16px; transition: box-shadow 200ms var(--ease-out), scale 150ms var(--ease-out), color 150ms var(--ease-out); }
+.btn-primary, .btn-plain, .btn-danger { background: var(--op-bg); box-shadow: var(--op-out-small); }
+.btn-primary { color: var(--op-coral-text); }
+.btn-danger { color: var(--op-red-text); }
+.btn-plain { color: var(--op-ink); }
+.btn-lg { box-shadow: var(--op-out-hard); border-radius: 20px; }
+.btn-primary:active:not(:disabled), .btn-plain:active:not(:disabled), .btn-danger:active:not(:disabled) { box-shadow: var(--op-in-shallow); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled) { background: var(--op-bg); color: var(--op-coral); }
+  .btn-danger:hover:not(:disabled) { background: var(--op-bg); color: var(--op-red); }
+  .btn-plain:hover:not(:disabled) { background: var(--op-bg); }
+}
+.btn:disabled { box-shadow: var(--op-in-shallow); }
+.icon-btn { border-radius: 50%; }
+@media (hover: hover) and (pointer: fine) { .icon-btn:hover:not(:disabled) { background: var(--op-bg); box-shadow: var(--op-out-small); } }
+.icon-btn:active:not(:disabled) { box-shadow: var(--op-in-shallow); }
+
+/* Segmented control: a sunken track with a raised pill. */
+.seg { background: var(--op-bg); box-shadow: var(--op-in-shallow); border-radius: 14px; max-width: 100%; }
+@media (max-width: 480px) { .seg button { padding: 0 10px; } }
+.seg-pill { background: var(--op-bg); border-radius: 10px; box-shadow: var(--op-out-small); }
+.seg button[aria-pressed="true"] { color: var(--op-coral-text); }
+
+/* Fields: sunken wells. */
+.search, .side-search { background: var(--op-bg); box-shadow: var(--op-in-shallow); border-radius: 14px; }
+.search:focus-within { box-shadow: var(--op-in-shallow), 0 0 0 2px color-mix(in srgb, var(--op-coral) 60%, transparent); }
+.field-row:focus-within { background: color-mix(in srgb, var(--op-ink) 2%, var(--op-bg)); box-shadow: inset 3px 0 0 var(--op-coral); }
+.reason, textarea.reason { background: var(--op-bg); box-shadow: var(--op-in-shallow); border-radius: 14px; }
+.exp-select, .field-select { background-color: var(--op-bg); box-shadow: var(--op-in-shallow); border-radius: 10px; }
+.chip-btn { background: var(--op-bg); box-shadow: var(--op-out-small); }
+.chip-btn:active { box-shadow: var(--op-in-shallow); }
+
+/* Tags: small sunken pills with coloured text. */
+.tag { background: var(--op-bg); box-shadow: var(--op-in-shallow); padding: 3px 9px; font-weight: 600; }
+.tag-warn { color: var(--op-yellow-text); }
+.tag-bad { color: var(--op-red-text); }
+.tag-on { color: var(--op-green-text); }
+.tag-muted { background: var(--op-bg); color: var(--op-sub); }
+.chip-new { background: var(--op-bg); box-shadow: var(--op-in-shallow); color: var(--op-yellow-text); }
+
+/* Avatars: raised discs. */
+.avatar { background: var(--op-bg); color: var(--op-coral-text); box-shadow: var(--op-out-small); }
+.avatar-on { background: var(--op-bg); color: var(--op-green-text); }
+.avatar-warn { background: var(--op-bg); color: var(--op-yellow-text); }
+.avatar-bad { background: var(--op-bg); color: var(--op-red-text); }
+.avatar-muted { background: var(--op-bg); color: var(--op-sub); }
+.avatars .avatar { box-shadow: 0 0 0 2px var(--op-bg); }
+
+/* Shell */
+.sidebar { background: var(--op-bg); border-right: 0; box-shadow: 1px 0 0 color-mix(in srgb, var(--op-ink) 5%, transparent); }
+.side-link { border-radius: 14px; transition: box-shadow 200ms var(--ease-out), color 150ms var(--ease-out); }
+.side-link.is-active { background: var(--op-bg); color: var(--op-coral-text); box-shadow: var(--op-out-small); }
+.side-link.is-active svg { color: var(--op-coral-text); }
+@media (hover: hover) and (pointer: fine) { .side-link:not(.is-active):hover { background: transparent; box-shadow: var(--op-in-shallow); } }
+.side-search { color: var(--op-sub); }
+.topbar { border-bottom: 0; }
+.topbar[data-collapsed] { box-shadow: 0 6px 14px -8px var(--op-dark); }
+.tabbar { background: var(--bar-bg); border-top: 0; box-shadow: 0 -6px 16px -10px var(--op-dark); }
+.tab.is-active { color: var(--op-coral-text); }
+.sync { border-radius: 12px; }
+
+/* Sheets and toasts */
+.sheet { background: var(--op-bg); border-radius: 28px; box-shadow: var(--shadow-lg); }
+.sheet .group-body { box-shadow: var(--op-out-small); }
+.scrim { background: color-mix(in srgb, var(--op-ink) 22%, transparent); }
+.toast { border-radius: 18px !important; }
+
+/* Robot tiles (Today, off-shift sheet) and the old ring */
+.robot { background: var(--op-bg); box-shadow: var(--op-out-small); border-radius: 18px; }
+.robot.is-on { background: var(--op-bg); box-shadow: var(--op-in-shallow), inset 0 0 0 2px var(--op-coral); }
+.robot.is-on .robot-name { color: var(--op-coral-text); }
+.ring { background: var(--op-bg); box-shadow: var(--op-out-hard); }
+.ring-track { stroke: color-mix(in srgb, var(--op-ink) 8%, var(--op-bg)); }
+
+/* Bars and tracks */
+.compare-track, .bar-track { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+
+/* Schedule grid: cells sit on the card; people are raised chips; open places
+   are sunken, waiting to be filled. */
+.sched-row > * { border-top-color: color-mix(in srgb, var(--op-ink) 6%, transparent); }
+.sched-cell { border-left-color: color-mix(in srgb, var(--op-ink) 6%, transparent); }
+.sched-cell.is-past, .sched-cell.is-closed { background: color-mix(in srgb, var(--op-ink) 2.5%, var(--op-bg)); }
+.slot { background: var(--op-bg); box-shadow: var(--op-out-small); border-radius: 10px; }
+@media (hover: hover) and (pointer: fine) { .slot:hover { background: var(--op-bg); color: var(--op-coral-text); } }
+.slot:active { box-shadow: var(--op-in-shallow); }
+.slot[data-status="noshow"] { background: var(--op-bg); color: var(--op-red-text); }
+.slot.is-warn { box-shadow: var(--op-out-small), inset 0 0 0 1.5px var(--op-yellow); }
+.slot.is-risk { box-shadow: var(--op-out-small), inset 0 0 0 1.5px var(--op-red); }
+.slot-open { background: var(--op-bg); box-shadow: var(--op-in-shallow); color: var(--op-coral-text); }
+@media (hover: hover) and (pointer: fine) { .slot-open:hover { background: var(--op-bg); box-shadow: var(--op-in-shallow), inset 0 0 0 1.5px var(--op-coral); } }
+.slot-robot { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+.slot-robot.is-new { background: var(--op-bg); color: var(--op-yellow-text); box-shadow: var(--op-in-shallow), inset 0 0 0 1px color-mix(in srgb, var(--op-yellow) 60%, transparent); }
+.sched-day.is-today strong { background: var(--op-coral); color: #fff; }
+.sched-day.is-focus, .sched-cell.is-focus { background: color-mix(in srgb, var(--op-coral) 8%, var(--op-bg)); }
+.day-pick button { background: var(--op-bg); box-shadow: var(--op-out-small); }
+.day-pick button[aria-pressed="true"] { background: var(--op-bg); color: var(--op-coral-text); box-shadow: var(--op-in-shallow); }
+.day-pick button[aria-pressed="true"] strong { color: var(--op-coral-text); }
+
+/* Search and profile */
+.search-row.is-active { background: color-mix(in srgb, var(--op-ink) 4%, var(--op-bg)); }
+.profile-stats > div { background: var(--op-bg); box-shadow: var(--op-out-small); border-radius: 16px; }
+.profile-stats strong { font-family: var(--op-serif); font-weight: 500; font-variant-numeric: lining-nums tabular-nums; font-size: 1.25rem; }
+
+.skeleton { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+[data-sonner-toast] [data-description] { color: inherit !important; opacity: 0.75; }
+
+/* ---------- Dropdowns: the app's own select (components/ui.jsx Select) ---------- */
+.sel {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; color: var(--ink); font: inherit;
+  transition: box-shadow 200ms var(--ease-out), scale 150ms var(--ease-out);
+}
+.sel:focus-visible { outline: 2px solid color-mix(in srgb, var(--op-coral) 70%, transparent); outline-offset: 2px; }
+.sel[data-disabled] { cursor: default; color: var(--ink-2); }
+.sel-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: inherit; }
+.sel-value[data-placeholder] { color: var(--ink-3); }
+.sel-icon { display: flex; color: var(--ink-3); flex: none; }
+.sel[data-popup-open] .sel-icon { color: var(--op-coral-text); }
+/* In a form row: plain text on the right, like the other fields. */
+.sel-field { flex: 1; height: 52px; justify-content: flex-end; text-align: right; font-size: 1rem; background: transparent; }
+.sel-field[data-disabled] .sel-icon { display: none; }
+/* A small sunken pill (Roster experience). */
+.sel-pill { text-align: left; padding: 6px 10px 6px 12px; border-radius: 10px; font-size: 0.875rem; background: var(--op-bg); box-shadow: var(--op-in-shallow); min-width: 172px; }
+.sel-pill:active { scale: 0.97; }
+/* A full field (Emails page). */
+.sel-input { width: 100%; height: 44px; padding: 0 14px; border-radius: 14px; font-size: 14px; background: var(--op-bg); box-shadow: var(--op-in-shallow); text-align: left; }
+
+.sel-pos { z-index: 60; outline: 0; }
+.sel-pop {
+  min-width: max(var(--anchor-width), 200px); max-width: min(360px, calc(100vw - 24px)); max-height: min(var(--available-height), 340px);
+  overflow-y: auto; padding: 6px; border-radius: 16px; background: var(--op-bg); outline: 0;
+  box-shadow: 10px 10px 26px var(--op-dark), -8px -8px 22px var(--op-light), 0 0 0 0.5px var(--edge-strong);
+  transform-origin: var(--transform-origin);
+  transition: opacity 160ms var(--ease-out), scale 160ms var(--ease-out);
+}
+.sel-pop[data-starting-style], .sel-pop[data-ending-style] { opacity: 0; scale: 0.96; }
+.sel-pop[data-ending-style] { transition-duration: 120ms; }
+.sel-list { display: flex; flex-direction: column; gap: 2px; }
+.sel-item {
+  display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px 8px 10px;
+  border-radius: 10px; font-size: 0.9375rem; color: var(--ink); cursor: pointer; outline: 0; user-select: none;
+  transition: background-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.sel-item[data-highlighted] { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+.sel-item[data-selected] { color: var(--op-coral-text); font-weight: 600; }
+.sel-item[data-disabled] { opacity: 0.45; cursor: default; }
+.sel-check { grid-column: 1; display: flex; color: var(--op-coral-text); }
+.sel-text { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-hint { grid-column: 3; font-size: 12px; font-weight: 400; color: var(--ink-3); }
+@media (prefers-reduced-motion: reduce) { .sel-pop { transition: none; } .sel, .sel-item { transition: none; } }
+@media (pointer: coarse) { .sel-item { min-height: 44px; } }
+
+/* Demo sign-in form */
+.login-form { display: flex; flex-direction: column; gap: 4px; }
+.login-form .field-row > span { width: 120px; white-space: nowrap; }
+@media (max-width: 400px) { .login-form .field-row > span { width: 108px; font-size: 15px; } }
+.login-eye { flex: none; display: grid; place-items: center; width: 36px; height: 36px; margin-right: -8px; border-radius: 12px; color: var(--op-sub); }
+.login-eye:hover { color: var(--ink); }
+.login-eye:focus-visible { outline: 2px solid var(--op-coral); outline-offset: 2px; }
+.login-error { margin: 4px 4px 0; font-size: 14px; color: var(--op-red-text); }
+.login-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.login-error:empty { display: none; }
+.login-local { margin: 16px 4px 0; font-size: 13px; line-height: 1.5; color: var(--op-sub); }
+
+/* Users: roles and temp passwords */
+.role-pick { display: flex; flex-direction: column; }
+.role-opt { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 16px; text-align: left; }
+.role-opt + .role-opt { border-top: 1px solid var(--line); }
+.role-opt:disabled { opacity: 0.55; cursor: not-allowed; }
+.role-opt:focus-visible { outline: 2px solid var(--op-coral); outline-offset: -2px; border-radius: 12px; }
+.role-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.role-name { font-weight: 600; font-size: 15px; color: var(--ink); }
+.role-note { font-size: 13px; color: var(--op-sub); }
+.user-more { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 8px; }
+.btn-danger-text { color: var(--op-red-text); }
+.user-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+.user-temp { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px; font-weight: 600; letter-spacing: 0.04em; color: var(--ink); user-select: all; }
+.user-temp-user { font-weight: 600; color: var(--ink); }
+.row.is-off { opacity: 0.6; }
+.role-opt[aria-checked="true"] .send-check { background: var(--op-coral); box-shadow: none; color: #fff; }
+.mono-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; letter-spacing: 0.02em; }
+.signin-tag { cursor: pointer; }
+.tag-btn { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; color: var(--op-coral-text, var(--op-coral)); background: var(--op-bg); box-shadow: var(--op-raised-sm, 0 1px 3px rgb(0 0 0 / 0.12)); vertical-align: 1px; }
+.tag-btn:hover { color: var(--ink); }
+.tag-btn:focus-visible { outline: 2px solid var(--op-coral); outline-offset: 2px; }
+.field-row:has(.mono-input) > span { width: 118px; white-space: nowrap; }
+
+/* ---------- Tour (as in Project Atlas) ----------
+   The page dims around a spotlight with a soft coral ring; a raised card explains
+   the step. Under 640px the card is a bottom sheet. */
+.tour { position: fixed; inset: 0; z-index: 1100; animation: tourFade 200ms var(--ease-out) both; }
+.tour-block { position: fixed; inset: 0; }
+.tour-spot {
+  position: fixed; border-radius: 18px; pointer-events: none;
+  box-shadow: 0 0 0 200vmax rgb(16 18 17 / 0.58), 0 0 0 2px var(--op-coral), 0 0 22px color-mix(in srgb, var(--op-coral) 45%, transparent);
+}
+.tour-spot.is-none { box-shadow: 0 0 0 200vmax rgb(16 18 17 / 0.58); }
+.tour-spot::after { content: ''; position: absolute; inset: -2px; border-radius: inherit; box-shadow: 0 0 0 2px var(--op-coral); animation: tourPulse 1800ms var(--ease-out) infinite; }
+.tour-spot.is-none::after { content: none; }
+.tour.is-moving .tour-spot { transition: left 360ms var(--ease-out), top 360ms var(--ease-out), width 360ms var(--ease-out), height 360ms var(--ease-out); }
+.tour.is-moving .tour-card:not(.is-sheet) { transition: left 360ms var(--ease-out), top 360ms var(--ease-out); }
+.tour-card {
+  position: fixed; display: flex; flex-direction: column; gap: 16px; padding: 20px;
+  width: min(22rem, calc(100vw - 24px)); border-radius: 22px;
+  background: var(--op-bg); box-shadow: 0 18px 50px rgb(0 0 0 / 0.28), 0 2px 6px rgb(0 0 0 / 0.12);
+  animation: tourIn 260ms var(--ease-out) both;
+}
+.tour-card.is-sheet { left: 0; right: 0; bottom: 0; width: 100%; border-radius: 26px 26px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); animation: tourUp 320ms var(--ease-out) both; }
+.tour-content { display: flex; flex-direction: column; gap: 6px; animation: tourFade 200ms var(--ease-out) both; }
+.tour-title { margin: 0; font-size: 18px; font-weight: 650; color: var(--ink); }
+.tour-body { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink-2); }
+.tour-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tour-count { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--op-sub); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tour-dots { display: flex; gap: 4px; }
+.tour-dot { width: 6px; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 18%, transparent); transition: width 240ms var(--ease-out), background-color 240ms var(--ease-out); }
+.tour-dot.is-on { width: 16px; background: var(--op-coral); }
+.tour-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.tour-skip { padding: 8px 6px; font-size: 14px; font-weight: 600; color: var(--op-sub); }
+.tour-skip:hover { color: var(--ink); }
+@keyframes tourFade { from { opacity: 0; } }
+@keyframes tourIn { from { opacity: 0; transform: translateY(6px) scale(0.97); } }
+@keyframes tourUp { from { transform: translateY(100%); } }
+@keyframes tourPulse { from { opacity: 0.9; scale: 1; } to { opacity: 0; scale: 1.06; } }
+@media (pointer: coarse) { .tour-actions .btn, .tour-skip { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) {
+  .tour, .tour-card, .tour-card.is-sheet, .tour-content { animation: tourFade 120ms linear both; }
+  .tour-spot::after { animation: none; opacity: 0; }
+  .tour.is-moving .tour-spot, .tour.is-moving .tour-card:not(.is-sheet) { transition: none; }
+}
