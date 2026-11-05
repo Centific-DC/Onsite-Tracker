@@ -96,3 +96,20 @@ export function unscheduledIns(schedule, punches) {
     return p.type === 'in' && days.has(k) && !booked.has(`${k}|${p.email}`);
   });
 }
+
+// Who an operator works with on a shift: the other operators booked on the same
+// robot for at least half of it (so the half-hour handover between shifts doesn't count). Live, an operator's Read holds only their own shifts,
+// so the flow sends just their partners' names in `partners`; staff (and the demo)
+// see every shift, so the names come from the schedule itself. Names only, never
+// anyone else's times, hours or clock-ins.
+export function partnersOf(data, shift) {
+  if (!shift?.id) return [];
+  const { start, end } = shiftTimes(shift);
+  const loc = shift.location || '';
+  const fromSchedule = (data.schedule || [])
+    .filter((r) => r.id !== shift.id && r.email !== shift.email && r.station === shift.station && (r.location || '') === loc)
+    .filter((r) => { const t = shiftTimes(r); return Math.min(end, t.end) - Math.max(start, t.start) >= (end - start) / 2; })
+    .map((r) => r.name);
+  const sent = (data.partners || []).filter((p) => p.shiftId === shift.id).map((p) => p.name);
+  return [...new Set([...fromSchedule, ...sent].filter(Boolean))];
+}
