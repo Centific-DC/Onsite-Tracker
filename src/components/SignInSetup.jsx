@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Copy, Mail, RefreshCw } from 'lucide-react';
+import { Copy, Link2, Mail, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { hasRole } from '../lib/auth.js';
@@ -10,7 +10,9 @@ import { DEMO } from '../lib/config.js';
 import { dayKey } from '../lib/time.js';
 import { useTemplates } from '../lib/email/useTemplates.js';
 import { TEMP_DAYS, welcomeMessage } from '../lib/email/welcome.js';
-import { Group, Row } from './ui.jsx';
+import { resetLinkFor, resetMessage } from '../lib/email/reset.js';
+import { RESET_HOURS } from '../lib/auth/crypto.js';
+import { Group, Row, Sheet } from './ui.jsx';
 
 // Sign-in set-up shared by Roster (Add operator, Set up sign-in) and Users.
 // The admin picks the username and the temp password (a random one is filled
@@ -119,5 +121,62 @@ export function TempReveal({ user, temp, onDone, emailed }) {
         <button type="button" className="btn btn-primary" onClick={onDone}>Done</button>
       </div>
     </div>
+  );
+}
+
+const RESET_SENT = {
+  sent: (u) => `Sent to ${u.email}. The link works once, for ${RESET_HOURS} hours. Their current password keeps working until they choose a new one.`,
+  test: () => 'Test mode is on, so the reset email went to project_lotus@centific.com, not to them. Forward it, or turn test mode off in Settings.',
+  demo: () => 'Demo mode: no email leaves this browser. Open the link below to try the reset page.',
+};
+
+/**
+ * "Send reset link": emails someone a one-time link to choose a new password.
+ * `user` is their sign-in ({ username, email, name, operatorId }); `op` their
+ * Roster entry, if any. Shared by Users and Roster.
+ */
+export function ResetLinkSheet({ user, op, onClose }) {
+  const token = useStore((s) => s.session?.token);
+  const sendEmails = useStore((s) => s.sendEmails);
+  const testMode = useStore((s) => s.data?.emailTestMode !== false);
+  const templates = useTemplates();
+  const [state, setState] = useState(null); // null | 'sending' | { result, link? } | { error }
+  useEffect(() => { if (user) setState(null); }, [user?.username]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const send = async () => {
+    setState('sending');
+    try {
+      const { code, expiresAt } = await auth.startReset(token, user.username);
+      // The demo never emails: it shows a link to this same page (its sign-ins live in
+      // this browser), so the reset page can be tried.
+      if (DEMO) return setState({ result: 'demo', link: resetLinkFor(user.username, code, `${location.origin}${location.pathname}`) });
+      await sendEmails({ kind: 'password-reset', weekStart: dayKey(new Date()), messages: [resetMessage({ user, op, code, expiresAt, templates })] });
+      setState({ result: testMode ? 'test' : 'sent' });
+    } catch (e) {
+      setState({ error: e.message || 'That didn’t work.' });
+    }
+  };
+
+  const done = state && state !== 'sending' && state.result;
+  return (
+    <Sheet
+      open={!!user}
+      onOpenChange={(o) => { if (!o) onClose(); }}
+      title={done ? 'Reset link sent' : 'Send a password reset link'}
+      description={user && !done ? `${user.name || user.username} gets an email with a link to choose a new password. It works once, for ${RESET_HOURS} hours.` : undefined}
+      footer={done
+        ? <button type="button" className="btn btn-primary btn-block" onClick={onClose}>Done</button>
+        : <button type="button" className="btn btn-primary btn-block" onClick={send} disabled={state === 'sending'} aria-busy={state === 'sending' || undefined}><Mail size={16} aria-hidden="true" /> {state === 'sending' ? 'Sending…' : `Email ${user ? firstName(user.name || user.username) : ''} a reset link`}</button>}
+    >
+      {user && (
+        <Group>
+          <Row title={user.name || user.username} subtitle={`${user.username} · ${user.email}`} />
+        </Group>
+      )}
+      {done && <p className="login-local"><Mail size={13} aria-hidden="true" /> {RESET_SENT[state.result](user)}</p>}
+      {done && state.link && <p className="login-local"><Link2 size={13} aria-hidden="true" /> <a href={state.link} target="_blank" rel="noopener">Open the reset page (demo)</a></p>}
+      {state?.error && <p className="login-error" role="alert">The reset link didn’t send: {state.error}</p>}
+      {!done && <p className="login-local">Their current password keeps working until they use the link. If they’re locked out, using the link unlocks them.</p>}
+    </Sheet>
   );
 }

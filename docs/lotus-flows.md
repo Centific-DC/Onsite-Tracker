@@ -27,7 +27,7 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
     - Errors are `{"error":"<message a person can read>"}` with status 400, 403, 404 or 409.
     - Success is status 200.
 - **Speed** (user ask, 2026-11-05: adding an operator and sending emails took far too long). The app waits up to 110 s, then gives up. Targets:
-    - Under 3 s: `signin`, `salt`, a one-user `users_upsert`, `user.create`, one welcome `email_send`, `punch`, `fill_in`.
+    - Under 3 s: `signin`, `salt`, a one-user `users_upsert`, `user.create`, `user.reset_link`, `reset`, one welcome or reset `email_send`, `punch`, `fill_in`.
     - Under 5 s: Read for an operator; under 10 s: Read `all` for staff; under 15 s: a 20-row `users_upsert` or a 10-message `email_send`.
     - The app sends a roster import as `users_upsert` calls of at most 5 users, and a schedule import as `shift_upsert` calls of at most 25 shifts, one call after another, so no single call nears the flow's 2-minute limit. Each call must still be idempotent by email (users) or id (shifts).
     - How:
@@ -66,8 +66,10 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
 | `Token` | text | 64 hex characters | Current sign-in. Empty = signed out |
 | `TokenExpires` | text | ISO UTC | 12 hours after sign-in |
 | `LastSignIn` | text | ISO UTC | |
+| `ResetHash` | text | 64 hex characters | SHA-256 of the one-time code in a password reset link (the app hashes it; Power Automate can't). Set by `user.reset_link`; cleared when the link is used, and by `change-password` and `user.reset` |
+| `ResetExpires` | text | ISO UTC | `user.reset_link` sets it to now + 24 hours. After that the link no longer works |
 
-**Permissions:** this list holds password hashes and sign-in tokens, so only the flows' connection account may read or edit it. Break inheritance and remove everyone else. The Read flow returns users without any of the last seven columns.
+**Permissions:** this list holds password hashes and sign-in tokens, so only the flows' connection account may read or edit it. Break inheritance and remove everyone else. The Read flow returns users without any of the last nine columns.
 
 The first admin is created by the Auth flow's `bootstrap` op (below). After that, admins add everyone else from the app's Users page.
 
@@ -189,7 +191,7 @@ One row per template, edited on the app's Emails page. Missing rows mean the app
 
 | Column | Type | Example |
 |---|---|---|
-| `Title` | text | `operator-schedule`, `operator-schedule-update`, `operator-welcome`, `approver-weekly` |
+| `Title` | text | `operator-schedule`, `operator-schedule-update`, `operator-welcome`, `operator-reset`, `approver-weekly` |
 | `Subject` | text | `Lotus timesheets for {reviewWeek} are ready to approve` |
 | `Html` | multi-line text (plain, not rich) | the editable body, with field chips |
 | `Ready` | multi-line text (plain, not rich) | the whole email (header, body, footer) with `{{field}}` tokens; the Monday flow uses this |
@@ -213,16 +215,18 @@ Make the token with `concat(replace(guid(),'-',''), replace(guid(),'-',''))` (64
 |---|---|---|---|
 | `salt` | `{ "username" }` | anyone | Find the user. If found, `Active` = Yes and `PasswordSalt` isn't empty, respond 200 `{ "salt": PasswordSalt }`. Otherwise respond 200 `{ "salt": "THf0dXNVbmtub3duU2FsdA==" }` (a fixed fake one), so the reply never shows who has an account |
 | `signin` | `{ "username", "hash" }` | anyone | Find the user. If missing, `Active` = No, no `PasswordHash`, or `LockedUntil` is after now: 401 `Username or password is wrong, or the account is locked.` If `hash` ≠ `PasswordHash`: add 1 to `FailedCount`; at 5, set `LockedUntil` = now + 15 minutes and `FailedCount` = 0; respond the same 401. If `MustChangePassword` = Yes and `TempExpires` is before now, respond 401 `This temp password has expired. Ask your admin for a new one.` (only after the hash matched, so it never tells a stranger anything). Otherwise set `Token`, `TokenExpires` = now + 12 hours, `FailedCount` = 0, `LockedUntil` empty, `LastSignIn` = now, and respond 200 `{ "ok": true, "token", "expiresAt", "user": USER }` |
-| `change-password` | `{ "token", "currentHash", "newSalt", "newHash" }` | signed in (allowed while `MustChangePassword` = Yes) | Token check. If `currentHash` ≠ `PasswordHash`: 401 `Your current password is wrong.` Else set `PasswordSalt` = `newSalt`, `PasswordHash` = `newHash`, `MustChangePassword` = No, `TempExpires` empty. 200 `{ "ok": true, "user": USER }` |
+| `change-password` | `{ "token", "currentHash", "newSalt", "newHash" }` | signed in (allowed while `MustChangePassword` = Yes) | Token check. If `currentHash` ≠ `PasswordHash`: 401 `Your current password is wrong.` Else set `PasswordSalt` = `newSalt`, `PasswordHash` = `newHash`, `MustChangePassword` = No, `TempExpires`, `ResetHash` and `ResetExpires` empty. 200 `{ "ok": true, "user": USER }` |
 | `signout` | `{ "token" }` | anyone | Clear `Token` and `TokenExpires` on the row with that token, if any. Always 200 `{ "ok": true }` |
 | `user.list` | `{ "token" }` | `admin` | 200 `{ "ok": true, "users": [ USER + { "active", "lastSignIn", "lockedUntil" } ] }`, every row that has a `Username` |
 | `user.create` | `{ "token", "user": { "username", "email", "name", "roles": [], "operatorId"? }, "salt", "hash" }` | `admin` | `username` not empty, no spaces; `email` valid; at least one known role, else 400. If another row already has that `Username`: 409 `That username is taken.` If a row with that email exists **and has a `PasswordHash`**: 409 `That person already has a sign-in.` If the row exists without one (e.g. imported from the roster), update it; otherwise create it (a new operator gets the next `OP-` number, as in `users_upsert`). Set `Username`, `Name`, `Roles` (joined with `;`), `PasswordSalt` = `salt`, `PasswordHash` = `hash`, `MustChangePassword` = Yes, `TempExpires` = now + 7 days, `Active` = Yes, `FailedCount` = 0. 200 `{ "ok": true }` |
 | `user.update` | `{ "token", "username", "changes": { "name"?, "username"?, "roles"?, "active"? } }` | `admin` | Find the user, else 404. An admin can't change their own `roles` or `active` (400 `You can’t change your own roles or turn off your own sign-in.`). A new `username` must be free (409). `roles` needs at least one known role. `active` = false also clears `Token`. 200 `{ "ok": true }` |
-| `user.reset` | `{ "token", "username", "salt", "hash" }` | `admin` | Find the user, else 404. Set the new salt and hash, `MustChangePassword` = Yes, `TempExpires` = now + 7 days, `FailedCount` = 0, clear `LockedUntil` and `Token`. 200 `{ "ok": true }` |
+| `user.reset` | `{ "token", "username", "salt", "hash" }` | `admin` | Find the user, else 404. Set the new salt and hash, `MustChangePassword` = Yes, `TempExpires` = now + 7 days, `FailedCount` = 0, clear `LockedUntil`, `Token`, `ResetHash` and `ResetExpires`. 200 `{ "ok": true }` |
+| `user.reset_link` | `{ "token", "username", "codeHash" }` | `admin` | Starts a password reset by email. Find the user; if missing or `Active` = No: 404 `No active sign-in with that username.` `codeHash` must be 64 lower-case hex characters, else 400. Set `ResetHash` = `codeHash`, `ResetExpires` = now + 24 hours. **Don't** touch the password, `MustChangePassword` or `Token`: their current password keeps working until they use the link. 200 `{ "ok": true, "expiresAt": ResetExpires }`. The app then sends the email itself with `email_send` (kind `password-reset`, below) |
+| `reset` | `{ "username", "codeHash", "newSalt", "newHash" }` | anyone with the link | Find the user. If missing, `Active` = No, `ResetHash` empty, `ResetExpires` before now, or `LockedUntil` after now: 400 `This reset link has expired or was already used. Ask your Lotus admin for a new one.` If `codeHash` ≠ `ResetHash`: count it like a wrong password (`FailedCount` + 1; at 5, `LockedUntil` = now + 15 minutes, `FailedCount` = 0) and respond the same 400. Else set `PasswordSalt` = `newSalt`, `PasswordHash` = `newHash`, `MustChangePassword` = No, and clear `TempExpires`, `ResetHash`, `ResetExpires`, `FailedCount` (0), `LockedUntil`, `Token` and `TokenExpires` (signs them out everywhere). 200 `{ "ok": true }`. The app then signs them in with `salt` + `signin` as usual. Turn on **Secure inputs** for the trigger if not already on |
 | `bootstrap` | `{ "user": { "username", "email", "name" }, "salt", "hash" }` | anyone, **only while no active row has `admin` in `Roles`** | Otherwise 403 `Lotus already has an admin.` Create the row with `Roles` = `admin;scheduler;approver;reporting`, `MustChangePassword` = No, `Active` = Yes. 200 `{ "ok": true }` |
 | anything else | | | 400 `Unknown request.` |
 
-USER is `{ "username", "email", "name", "roles": ["scheduler","approver"], "operatorId", "mustChangePassword": false }`. Never return `PasswordSalt` (except from `salt`), `PasswordHash` or another person's `Token`.
+USER is `{ "username", "email", "name", "roles": ["scheduler","approver"], "operatorId", "mustChangePassword": false }`. Never return `PasswordSalt` (except from `salt`), `PasswordHash`, `ResetHash` or another person's `Token`.
 
 The app opens the first-run screen at `<app URL>?setup=1`. Once an admin exists, `bootstrap` always refuses.
 
@@ -332,7 +336,7 @@ Body `{ "email", "operatorId", "date", "hours", "computed", "note" }`.
 
 Add a `Lotus_Approvals` row with `Status` `approved` or `reopened`. Respond `{ "ok": true, "approval": { … } }`.
 
-### `email_send`: role `scheduler` (and `admin` for welcome emails)
+### `email_send`: role `scheduler` (and `admin` for welcome and password reset emails)
 
 The app fills in each email from the templates and sends them ready to go. Body:
 
@@ -355,9 +359,14 @@ Respond `{ "ok": true, "notices": [ …the new rows, same shape as Read… ] }`.
 - The body holds a password, so: turn on **Secure inputs** for the HTTP trigger and **Secure inputs/outputs** for the send action (Settings › Security), so run history never shows it. Never write `html` anywhere: the `Lotus_Notices` row gets `Kind` = `operator-welcome`, `WeekStart` = today, `Subject`, `Test`, and an empty `Snapshot`; the `Lotus_Audit` row has no `Html` (as for every email).
 - `EmailTestMode` works as for every email: while Yes, it goes to the alias with the test line.
 
+**Password reset emails** (`"kind": "password-reset"`, each message `"kind": "operator-reset"`): sent right after `user.reset_link`, with a **Choose a new password** button whose link holds the one-time code (`<app URL>#/reset?u=<username>&c=<code>`). The app fills it in from the `operator-reset` template.
+- Allowed for callers with `admin` only. Exactly 1 message per call. `to` must be an active `Lotus_Users` row (any role: staff can be reset too) whose `ResetHash` is set and `ResetExpires` is after now, else 400 and nothing is sent.
+- The body holds a working link, so treat it exactly like a welcome email: **Secure inputs/outputs**, never write `html` anywhere; the `Lotus_Notices` row gets `Kind` = `operator-reset`, `WeekStart` = today, `Subject`, `Test`, and an empty `Snapshot`.
+- `EmailTestMode` works as for every email.
+
 ### `template_save`: role `scheduler`
 
-Body `{ "id", "subject", "html", "ready", "original"? }`. `id` must be one of the four template ids. Upsert `Lotus_Templates` by `Title` = `id`, set `UpdatedAt` and `UpdatedBy`. Respond `{ "template": { "id", "subject", "html", "original", "updatedAt", "updatedBy" } }`.
+Body `{ "id", "subject", "html", "ready", "original"? }`. `id` must be one of the five template ids. Upsert `Lotus_Templates` by `Title` = `id`, set `UpdatedAt` and `UpdatedBy`. Respond `{ "template": { "id", "subject", "html", "original", "updatedAt", "updatedBy" } }`.
 
 ### `client`: role `approver` or `scheduler`
 
@@ -417,6 +426,8 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 16c. As an admin, `email_send` a welcome to an operator who must change their password: it arrives (at the alias in test mode), the notice row has no HTML, and the run history shows the inputs as secured. For an operator who already changed their password: 400.
 16d. Pairs: book A and B on the same night with the same `Pair` and empty `Robot`. Read as A: `partners` names B. Book C with `Replaces` = A's shift and the same `Pair`: Read as B names only C.
 16e. Open spots: A doesn't clock in. 15 minutes after the start, Read as C (same home lab, no shift now) lists A's shift in `openSpots` with no name. `fill_in` as C creates C's shift (`Replaces` = A, same `Pair`); a second `fill_in` by D gets 409 `taken`. Read as an operator at the other lab: no spot.
+16f. Password reset: as an admin, `user.reset_link` for an operator, then `email_send` kind `password-reset`: it arrives (at the alias in test mode) and the notice row has no HTML. Their old password still signs in. `reset` with the right `codeHash` sets the new password, signs them out (old token gets 401) and the old password no longer works. The same link again: 400. A wrong `codeHash` five times locks the account for 15 minutes.
+16g. Set `ResetExpires` to yesterday by hand: `reset` gets 400. `email_send` kind `password-reset` for someone with no `ResetHash`: 400, no email. `user.reset_link` as a scheduler without `admin`: 403.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:

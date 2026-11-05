@@ -45,3 +45,19 @@ export async function saltedHash(password) {
   const salt = newSalt();
   return { salt, hash: await hashPassword(password, salt) };
 }
+
+// Password reset links. The link carries a random code; the Auth flow keeps only
+// its SHA-256 (Power Automate can't hash, so the browser does it on both ends,
+// the same way passwords work). A code works once, for RESET_HOURS.
+export const RESET_HOURS = 24;
+
+const toBase64Url = (bytes) => toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+/** A random code for a reset link: 32 bytes, URL-safe. */
+export const resetCode = () => toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+
+/** SHA-256 of a reset code, as 64 hex characters. */
+export async function codeHash(code) {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(code))));
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}

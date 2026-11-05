@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KeyRound, PencilLine, Search, Upload, UserPlus } from 'lucide-react';
+import { KeyRound, PencilLine, RotateCcwKey, Search, Upload, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS, locationName } from '../lib/config.js';
@@ -12,7 +12,7 @@ import { EditOperatorSheet } from '../components/EditOperator.jsx';
 import { dayKey, mondayOf, fmtHrsU } from '../lib/time.js';
 import { Avatar, Group, Row, Segmented, Select, Sheet, Tag } from '../components/ui.jsx';
 import * as auth from '../lib/auth/api.js';
-import { SignInFields, TempReveal, WelcomeSwitch, newSignIn, signInProblem, suggestUsername, useSignIns, useWelcome } from '../components/SignInSetup.jsx';
+import { ResetLinkSheet, SignInFields, TempReveal, WelcomeSwitch, newSignIn, signInProblem, suggestUsername, useSignIns, useWelcome } from '../components/SignInSetup.jsx';
 
 // An operator's sign-in, as admins see it on the Roster.
 function signInTag(u) {
@@ -33,6 +33,7 @@ export function Roster() {
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [settingUp, setSettingUp] = useState(null); // an operator without a sign-in
+  const [resetting, setResetting] = useState(null); // { user, op }: emailing a reset link
   const [editing, setEditing] = useState(null);
   const [fixing, setFixing] = useState(false);
   const signIns = useSignIns({ roster: true });
@@ -98,7 +99,7 @@ export function Roster() {
               leading={<Avatar name={o.name} tone={x.level === 'new' ? 'warn' : undefined} />}
               title={<><button type="button" className="name-link" onClick={() => openProfile(o.email)}>{o.name}</button> {x.level === 'new' && <Tag tone="warn">New</Tag>}{w?.over && <Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}{signIns.admin && signIns.users && (signInOf.has(o.email) ? signInTag(signInOf.get(o.email)) : o.active !== false && <button type="button" className="tag-btn" onClick={() => setSettingUp(o)}><KeyRound size={12} aria-hidden="true" /> Set up sign-in</button>)}</>}
               subtitle={`${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${done} sessions completed · ${w ? fmtHrsU(w.hours) : '0 hrs'} this week`}
-              trailing={<span className="row-actions"><ExperienceSelect op={o} sessions={sessions} /><button type="button" className="icon-btn" aria-label={`Edit ${o.name}`} onClick={() => setEditing(o)}><PencilLine size={16} aria-hidden="true" /></button></span>}
+              trailing={<span className="row-actions"><ExperienceSelect op={o} sessions={sessions} />{signIns.admin && signInOf.get(o.email)?.active && <button type="button" className="icon-btn" aria-label={`Send ${o.name} a password reset link`} title="Send a password reset link" onClick={() => setResetting({ user: signInOf.get(o.email), op: o })}><RotateCcwKey size={16} aria-hidden="true" /></button>}<button type="button" className="icon-btn" aria-label={`Edit ${o.name}`} onClick={() => setEditing(o)}><PencilLine size={16} aria-hidden="true" /></button></span>}
               className="row-wrap"
             />
           );
@@ -108,6 +109,7 @@ export function Roster() {
       <ImportSheet open={importing} onOpenChange={setImporting} />
       <AddOperatorSheet open={adding} onOpenChange={setAdding} signIns={signIns} />
       <SetUpSignInSheet op={settingUp} onClose={() => setSettingUp(null)} signIns={signIns} />
+      <ResetLinkSheet user={resetting?.user} op={resetting?.op} onClose={() => { setResetting(null); signIns.load(); }} />
       <EditOperatorSheet op={editing} onClose={() => setEditing(null)} />
     </div>
   );

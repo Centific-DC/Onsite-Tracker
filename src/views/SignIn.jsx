@@ -21,7 +21,7 @@ function Field({ label, children }) {
   return <label className="field-row"><span>{label}</span>{children}</label>;
 }
 
-function PasswordInput({ label, value, onChange, autoComplete, autoFocus, placeholder, invalid }) {
+export function PasswordInput({ label, value, onChange, autoComplete, autoFocus, placeholder, invalid }) {
   const [shown, setShown] = useState(false);
   return (
     <>
@@ -123,6 +123,7 @@ function SignInForm({ stage }) {
           </button>
           {stage === 'mustChange' && <button type="button" className="link-quiet" onClick={signOut}>Not you? Sign out</button>}
         </div>
+        {stage === 'signedOut' && <p className="login-local">Forgot your password? Ask your Lotus admin to email you a reset link.</p>}
         {LOCAL_AUTH && <p className="login-local">Demo mode: sign-ins are kept in this browser only, until the Lotus Auth flow is connected. Demo accounts: Lotus-admin and Lotus-operator.</p>}
         <p className="app-version login-version">Lotus {VERSION}</p>
       </form>

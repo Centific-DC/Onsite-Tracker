@@ -9,6 +9,7 @@ const LOCK_AFTER = 5;
 const LOCK_MS = 15 * 60 * 1000;
 const TOKEN_MS = 12 * 60 * 60 * 1000;
 const TEMP_MS = 7 * 24 * 60 * 60 * 1000; // temp passwords from an admin (match TEMP_DAYS in email/welcome.js)
+const RESET_MS = 24 * 60 * 60 * 1000; // reset links (match RESET_HOURS in crypto.js)
 /** What "salt" answers for an unknown username, so the reply doesn't reveal who has an account. */
 const FAKE_SALT = 'THf0dXNVbmtub3duU2FsdA==';
 export const AUTH_ROLES = ['operator', 'scheduler', 'approver', 'reporting', 'admin'];
@@ -92,7 +93,7 @@ export function localAuth(req) {
       const u = caller(req.token);
       if (u.status) return u;
       if (req.currentHash !== u.hash) return refuse(401, 'Your current password is wrong.');
-      Object.assign(u, { salt: req.newSalt, hash: req.newHash, mustChangePassword: false, tempExpires: null });
+      Object.assign(u, { salt: req.newSalt, hash: req.newHash, mustChangePassword: false, tempExpires: null, resetHash: null, resetExpires: null });
       save(users);
       return reply(200, { ok: true, user: pick(u) });
     }
@@ -150,7 +151,32 @@ export function localAuth(req) {
       if (a.status) return a;
       const u = find(req.username);
       if (!u) return refuse(404, 'No sign-in with that username.');
-      Object.assign(u, { salt: req.salt, hash: req.hash, mustChangePassword: true, tempExpires: new Date(now + TEMP_MS).toISOString(), failedCount: 0, lockedUntil: null, token: null, tokenExpires: null });
+      Object.assign(u, { salt: req.salt, hash: req.hash, mustChangePassword: true, tempExpires: new Date(now + TEMP_MS).toISOString(), failedCount: 0, lockedUntil: null, token: null, tokenExpires: null, resetHash: null, resetExpires: null });
+      save(users);
+      return reply(200, { ok: true });
+    }
+    case 'user.reset_link': {
+      const a = admin(req.token);
+      if (a.status) return a;
+      const u = find(req.username);
+      if (!u || !u.active) return refuse(404, 'No active sign-in with that username.');
+      if (!/^[0-9a-f]{64}$/.test(String(req.codeHash || ''))) return refuse(400, 'Bad reset request.');
+      Object.assign(u, { resetHash: req.codeHash, resetExpires: new Date(now + RESET_MS).toISOString() });
+      save(users);
+      return reply(200, { ok: true, expiresAt: u.resetExpires });
+    }
+    case 'reset': {
+      const u = find(req.username);
+      const stale = 'This reset link has expired or was already used. Ask your Lotus admin for a new one.';
+      if (!u || !u.active || !u.resetHash || !u.resetExpires || Date.parse(u.resetExpires) < now) return refuse(400, stale);
+      if (u.lockedUntil && Date.parse(u.lockedUntil) > now) return refuse(400, stale);
+      if (req.codeHash !== u.resetHash) {
+        u.failedCount += 1;
+        if (u.failedCount >= LOCK_AFTER) { u.lockedUntil = new Date(now + LOCK_MS).toISOString(); u.failedCount = 0; }
+        save(users);
+        return refuse(400, stale);
+      }
+      Object.assign(u, { salt: req.newSalt, hash: req.newHash, mustChangePassword: false, tempExpires: null, resetHash: null, resetExpires: null, failedCount: 0, lockedUntil: null, token: null, tokenExpires: null });
       save(users);
       return reply(200, { ok: true });
     }

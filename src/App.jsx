@@ -20,6 +20,7 @@ import { Roster } from './views/Roster.jsx';
 import { Reports } from './views/Reports.jsx';
 import { Emails } from './views/Emails.jsx';
 import { Users as UsersView } from './views/Users.jsx';
+import { ResetPassword } from './views/ResetPassword.jsx';
 import { OperatorSheet, SearchSheet } from './components/Search.jsx';
 import centificMark from './assets/centific-mark.png';
 import { Tour } from './tour/Tour.jsx';
@@ -50,6 +51,8 @@ const ADMIN_NAV = [
   { id: 'admin/users', label: 'Users', icon: KeyRound, view: UsersView, roles: ['admin'], phone: false, hidden: true },
 ];
 const CHECKIN = { id: 'checkin', label: 'Clock in', icon: Clock, view: CheckIn };
+// A password reset link (#/reset?u=…&c=…) opens this, signed in or not.
+const RESET = { id: 'reset', label: 'Reset password', icon: KeyRound, view: ResetPassword };
 const NO_ACCESS = { id: 'admin/none', label: 'Admin', view: NoAccess };
 const LEGACY = { today: 'admin/today', schedule: 'admin/schedule', hours: 'admin/hours', records: 'admin/records', admin: 'admin/today' };
 
@@ -99,7 +102,7 @@ export default function App() {
   }, [route]);
   const isAdmin = route.startsWith('admin') || route in LEGACY;
   const nav = ADMIN_NAV.filter((n) => hasRole(session, ...n.roles));
-  const item = isAdmin ? nav.find((n) => n.id === (LEGACY[route] || route)) || nav[0] || NO_ACCESS : CHECKIN;
+  const item = route === 'reset' ? RESET : isAdmin ? nav.find((n) => n.id === (LEGACY[route] || route)) || nav[0] || NO_ACCESS : CHECKIN;
 
   // The page's large title folds into the phone top bar once it scrolls under it.
   const [collapsed, setCollapsed] = useState(false);
@@ -119,7 +122,7 @@ export default function App() {
   // The tour: the welcome tour on first sign-in, then each page's own tour on its
   // first visit. Seen tours are remembered per username in this browser.
   const tour = useTour();
-  const section = isAdmin ? item.id : 'checkin';
+  const section = item === RESET ? 'reset' : isAdmin ? item.id : 'checkin';
   const signedIn = authStage === 'signedIn';
   useEffect(() => { if (signedIn) tour.setWho(session.username || session.email, session.roles || []); }, [signedIn, session?.username, session?.email, (session?.roles || []).join()]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { useTour.getState().stop(); }, [section, authStage]);
@@ -172,7 +175,7 @@ export default function App() {
 
   const main = (
     <main className="main" key={`${item.id}-${demo ? 'demo' : 'live'}`}>
-      {data || (!isAdmin && authStage !== 'signedIn') ? <View /> : !syncing && error ? (
+      {data || item === RESET || (!isAdmin && authStage !== 'signedIn') ? <View /> : !syncing && error ? (
         <div className="view view-narrow">
           <div className="card pad load-fail" role="alert">
             <h2 className="group-title">Couldn’t load the Lotus data</h2>

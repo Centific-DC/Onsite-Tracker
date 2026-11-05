@@ -11,6 +11,7 @@ export const TEMPLATES = [
   { id: 'operator-schedule', audience: 'operator', name: 'Weekly schedule', when: 'Sent from Schedule before the week starts', sentBy: 'app' },
   { id: 'operator-schedule-update', audience: 'operator', name: 'Schedule change', when: 'Sent from Schedule when shifts change after the first email', sentBy: 'app' },
   { id: 'operator-welcome', audience: 'operator', name: 'Welcome and sign-in', when: 'Sent when an admin adds an operator or sets up their sign-in', sentBy: 'app' },
+  { id: 'operator-reset', audience: 'operator', name: 'Password reset', when: 'Sent when an admin presses Send reset link', sentBy: 'app' },
   { id: 'approver-weekly', audience: 'approver', name: 'Approvals due Monday', when: 'Sent automatically every Monday at 8:00 AM', sentBy: 'flow' },
 ];
 
@@ -74,6 +75,21 @@ const welcome = [
   sign('Welcome aboard,'),
 ].join('');
 
+// The reset button's link is put in when the email is made (see email/reset.js):
+// the `#/reset` here is only a stand-in, so keep the button if you edit this one.
+const reset = [
+  h1('Reset your Lotus password'),
+  paragraph(`Hi ${strongField('operatorFirstName')},`),
+  paragraph(`Your Lotus admin sent you this link to choose a new password. Your username is ${strongField('signInUsername')}.`),
+  button('Choose a new password', `${APP_URL}#/reset`),
+  callout('About this link', [
+    `${strong('It works once')} and stops working on ${strongField('resetExpires')}. Your current password keeps working until you choose a new one.`,
+    `${strong('Didn’t expect this?')} You can ignore it, or reply to this email. Nobody from the team will ever ask you for your password.`,
+  ]),
+  paragraph(`If the button doesn’t work, copy this link into your browser: ${fieldChip('resetLink')}`),
+  sign('Thank you,'),
+].join('');
+
 const approver = [
   h1('Timesheets are ready to approve'),
   paragraph(`Hi ${strongField('approverFirstName')},`),
@@ -93,6 +109,7 @@ export const DEFAULT_CONTENT = {
   'operator-schedule': { subject: 'Your Lotus schedule for {weekRange}', html: schedule, updatedAt: null, updatedBy: null },
   'operator-schedule-update': { subject: 'Updated: your Lotus schedule for {weekRange}', html: update, updatedAt: null, updatedBy: null },
   'operator-welcome': { subject: 'Welcome to Lotus: your sign-in', html: welcome, updatedAt: null, updatedBy: null },
+  'operator-reset': { subject: 'Reset your Lotus password', html: reset, updatedAt: null, updatedBy: null },
   'approver-weekly': { subject: 'Lotus timesheets for {reviewWeek} are ready to approve', html: approver, updatedAt: null, updatedBy: null },
 };
 
@@ -101,5 +118,6 @@ export const TEMPLATE_FIELDS = {
   'operator-schedule': ['operatorName', 'operatorFirstName', 'weekRange', 'labName', 'shiftCount', 'scheduledHours', 'shiftTable'],
   'operator-schedule-update': ['operatorName', 'operatorFirstName', 'weekRange', 'labName', 'shiftCount', 'scheduledHours', 'shiftTable', 'changeList'],
   'operator-welcome': ['operatorName', 'operatorFirstName', 'labName', 'signInUsername', 'tempPassword', 'tempExpires'],
+  'operator-reset': ['operatorName', 'operatorFirstName', 'signInUsername', 'resetLink', 'resetExpires'],
   'approver-weekly': ['approverFirstName', 'reviewWeek', 'openDays'],
 };
