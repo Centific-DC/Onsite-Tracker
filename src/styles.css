@@ -172,7 +172,8 @@ button, a, [role="radio"] {
   transition-timing-function: var(--ease-out);
 }
 button:active:not(:disabled), a:active { scale: 0.97; }
-.row-btn:active, .side-link:active, .week-row:active { scale: none; }
+/* Rows, menu items and large surfaces change colour only: no press scale. */
+.row-btn:active, .side-link:active, .week-row:active, [role="menuitem"]:active, [role="option"]:active, .em-item:active { scale: none; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
 .num, .mono-num, .cell, .ring-time, .done-time, .kiosk-clock { font-variant-numeric: tabular-nums; }
@@ -298,6 +299,15 @@ p.err { text-align: center; margin: 0 0 12px; }
 .row-sub { font-size: 0.8125rem; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
 .row-trail { flex: none; display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 0.9375rem; }
 .row-in { animation: rowIn 260ms var(--ease-out) both; }
+/* On phones a row with a control on the right puts it on its own line under the
+   text, so names and details keep their width (Roster's experience picker). */
+@media (max-width: 639px) {
+  .row-wrap { flex-wrap: wrap; row-gap: 8px; }
+  .row-wrap .row-main { flex-basis: calc(100% - 46px); }
+  .row-wrap .row-trail { flex-basis: 100%; padding-left: 46px; }
+  .row-wrap .row-trail .sel-pill { width: 100%; }
+}
+.tag-btn { white-space: nowrap; }
 .row-icon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--blue-soft); color: var(--blue-text); }
 .row-icon.icon-in { background: var(--green-soft); color: var(--green); }
 .row-icon.icon-out { background: var(--fill); color: var(--ink-2); }
@@ -483,13 +493,13 @@ p.err { text-align: center; margin: 0 0 12px; }
 
 /* ---------- Hours ---------- */
 .compare { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
-.compare-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 64px; align-items: center; gap: 12px; font-size: 0.9375rem; }
-.compare-label { color: var(--ink-2); }
+.compare-row { display: grid; grid-template-columns: max-content minmax(48px, 1fr) max-content; align-items: center; gap: 12px; font-size: 0.9375rem; }
+.compare-label { color: var(--ink-2); white-space: nowrap; }
 .compare-track { height: 12px; border-radius: 999px; background: var(--fill); overflow: hidden; box-shadow: var(--well); }
 .compare-bar { display: block; height: 100%; border-radius: 999px; }
 .bar-blue { background: var(--blue); }
 .bar-green { background: var(--green-dot); }
-.compare-val { text-align: right; font-weight: 600; }
+.compare-val { text-align: right; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .group .row .row-trail .num { color: var(--ink); font-weight: 600; }
 
 .week-head, .week-row { display: grid; grid-template-columns: minmax(150px, 1fr) repeat(7, 46px) 60px; align-items: center; gap: 4px; padding: 0 16px; }
@@ -697,7 +707,7 @@ p.err { text-align: center; margin: 0 0 12px; }
 /* ---------- Schedule: week grid of shift slots ---------- */
 .view-wide { max-width: 1240px; }
 .sched-group .group-body { overflow-x: auto; }
-.sched { display: grid; grid-template-columns: minmax(130px, 160px) repeat(var(--days), minmax(96px, 1fr)); min-width: calc(130px + var(--days) * 96px); }
+.sched { display: grid; grid-template-columns: minmax(130px, 160px) repeat(var(--days), minmax(124px, 1fr)); min-width: calc(130px + var(--days) * 124px); }
 @media (max-width: 767px) { .sched { grid-template-columns: 116px 1fr; min-width: 0; } }
 .sched-row { display: contents; }
 .sched-row > * { border-top: 0.5px solid var(--edge); }

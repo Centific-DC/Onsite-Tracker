@@ -202,8 +202,8 @@ export function Emails() {
                       { value: 'dark', icon: <Moon size={16} aria-hidden="true" />, aria: 'Dark mode preview' },
                     ]}
                   />
-                  <button type="button" className="btn btn-plain btn-sm" onClick={copyEmail} aria-label="Copy email"><Copy size={15} aria-hidden="true" /> Copy<span className="em-long"> email</span></button>
-                  {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={startEdit} aria-label="Edit template" data-tour="emails-edit"><PencilLine size={15} aria-hidden="true" /> Edit<span className="em-long"> template</span></button>}
+                  <button type="button" className="btn btn-plain btn-sm" onClick={copyEmail} aria-label="Copy email"><Copy size={15} aria-hidden="true" /><span>Copy<span className="em-long"> email</span></span></button>
+                  {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={startEdit} aria-label="Edit template" data-tour="emails-edit"><PencilLine size={15} aria-hidden="true" /><span>Edit<span className="em-long"> template</span></span></button>}
                 </div>
               </div>
 
