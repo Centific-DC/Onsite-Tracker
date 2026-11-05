@@ -136,10 +136,29 @@ export const useStore = create((set, get) => ({
     }));
   },
 
-  async upsertShifts(shifts) {
-    const saved = await api.upsertShifts(shifts);
+  // `optimistic`: the shifts show at once (new ones under a temporary id) while the
+  // flow saves them, and leave again if the save fails. The flow's answer replaces them.
+  async upsertShifts(shifts, { optimistic = false } = {}) {
+    if (shifts.some((r) => String(r.id || '').startsWith('tmp-'))) throw new Error('That shift is still saving. Try again in a moment.');
+    const temp = [];
+    const shown = shifts.map((r) => {
+      if (r.id) return r;
+      const id = `tmp-${crypto.randomUUID().slice(0, 8)}`;
+      temp.push(id);
+      return { ...r, id, pending: true };
+    });
+    const touched = new Set(shown.map((r) => r.id));
+    const prev = (get().data?.schedule || []).filter((r) => touched.has(r.id));
+    if (optimistic) set((s) => ({ data: { ...s.data, schedule: (s.data.schedule || []).filter((r) => !touched.has(r.id)).concat(shown.map((r) => ({ ...r, pending: true }))) } }));
+    let saved;
+    try {
+      saved = await api.upsertShifts(shifts);
+    } catch (e) {
+      if (optimistic) set((s) => ({ data: { ...s.data, schedule: (s.data.schedule || []).filter((r) => !touched.has(r.id)).concat(prev) } }));
+      throw e;
+    }
     set((s) => {
-      const ids = new Set(saved.map((r) => r.id));
+      const ids = new Set([...saved.map((r) => r.id), ...touched]);
       return { data: { ...s.data, schedule: (s.data.schedule || []).filter((r) => !ids.has(r.id)).concat(saved) } };
     });
     return saved;
@@ -155,14 +174,28 @@ export const useStore = create((set, get) => ({
   addShift(shift) { return get().upsertShifts([shift]).then((r) => r[0]); },
 
   async removeShift(id) {
+    if (String(id).startsWith('tmp-')) throw new Error('That shift is still saving. Try again in a moment.');
     const before = get().data;
     // Optimistic: the row leaves at once; it comes back if the write fails.
     set((s) => ({ data: { ...s.data, schedule: (s.data.schedule || []).filter((r) => r.id !== id) } }));
     try { await api.removeShift(id); } catch (e) { set({ data: before }); throw e; }
   },
 
-  async upsertUsers(users) {
-    const saved = await api.upsertUsers(users);
+  // `optimistic`: for changes to people already on the roster, the new values show
+  // at once and go back if the save fails.
+  async upsertUsers(users, { optimistic = false } = {}) {
+    const emails = new Set(users.map((u) => u.email));
+    const prev = (get().data?.operators || []).filter((o) => emails.has(o.email));
+    if (optimistic) {
+      set((s) => ({ data: { ...s.data, operators: (s.data.operators || []).map((o) => { const u = users.find((x) => x.email === o.email); return u ? { ...o, ...u } : o; }) } }));
+    }
+    let saved;
+    try {
+      saved = await api.upsertUsers(users);
+    } catch (e) {
+      if (optimistic) set((s) => ({ data: { ...s.data, operators: (s.data.operators || []).map((o) => prev.find((p) => p.email === o.email) || o) } }));
+      throw e;
+    }
     set((s) => {
       const by = new Map((s.data.operators || []).map((o) => [o.email, o]));
       for (const o of saved) by.set(o.email, o);

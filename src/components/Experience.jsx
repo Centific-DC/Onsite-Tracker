@@ -11,11 +11,11 @@ export function ExperienceSelect({ op, sessions, className = 'sel-pill' }) {
   const save = async (v) => {
     try {
       // Only the email and the mark: the flow changes just the fields it's sent.
-      await upsertUsers([{ email: op.email, experience: v }]);
+      await upsertUsers([{ email: op.email, experience: v }], { optimistic: true });
       const now = experience({ ...op, experience: v }, sessions);
       toast(`${op.name}: ${now.level === 'new' ? 'New' : 'Experienced'}`, { description: v ? 'Set by you. Re-importing the roster keeps it.' : `Decided by completed sessions (${x.done}).` });
     } catch (err) {
-      toast.error("Couldn't save", { description: err.message });
+      toast.error(`${op.name}’s experience didn’t save`, { description: `${err.message} It’s back to what it was.` });
     }
   };
   return (

@@ -47,7 +47,18 @@ export function Review() {
   const approveReady = async () => {
     setBusy(true);
     try {
-      for (const d of ready) await approveDay({ email: d.email, operatorId: d.operatorId, date: d.day, hours: d.computed, computed: d.computed, note: '' });
+      // Three at a time: each one is its own flow run, and one after another a week
+      // of days took minutes. Approvals only show once the flow confirms each one.
+      const queue = [...ready];
+      const errors = [];
+      const worker = async () => {
+        while (queue.length) {
+          const d = queue.shift();
+          try { await approveDay({ email: d.email, operatorId: d.operatorId, date: d.day, hours: d.computed, computed: d.computed, note: '' }); } catch (e) { errors.push(e); }
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+      if (errors.length) throw new Error(`${ready.length - errors.length} of ${ready.length} approved. ${errors[0].message}`);
       toast.success(`Approved ${ready.length} ${ready.length === 1 ? 'day' : 'days'}`, { description: `${fmtHrsU(ready.reduce((a, d) => a + d.computed, 0))}, as suggested` });
     } catch (e) {
       toast.error("Couldn't approve them all", { description: e.message });

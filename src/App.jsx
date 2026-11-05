@@ -50,6 +50,7 @@ const ADMIN_NAV = [
   // The Lotus Auth flow checks the admin role too.
   { id: 'admin/users', label: 'Users', icon: KeyRound, view: UsersView, roles: ['admin'], phone: false, hidden: true },
 ];
+const REFRESH_MS = 5 * 60 * 1000;
 const CHECKIN = { id: 'checkin', label: 'Clock in', icon: Clock, view: CheckIn };
 // A password reset link (#/reset?u=…&c=…) opens this, signed in or not.
 const RESET = { id: 'reset', label: 'Reset password', icon: KeyRound, view: ResetPassword };
@@ -89,8 +90,14 @@ export default function App() {
   useEffect(() => {
     if (authStage !== 'signedIn' && authStage !== 'pick') return undefined;
     sync();
-    const id = setInterval(() => { if (!document.hidden) sync(); }, 60000);
-    const onVis = () => { if (!document.hidden) sync(); };
+    // Every load runs the Read flow, and every flow run spends Power Automate's
+    // shared request allowance (the same one Lotus saves and other teams' flows
+    // use; when it runs short, every flow slows down). So refresh every 5 minutes
+    // while the page is in view, and on coming back to it only if the data is
+    // over a minute old. Saves update the screen themselves, and Refresh is there.
+    const stale = (ms) => { const at = useStore.getState().loadedAt; return !at || Date.now() - at.getTime() > ms; };
+    const id = setInterval(() => { if (!document.hidden) sync(); }, REFRESH_MS);
+    const onVis = () => { if (!document.hidden && stale(60000)) sync(); };
     document.addEventListener('visibilitychange', onVis);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
   }, [sync, authStage, session?.email]);

@@ -21,7 +21,6 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
   const [f, setF] = useState({});
   const [err, setErr] = useState('');
   const [warn, setWarn] = useState(null);
-  const [busy, setBusy] = useState(false);
   const set = (k) => (e) => { const v = typeof e === 'string' ? e : e.target.value; setWarn(null); setF((x) => ({ ...x, [k]: v })); };
 
   useEffect(() => {
@@ -87,17 +86,17 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
       const w = checkNewShift(shift, [...schedule.filter((r) => !linked.some((x) => x.id === r.id)), ...linked], data.operators, sessions, mondayOf(parseDay(f.date)));
       if (w.length) return setWarn(w);
     }
-    setBusy(true);
-    try {
-      await upsertShifts([...linked, { ...shift, note: [shift.note, ...(warn || []).map((x) => (x.code === 'pairing' ? 'Pairing risk acknowledged' : x.code === 'over_cap' ? 'Over weekly limit acknowledged' : 'Conflict acknowledged'))].filter(Boolean).join(' · ') }]);
-      const t = shiftTimes(shift);
-      toast.success(backfill ? `${person.name} is replacing ${backfill}` : `Shift added for ${person.name}`, { description: `${fmtDay(parseDay(f.date))} · ${L.name} · ${fmtTime(t.start)}–${fmtTime(t.end)}` });
-      onOpenChange(false);
-    } catch (e) {
-      setErr(`Didn't save: ${e.message}`);
-    } finally {
-      setBusy(false);
-    }
+    // The shift shows on the schedule at once and the sheet closes; the toast follows
+    // the save, which can take a while on Power Automate. A failed save takes it off again.
+    const t = shiftTimes(shift);
+    const where = `${fmtDay(parseDay(f.date))} · ${L.name} · ${fmtTime(t.start)}–${fmtTime(t.end)}`;
+    const saving = upsertShifts([...linked, { ...shift, note: [shift.note, ...(warn || []).map((x) => (x.code === 'pairing' ? 'Pairing risk acknowledged' : x.code === 'over_cap' ? 'Over weekly limit acknowledged' : 'Conflict acknowledged'))].filter(Boolean).join(' · ') }], { optimistic: true });
+    toast.promise(saving, {
+      loading: backfill ? `Saving ${person.name} as ${backfill}’s replacement…` : `Saving ${person.name}’s shift…`,
+      success: { message: backfill ? `${person.name} is replacing ${backfill}` : `Shift added for ${person.name}`, description: where },
+      error: (e) => ({ message: `${person.name}’s shift didn’t save`, description: `${where}. ${e.message} It’s off the schedule again; add it once more.` }),
+    });
+    onOpenChange(false);
   };
 
   return (
@@ -106,7 +105,7 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
       onOpenChange={onOpenChange}
       title={backfill ? `Replace ${backfill}` : 'Add a shift'}
       description={backfill ? `They take ${backfill}’s place in the pair. Pick someone who isn't booked that day.` : 'Times are the lab’s local time. The robot is optional; the pair is what matters.'}
-      footer={<button type="button" className={warn ? 'btn btn-danger btn-block' : 'btn btn-primary btn-block'} onClick={save} disabled={busy} aria-busy={busy}>{busy ? 'Saving…' : warn ? 'Book anyway' : backfill ? 'Assign replacement' : 'Add shift'}</button>}
+      footer={<button type="button" className={warn ? 'btn btn-danger btn-block' : 'btn btn-primary btn-block'} onClick={save}>{warn ? 'Book anyway' : backfill ? 'Assign replacement' : 'Add shift'}</button>}
     >
       {warn && (
         <Group title="Check before booking" className="group-urgent">
