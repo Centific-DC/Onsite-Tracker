@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
-import { CalendarDays, ChartColumn, ClipboardCheck, Clock, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Settings, Smartphone, Sun, Users } from 'lucide-react';
+import { CalendarDays, ChartColumn, ClipboardCheck, Clock, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
 import { CFG, DEMO } from './lib/config.js';
 import { MS_AUTH, ROLES, hasRole } from './lib/auth.js';
@@ -16,6 +16,7 @@ import { Schedule } from './views/Schedule.jsx';
 import { Review } from './views/Review.jsx';
 import { Roster } from './views/Roster.jsx';
 import { Reports } from './views/Reports.jsx';
+import { OperatorSheet, SearchSheet } from './components/Search.jsx';
 import centificMark from './assets/centific-mark.png';
 
 // Centific mark, drawn as a mask so it takes the theme's logo color (dark grey / white).
@@ -41,7 +42,7 @@ const LEGACY = { today: 'admin/today', schedule: 'admin/schedule', hours: 'admin
 
 export default function App() {
   const route = useRoute();
-  const { sync, init, theme, data, syncing, error, loadedAt, session, authReady } = useStore();
+  const { sync, init, theme, data, syncing, error, loadedAt, session, authReady, setSearching } = useStore();
   const [settings, setSettings] = useState(false);
   const systemDark = useMedia('(prefers-color-scheme: dark)');
   const phone = useMedia('(max-width: 767px)');
@@ -88,6 +89,21 @@ export default function App() {
     return () => { cancelAnimationFrame(id); io?.disconnect(); };
   }, [item.id, data]);
   const View = item.view;
+  // Search is for the people who schedule and review; ⌘K or Ctrl+K opens it anywhere, and so does / outside a field.
+  const canSearch = isAdmin && hasRole(session, 'scheduler', 'approver');
+  useEffect(() => {
+    if (!canSearch) return undefined;
+    const onKey = (e) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '') || document.activeElement?.isContentEditable;
+      if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey)) {
+        e.preventDefault();
+        setSearching(true);
+      }
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [canSearch, setSearching]);
+  const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   const manualSync = async () => {
     try { await sync({ manual: true }); } catch (e) { toast.error("Couldn't refresh", { description: e.message }); }
   };
@@ -104,6 +120,7 @@ export default function App() {
   );
   const actions = (compact) => (
     <>
+      {compact && canSearch && <button type="button" className="icon-btn" aria-label="Search" onClick={() => setSearching(true)}><Search size={18} /></button>}
       <SyncButton syncing={syncing} onClick={manualSync} status={status} error={error} compact={compact} />
       <button type="button" className="icon-btn" aria-label="Settings" onClick={() => setSettings(true)}><Settings size={18} /></button>
     </>
@@ -111,6 +128,7 @@ export default function App() {
   const toaster = (
     <>
       <SettingsSheet open={settings} onOpenChange={setSettings} admin={isAdmin} />
+      {canSearch && data && <><SearchSheet /><OperatorSheet /></>}
       {/* On phones the check-in actions sit at the bottom, so toasts come in from the top. */}
       <Toaster position={phone ? 'top-center' : 'bottom-center'} duration={6000} theme={resolved} offset={24} mobileOffset={{ top: 64 }} toastOptions={{ className: 'toast' }} />
     </>
@@ -155,6 +173,11 @@ export default function App() {
             <span className="side-project">{CFG.project}</span>
           </div>
         </div>
+        {canSearch && (
+          <button type="button" className="side-search" onClick={() => setSearching(true)}>
+            <Search size={16} aria-hidden="true" /> Search <kbd>{mac ? '⌘K' : 'Ctrl K'}</kbd>
+          </button>
+        )}
         <nav className="side-nav" aria-label="Admin">
           {nav.map((n) => (
             <a key={n.id} href={`#/${n.id}`} className={clsx('side-link', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>

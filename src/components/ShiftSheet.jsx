@@ -29,7 +29,7 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
     const t = L.templates.find((x) => x.start === initial?.start && x.end === initial?.end) || (!initial?.start ? L.templates[0] : null);
     setErr('');
     setWarn(null);
-    setF({ date: initial?.date || '', location: loc, station: initial?.station || L.robots[0], template: t ? t.id : CUSTOM, start: initial?.start || t?.start || '08:00', end: initial?.end || t?.end || '14:00', who: '', note: initial?.note || '' });
+    setF({ date: initial?.date || '', location: loc, station: initial?.station || L.robots[0], template: t ? t.id : CUSTOM, start: initial?.start || t?.start || '08:00', end: initial?.end || t?.end || '14:00', who: initial?.who || '', note: initial?.note || '' });
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const L = locationById(f.location) || LOCATIONS[0];

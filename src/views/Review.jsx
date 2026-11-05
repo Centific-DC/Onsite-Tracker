@@ -5,7 +5,7 @@ import { useStore } from '../lib/store.js';
 import { buildSessions } from '../lib/hours.js';
 import { FLAG, reviewDays } from '../lib/review.js';
 import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, mondayOf, parseDay, weekLabel, fmtHrsU } from '../lib/time.js';
-import { useNow } from '../lib/hooks.js';
+import { useHashQuery, useNow } from '../lib/hooks.js';
 import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx';
 
 export const DAY_STATUS = {
@@ -26,6 +26,17 @@ export function Review() {
   const [show, setShow] = useState('todo');
   const [open, setOpen] = useState(null);
   const [busy, setBusy] = useState(false);
+  // A link from search (?day=…&op=…) opens that week, and that operator's day.
+  const hq = useHashQuery();
+  useEffect(() => {
+    const p = new URLSearchParams(hq);
+    const day = p.get('day');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return;
+    setWk0(mondayOf(parseDay(day)));
+    setShow('all');
+    const op = p.get('op');
+    if (op) setOpen(`${op.toLowerCase()}|${day}`);
+  }, [hq]);
   const days = useMemo(() => reviewDays(data, wk0, addDays(wk0, 7), now), [data, dayKey(wk0), now]); // eslint-disable-line react-hooks/exhaustive-deps
   const count = (st) => days.filter((d) => d.status === st).length;
   const shown = days.filter((d) => (show === 'todo' ? d.status === 'needs_review' || d.status === 'ready' : show === 'all' ? true : d.status === show));

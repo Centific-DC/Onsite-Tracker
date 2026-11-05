@@ -125,6 +125,11 @@ export const useStore = create((set, get) => ({
   setMe(me) { storage.set('onsite-me', me); set({ me }); },
   forgetMe() { storage.remove('onsite-me'); set({ me: null }); },
   setDevice(device) { storage.set('onsite-device', device); set({ device }); },
+  // Admin search and the operator profile it opens, reachable from any view.
+  searching: false,
+  profile: null,
+  setSearching(searching) { set({ searching }); },
+  openProfile(email) { set({ profile: email, searching: false }); },
   setTheme(theme) { storage.set('onsite-theme', theme); set({ theme }); },
   resetDemo() { demo.reset(); get().sync(); },
 }));

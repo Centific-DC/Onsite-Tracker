@@ -51,12 +51,12 @@ export function Segmented({ label, options, value, onChange, size }) {
 }
 
 // Bottom sheet on phones, centred panel on larger screens.
-export function Sheet({ open, onOpenChange, title, description, children, footer }) {
+export function Sheet({ open, onOpenChange, title, description, children, footer, className, initialFocus }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Backdrop className="scrim" />
-        <Dialog.Popup className="sheet">
+        <Dialog.Popup className={clsx('sheet', className)} initialFocus={initialFocus}>
           <div className="sheet-grab" aria-hidden="true" />
           <div className="sheet-head">
             <Dialog.Title className="sheet-title">{title}</Dialog.Title>

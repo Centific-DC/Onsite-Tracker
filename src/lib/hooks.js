@@ -19,6 +19,12 @@ export function useRoute() {
   return hash.replace(/^#\/?/, '').split('?')[0] || 'checkin';
 }
 export const go = (route) => { location.hash = `/${route}`; };
+// The ?key=value part of the hash, for links that open a view at a day or person.
+export function useHashQuery() {
+  const hash = useSyncExternalStore(hashSub, () => location.hash);
+  const i = hash.indexOf('?');
+  return i < 0 ? '' : hash.slice(i + 1);
+}
 
 // Numbers count from the last shown value (0 the first time), 900ms cubic ease-out.
 export function useCountUp(value) {

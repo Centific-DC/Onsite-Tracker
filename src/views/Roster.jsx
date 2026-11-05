@@ -13,7 +13,7 @@ import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx'
 // Who can be scheduled: operator IDs, home lab, experience and this week's load.
 // Recruiting's Active Roster 2 and scheduling tracker come in through Import.
 export function Roster() {
-  const { data } = useStore();
+  const { data, openProfile } = useStore();
   const [q, setQ] = useState('');
   const [lab, setLab] = useState('all');
   const [importing, setImporting] = useState(false);
@@ -53,6 +53,7 @@ export function Roster() {
           return (
             <Row
               key={o.email}
+              onClick={() => openProfile(o.email)}
               leading={<Avatar name={o.name} />}
               title={<>{o.name} {done < CFG.pairingMinSessions && <Tag tone="warn">New · {done} done</Tag>}{w?.over && <Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}</>}
               subtitle={`${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${done} sessions completed${o.training ? ` · ${o.training}` : ''}`}

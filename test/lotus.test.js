@@ -258,3 +258,63 @@ describe('reporting', () => {
     expect(JSON.stringify(rows)).not.toMatch(/rate|markup|pay/i);
   });
 });
+
+describe('admin search', async () => {
+  const { parseQuery, search } = await import('../src/lib/search.js');
+  const { api } = await import('../src/lib/api.js');
+  const now = new Date(2026, 10, 5, 10, 0); // Thu Nov 5 2026
+  const k = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  it('reads dates in the ways people type them', () => {
+    expect(k(parseQuery('nov 3', now).range[0])).toBe('2026-11-03');
+    expect(k(parseQuery('11/3', now).range[0])).toBe('2026-11-03');
+    expect(k(parseQuery('2026-11-03', now).range[0])).toBe('2026-11-03');
+    expect(k(parseQuery('3rd november', now).range[0])).toBe('2026-11-03');
+    expect(k(parseQuery('yesterday', now).range[0])).toBe('2026-11-04');
+    expect(k(parseQuery('tuesday', now).range[0])).toBe('2026-11-03');
+    expect(k(parseQuery('last tue', now).range[0])).toBe('2026-10-27');
+    const lw = parseQuery('last week', now).range;
+    expect([k(lw[0]), k(lw[1])]).toEqual(['2026-10-26', '2026-11-02']);
+  });
+
+  it('pulls out labs, robots, flags and statuses and keeps the name', () => {
+    const p = parseQuery('jordan no clock-out redmond robot 2 last week', now);
+    expect(p.words).toEqual(['jordan']);
+    expect(p.flags).toEqual(['no_clockout']);
+    expect(p.labs).toEqual(['RED']);
+    expect(p.robots).toEqual(['Robot 2']);
+    expect(parseQuery('no-show', now).flags).toEqual(['no_show']);
+    expect(parseQuery('needs review', now).status).toBe('needs_review');
+    expect(parseQuery('Mountain View', now).labs).toEqual(['MTV']);
+    // Names that start like a weekday or a lab are still names.
+    expect(parseQuery('Sato', now).words).toEqual(['sato']);
+    expect(parseQuery('Monica', now).range).toBe(null);
+  });
+
+  it('finds operators by name, email and ID', async () => {
+    const data = await api.all();
+    const o = data.operators.find((x) => (x.roles || ['operator']).includes('operator'));
+    expect(search(data, o.name.split(' ')[0]).operators.map((x) => x.email)).toContain(o.email);
+    expect(search(data, o.id).operators.map((x) => x.email)).toEqual([o.email]);
+    expect(search(data, o.email).operators.map((x) => x.email)).toEqual([o.email]);
+    expect(search(data, 'zzzz-nobody').operators).toEqual([]);
+  });
+
+  it('finds flagged days, and only days with that flag', async () => {
+    const data = await api.all();
+    const r = search(data, 'no clock-out');
+    expect(r.days.length).toBeGreaterThan(0);
+    expect(r.days.every((d) => d.flags.some((f) => f.code === 'no_clockout'))).toBe(true);
+    expect(r.days.some((d) => d.name.startsWith('Jordan'))).toBe(true);
+    expect(r.operators).toEqual([]);
+  });
+
+  it('a date shows that day’s shifts and a link to it', async () => {
+    const data = await api.all();
+    const d = data.schedule[0].date;
+    const r = search(data, d);
+    expect(r.dayLinks).toEqual([d]);
+    expect(r.shifts.length).toBeGreaterThan(0);
+    expect(r.shifts.every((s) => s.date === d)).toBe(true);
+  });
+});
