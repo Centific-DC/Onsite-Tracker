@@ -15,6 +15,7 @@ import { shiftTimes } from '../lib/schedule.js';
 const span = (r) => { const t = shiftTimes(r); return `${fmtTime(t.start)}–${fmtTime(t.end)}`; };
 import { Avatar, Group, Row, Sheet, Tag } from './ui.jsx';
 import { ShiftSheet } from './ShiftSheet.jsx';
+import { EditOperatorSheet } from './EditOperator.jsx';
 import { DAY_STATUS } from '../views/Review.jsx';
 
 const EXAMPLES = ['Jordan', 'OP-0004', 'no-show last week', 'robot 2 tomorrow', 'needs review', 'Mountain View next week', 'new operators', 'Nov 3'];
@@ -123,6 +124,7 @@ export function SearchSheet() {
 export function OperatorSheet() {
   const { data, session, profile, openProfile } = useStore();
   const [booking, setBooking] = useState(null);
+  const [editing, setEditing] = useState(null);
   const now = useMemo(() => new Date(), [profile]); // eslint-disable-line react-hooks/exhaustive-deps
   const o = profile ? (data?.operators || []).find((x) => x.email === profile) : null;
   const { sessions } = useMemo(() => buildSessions(data?.punches || [], now), [data?.punches, now]);
@@ -163,6 +165,7 @@ export function OperatorSheet() {
             subtitle={experience(o, sessions).level === 'new' ? 'Pair with an experienced operator' : 'Can pair with a new operator'}
             trailing={canBook ? <ExperienceSelect op={o} sessions={sessions} /> : <Tag tone={experience(o, sessions).level === 'new' ? 'warn' : 'on'}>{experience(o, sessions).level === 'new' ? 'New' : 'Experienced'}{experience(o, sessions).marked ? '' : ' · auto'}</Tag>}
           />
+          {canBook && <Row title="Edit details" subtitle="Name, home lab, cohort, training, active" onClick={() => setEditing(o)} />}
           {(load?.over || next?.over) && <Row title={<Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>} subtitle={load?.over ? 'This week' : 'Next week'} />}
         </Group>
         <Group title="Coming up">
@@ -185,6 +188,7 @@ export function OperatorSheet() {
         </Group>
       </Sheet>
       <ShiftSheet open={!!booking} onOpenChange={(v) => !v && setBooking(null)} initial={booking} />
+      <EditOperatorSheet op={editing} onClose={() => setEditing(null)} />
     </>
   );
 }

@@ -835,3 +835,7 @@ p.err { text-align: center; margin: 0 0 12px; }
 .load-fail { display: grid; gap: 10px; justify-items: start; }
 .load-fail .lede { margin: 0; overflow-wrap: anywhere; }
 .load-slow { margin-top: 12px; }
+
+/* Roster row: experience pill plus the edit button. */
+.row-actions { display: inline-flex; align-items: center; gap: 4px; }
+@media (pointer: coarse) { .row-actions .icon-btn { width: 44px; height: 44px; } }

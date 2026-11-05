@@ -27,3 +27,14 @@ export function claimName(name, email, people) {
   while (taken.has(key(`${base} ${n}`))) n++;
   return { name: `${base} ${n}`, email: mail, existing: false, renamed: true, takenBy: holder };
 }
+
+// A name that ends in a number ("Brian Leong 2") when nobody else holds the plain
+// name: the number was added by mistake (the Write flow numbered every import on
+// 2026-11-05), so offer the plain name back. Returns null when the name is fine.
+export function strayNumber(op, people) {
+  const m = norm(op.name || '').match(/^(.*\S)\s+\d+$/);
+  if (!m) return null;
+  const base = m[1];
+  const taken = people.some((p) => p.email !== op.email && p.active !== false && key(p.name) === key(base));
+  return taken ? null : base;
+}

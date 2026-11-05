@@ -404,3 +404,24 @@ describe('schedule emails', async () => {
     expect(noticeStatus(data({ operators: [avery, jordan], schedule: [s1] }), NEXT_MON, true).map((e) => e.op.name)).toEqual(['Avery Lin']);
   });
 });
+
+import { strayNumber } from '../src/lib/onboarding.js';
+describe('strayNumber', () => {
+  const people = [
+    { email: 'b@x.com', name: 'Brian Leong 2' },
+    { email: 'j@x.com', name: 'Jordan Pike' },
+    { email: 'j2@x.com', name: 'Jordan Pike 2' },
+    { email: 'r@x.com', name: 'Robot Fan 9', active: true },
+  ];
+  it('offers the plain name when nobody else has it', () => {
+    expect(strayNumber(people[0], people)).toBe('Brian Leong');
+    expect(strayNumber(people[3], people)).toBe('Robot Fan');
+  });
+  it('keeps a number someone needs', () => {
+    expect(strayNumber(people[2], people)).toBeNull();
+    expect(strayNumber(people[1], people)).toBeNull();
+  });
+  it('ignores an inactive holder of the plain name', () => {
+    expect(strayNumber({ email: 'k@x.com', name: 'Kim 2' }, [{ email: 'old@x.com', name: 'Kim', active: false }])).toBe('Kim');
+  });
+});
