@@ -254,7 +254,7 @@ describe('reporting', () => {
     const rows = approvedRows(d, MON, NEXT_MON, AFTER);
     expect(rows).toHaveLength(1);
     expect(Object.keys(rows[0])).toEqual(APPROVED_COLUMNS);
-    expect(rows[0]).toMatchObject({ operator_id: avery.id, work_date: DAY, iso_week: '2026-W45', location_id: 'RED', location_name: 'Redmond Lab', approved_hours: '5.50', approval_status: 'approved' });
+    expect(rows[0]).toMatchObject({ operator_id: avery.id, work_date: DAY, time_in: '07:00', time_out: '12:30', iso_week: '2026-W45', location_id: 'RED', location_name: 'Redmond Lab', approved_hours: '5.50', approval_status: 'approved' });
     expect(JSON.stringify(rows)).not.toMatch(/rate|markup|pay/i);
   });
 });
@@ -365,5 +365,42 @@ describe('handover is not a pairing', async () => {
     const r = (o, id, start, end) => ({ id, date: '2026-11-10', email: o.email, name: o.name, station: 'Robot 1', start, end });
     expect(pairingRisks([r(a, 1, '12:00', '17:30'), r(b, 2, '17:00', '23:00')], [a, b], [])).toEqual([]);
     expect(pairingRisks([r(a, 1, '17:00', '23:00'), r(b, 2, '17:00', '23:00')], [a, b], [])).toHaveLength(1);
+  });
+});
+
+describe('schedule emails', async () => {
+  const { diffShifts, noticeStatus, scheduleValues, snapshotOf, changeLines, templateFor } = await import('../src/lib/email/notices.js');
+  const s1 = shift(avery, '17:00', '23:00', 'Robot 2', '2026-11-09', { template: 'RED-PM' });
+  const s2 = shift(avery, '17:00', '23:00', 'Robot 2', '2026-11-11', { template: 'RED-PM' });
+  const sent = (rows, test = true) => ({ id: 'N1', email: avery.email, operatorId: avery.id, weekStart: '2026-11-09', sentAt: '2026-11-05T17:00:00Z', test, snapshot: snapshotOf(rows) });
+
+  it('an operator with shifts and no email is "not sent"; after the email, "up to date"', () => {
+    const d = data({ operators: [avery], schedule: [s1, s2] });
+    expect(noticeStatus(d, NEXT_MON, true).map((e) => e.status)).toEqual(['unsent']);
+    expect(noticeStatus({ ...d, notices: [sent([s1, s2])] }, NEXT_MON, true).map((e) => e.status)).toEqual(['current']);
+    // A test send doesn't count once test mode is off.
+    expect(noticeStatus({ ...d, notices: [sent([s1, s2])] }, NEXT_MON, false).map((e) => e.status)).toEqual(['unsent']);
+  });
+
+  it('a moved, added or removed shift after the email shows as changed and says what moved', () => {
+    const moved = { ...s2, station: 'Robot 1' };
+    const extra = shift(avery, '07:00', '12:30', 'Robot 1', '2026-11-14', { template: 'RED-AM' });
+    const d = data({ operators: [avery], schedule: [s1, moved, extra], notices: [sent([s1, s2])] });
+    const [e] = noticeStatus(d, NEXT_MON, true);
+    expect(e.status).toBe('changed');
+    expect(templateFor(e)).toBe('operator-schedule-update');
+    const lines = changeLines(e.diff);
+    expect(lines[0]).toMatch(/Wed, Nov 11 Night: now on Robot 1 \(was Robot 2\)/);
+    expect(lines[1]).toMatch(/^Added Sat, Nov 14 Morning/);
+    expect(diffShifts(snapshotOf([s1, s2]), [s1]).removed).toHaveLength(1);
+    const v = scheduleValues(e, NEXT_MON);
+    expect(v).toMatchObject({ operatorFirstName: 'Avery', labName: 'Redmond Lab', shiftCount: '3 shifts', scheduledHours: '17.5 hrs' });
+    expect(v.shiftTable).toContain('Changed');
+    expect(v.shiftTable).toContain('Added');
+    expect(v.changeList).toContain('<li');
+  });
+
+  it('operators with no shifts and no email that week are left out', () => {
+    expect(noticeStatus(data({ operators: [avery, jordan], schedule: [s1] }), NEXT_MON, true).map((e) => e.op.name)).toEqual(['Avery Lin']);
   });
 });

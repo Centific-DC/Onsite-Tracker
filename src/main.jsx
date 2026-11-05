@@ -4,6 +4,7 @@ import App from './App.jsx';
 import './styles.css';
 import './operator.css';
 import './soft.css';
+import './email.css';
 
 // Fit scaling: laid out for 1536x864; smaller desktop windows scale the root font down to 0.8.
 // Touch screens (tablets, phones) never scale: they're read at arm's length.

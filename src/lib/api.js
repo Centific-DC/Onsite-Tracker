@@ -103,7 +103,29 @@ const normAll = (d) => ({
   resolutions: d.resolutions || [],
   approvals: (d.approvals || []).map((a) => ({ ...a, hours: Number(a.hours) || 0, computed: Number(a.computed) || 0 })),
   audit: d.audit || [],
+  // Schedule emails already sent (staff only), the email templates, and whether
+  // emails still go to the project alias only (test mode).
+  notices: (d.notices || []).map(normNotice).filter((n) => n.email && n.weekStart),
+  templates: (d.templates || []).filter((t) => t && t.id),
+  emailTestMode: d.emailTestMode !== false,
 });
+
+export const normNotice = (n) => {
+  let snapshot = n.snapshot ?? n.Snapshot ?? [];
+  if (typeof snapshot === 'string') { try { snapshot = JSON.parse(snapshot); } catch { snapshot = []; } }
+  return {
+    id: n.id ?? n.Title ?? '',
+    email: String(n.email ?? n.Email ?? '').trim().toLowerCase(),
+    operatorId: n.operatorId ?? n.OperatorId ?? '',
+    weekStart: String(n.weekStart ?? n.WeekStart ?? '').slice(0, 10),
+    kind: n.kind ?? n.Kind ?? 'schedule',
+    subject: n.subject ?? n.Subject ?? '',
+    sentAt: n.sentAt ?? n.SentAt ?? '',
+    by: n.by ?? n.By ?? '',
+    test: n.test === true || n.Test === true || n.test === 'true' || n.Test === 'Yes',
+    snapshot: Array.isArray(snapshot) ? snapshot : [],
+  };
+};
 
 // Every call goes through here, so the live flows and demo mode take the same shapes
 // (docs/lotus-flows.md). In live mode the flows check the caller's role; in demo,
@@ -140,6 +162,17 @@ export const api = {
     if (DEMO) return demo.resolveFlag(r);
     return (await paPost(WRITE_URL, { action: 'resolve_flag', ...r })).resolution;
   },
+  // One email per operator, already filled in; the flow checks each recipient
+  // is a Lotus user, sends from the shared mailbox and records a notice.
+  async sendEmails(body) {
+    if (DEMO) return demo.sendEmails(body);
+    const out = await paPost(WRITE_URL, { action: 'email_send', ...body });
+    return (out.notices || []).map(normNotice);
+  },
+  async saveTemplate(t) {
+    if (DEMO) return demo.saveTemplate(t);
+    return (await paPost(WRITE_URL, { action: 'template_save', ...t })).template;
+  },
   async approveDay(a, status) {
     if (DEMO) return demo.approveDay(a, status);
     const out = await paPost(WRITE_URL, { action: status === 'approved' ? 'approve_day' : 'reopen_day', ...a });
@@ -152,11 +185,13 @@ let demoActor = 'demo';
 export const setDemoActor = (email) => { demoActor = email || 'demo'; };
 
 export const demo = {
-  KEY: 'lotus-demo-v2',
+  KEY: 'lotus-demo-v3',
   load() {
     let d = storage.get(this.KEY, null);
     if (!d) { d = seed(); storage.set(this.KEY, d); }
-    for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit']) d[k] ||= [];
+    for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit', 'notices', 'templates']) d[k] ||= [];
+    // Demo mode never sends email, so it behaves like test mode.
+    d.emailTestMode = true;
     return structuredClone(d);
   },
   save(d, action, target, before, after) {
@@ -233,6 +268,27 @@ export const demo = {
     const rec = { email: a.email, operatorId: a.operatorId, date: a.date, status, hours, computed: Math.round(a.computed * 100) / 100, note: String(a.note || '').trim(), final: false, by: demoActor, at: new Date().toISOString() };
     d.approvals.push(rec);
     this.save(d, status === 'approved' ? 'approve_day' : 'reopen_day', `${a.email}|${a.date}`, null, rec);
+    return rec;
+  },
+  sendEmails(body) {
+    const d = this.load();
+    const sentAt = new Date().toISOString();
+    const out = (body.messages || []).map((m) => {
+      if (!d.operators.some((o) => o.email === m.to)) throw new Error(`${m.to} isn't a Lotus user`);
+      const n = normNotice({ id: `N-${crypto.randomUUID().slice(0, 8)}`, email: m.to, operatorId: m.operatorId, weekStart: body.weekStart, kind: m.kind, subject: m.subject, sentAt, by: demoActor, test: true, snapshot: m.snapshot });
+      d.notices.push(n);
+      d.audit.push({ id: crypto.randomUUID(), at: sentAt, by: demoActor, action: 'email_send', target: n.id, before: null, after: { ...n, snapshot: undefined } });
+      return n;
+    });
+    storage.set(this.KEY, d);
+    return out;
+  },
+  saveTemplate(t) {
+    const d = this.load();
+    const before = d.templates.find((x) => x.id === t.id) || null;
+    const rec = { id: t.id, subject: t.subject, html: t.html, ready: t.ready, original: !!t.original, updatedAt: new Date().toISOString(), updatedBy: demoActor };
+    d.templates = d.templates.filter((x) => x.id !== t.id).concat([rec]);
+    this.save(d, 'template_save', t.id, before && { ...before, html: undefined, ready: undefined }, { ...rec, html: undefined, ready: undefined });
     return rec;
   },
   reset() { storage.remove(this.KEY); },
@@ -351,5 +407,26 @@ function seed() {
       approvals.push({ email: o.email, operatorId: o.id, date: k, status: 'approved', hours: h, computed: h, note: '', final: false, by: 'manager@example.com', at: at(dayKey(addDays(start, 7)), '09:30', i).toISOString() });
     }
   }
-  return { operators: ops, punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule, resolutions: [], approvals, audit: [] };
+  // Schedule emails: this week went to everyone last Friday. Next week went out
+  // yesterday to the weekday crews, and some shifts moved after that; the
+  // weekend crews haven't had theirs yet.
+  const notices = [];
+  const snap = (rows) => rows.map((r) => ({ id: r.id, date: r.date, start: r.start, end: r.end, station: r.station, location: r.location, template: r.template }));
+  const sendTo = (o, wk, sentAt, tweak = (x) => x) => {
+    const rows = schedule.filter((r) => r.email === o.email && r.date >= dayKey(wk) && r.date < dayKey(addDays(wk, 7)) && r.note === '');
+    if (!rows.length) return;
+    notices.push({ id: `N-demo${seq++}`, email: o.email, operatorId: o.id, weekStart: dayKey(wk), kind: 'schedule', subject: `Your Lotus schedule for ${dayKey(wk)}`, sentAt: sentAt.toISOString(), by: 'scheduler@example.com', test: true, snapshot: tweak(snap(rows)) });
+  };
+  const wk1 = addDays(wk0, 7);
+  for (const o of ops) sendTo(o, wk0, at(dayKey(addDays(wk0, -3)), '09:14'));
+  const weekday = new Set(crews.filter((c) => c[4] === WEEKDAYS).flatMap((c) => [c[2], c[3]]));
+  for (const o of ops.filter((x) => weekday.has(x.name) && !['Avery Lin', 'Jordan Pike'].includes(x.name))) {
+    sendTo(o, wk1, at(dayKey(addDays(now, -1)), '09:14'), (rows) => {
+      // Drew's Wednesday was on Robot 1 when the email went out; Reese also had a Saturday.
+      if (o.name === 'Drew Sato') return rows.map((r) => (r.date === dayKey(addDays(wk1, 2)) ? { ...r, station: R.robots[0] } : r));
+      if (o.name === 'Reese Park') return [...rows, { id: 'S-demo-gone', date: dayKey(addDays(wk1, 5)), start: tpl(R, 2).start, end: tpl(R, 2).end, station: R2, location: R.id, template: tpl(R, 2).id }];
+      return rows;
+    });
+  }
+  return { operators: ops, punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule, resolutions: [], approvals, audit: [], notices, templates: [] };
 }

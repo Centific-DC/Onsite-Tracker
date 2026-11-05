@@ -139,7 +139,7 @@ export function reviewDays(data, from, to, now = new Date()) {
 
 // Approval records for the reporting export: one row per operator per day,
 // approved only. Field names are a contract with the agency-reporting sheet.
-export const APPROVED_COLUMNS = ['operator_id', 'operator_name', 'operator_email', 'work_date', 'iso_week', 'location_id', 'location_name', 'shift_ids', 'scheduled_hours', 'recorded_hours', 'approved_hours', 'adjustment_hours', 'approval_status', 'approved_by', 'approved_at', 'flags_resolved', 'note'];
+export const APPROVED_COLUMNS = ['operator_id', 'operator_name', 'operator_email', 'work_date', 'time_in', 'time_out', 'iso_week', 'location_id', 'location_name', 'shift_ids', 'scheduled_hours', 'recorded_hours', 'approved_hours', 'adjustment_hours', 'approval_status', 'approved_by', 'approved_at', 'flags_resolved', 'note'];
 
 export function isoWeek(k) {
   const d = parseDay(k);
@@ -159,6 +159,7 @@ export function approvedRows(data, from, to, now = new Date()) {
       operator_name: d.name,
       operator_email: d.email,
       work_date: d.day,
+      ...clockSpan(d),
       iso_week: isoWeek(d.day),
       location_id: d.location,
       location_name: d.locationName,
@@ -176,3 +177,24 @@ export function approvedRows(data, from, to, now = new Date()) {
 }
 
 export const weekRange = (wk0) => [wk0, addDays(wk0, 7)];
+
+const hm = (t) => `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+
+// First clock-in and last clock-out of an approved day, site-local HH:MM. A
+// missed clock-out counts only with the end time the manager accepted.
+export function clockSpan(d) {
+  const ins = d.sessions.map((s) => +s.start);
+  const outs = d.sessions.filter((s) => !s.live).map((s) => +s.end);
+  for (const f of d.flags) {
+    if (f.code !== 'no_clockout') continue;
+    ins.push(+f.start);
+    if (f.resolution?.outcome === 'accept') {
+      const end = f.resolution.endTime ? new Date(f.resolution.endTime) : f.suggested;
+      if (end) outs.push(+end);
+    }
+  }
+  return {
+    time_in: ins.length ? hm(new Date(Math.min(...ins))) : '',
+    time_out: outs.length ? hm(new Date(Math.max(...outs))) : '',
+  };
+}

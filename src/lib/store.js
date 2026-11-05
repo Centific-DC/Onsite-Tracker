@@ -122,6 +122,18 @@ export const useStore = create((set, get) => ({
     return rec;
   },
 
+  async sendEmails(body) {
+    const notices = await api.sendEmails(body);
+    set((s) => ({ data: { ...s.data, notices: [...(s.data.notices || []), ...notices] } }));
+    return notices;
+  },
+
+  async saveTemplate(t) {
+    const rec = await api.saveTemplate(t);
+    set((s) => ({ data: { ...s.data, templates: (s.data.templates || []).filter((x) => x.id !== t.id).concat([rec]) } }));
+    return rec;
+  },
+
   setMe(me) { storage.set('onsite-me', me); set({ me }); },
   forgetMe() { storage.remove('onsite-me'); set({ me: null }); },
   setDevice(device) { storage.set('onsite-device', device); set({ device }); },

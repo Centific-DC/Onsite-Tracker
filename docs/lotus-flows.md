@@ -128,7 +128,7 @@ The latest row per `DayKey` is the current state.
 | `Title` | text | `guid()` |
 | `At` | text | `utcNow()` |
 | `By` | text | `callerEmail` |
-| `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client` |
+| `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client`, `email_send`, `template_save` |
 | `Target` | text | the row key it touched |
 | `Before` | multi-line text | JSON of the row before, or empty |
 | `After` | multi-line text | JSON of the row after |
@@ -141,13 +141,48 @@ The latest row per `DayKey` is the current state.
 | `SuccessfulHours` | number | `61.5` |
 | `Updated` | text | ISO UTC |
 
+### `Lotus_Notices`: every schedule email sent (append only)
+
+One row per email the app sends from the Schedule tab. The app compares `Snapshot` with the current shifts to show who is "not sent", "changed since" or "up to date".
+
+| Column | Type | Example |
+|---|---|---|
+| `Title` | text | `N-` + `guid()` |
+| `Email` | text | recipient operator, lower case |
+| `OperatorId` | text | `OP-0007` |
+| `WeekStart` | text | the week's Monday, `2026-11-09` |
+| `Kind` | text | `operator-schedule` or `operator-schedule-update` |
+| `Subject` | text | the subject sent |
+| `SentAt` | text | `utcNow()` |
+| `By` | text | `callerEmail` |
+| `Test` | yes/no | Yes when it went to the alias only (test mode) |
+| `Snapshot` | multi-line text | JSON array of the shifts listed: `[{ "id", "date", "start", "end", "station", "location", "template" }]` |
+
+### `Lotus_Templates`: the email templates
+
+One row per template, edited on the app's Emails page. Missing rows mean the app's built-in default.
+
+| Column | Type | Example |
+|---|---|---|
+| `Title` | text | `operator-schedule`, `operator-schedule-update`, `approver-weekly` |
+| `Subject` | text | `Lotus timesheets for {reviewWeek} are ready to approve` |
+| `Html` | multi-line text (plain, not rich) | the editable body, with field chips |
+| `Ready` | multi-line text (plain, not rich) | the whole email (header, body, footer) with `{{field}}` tokens; the Monday flow uses this |
+| `Original` | yes/no | Yes after "Reset to original" |
+| `UpdatedAt` | text | `utcNow()` |
+| `UpdatedBy` | text | `callerEmail` |
+
+### `Lotus_Settings`
+
+One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
+
 ## 2. Flow: **Lotus Read**
 
 Trigger *When an HTTP request is received*, POST, **Any user in my tenant**. Body: `{ "action": "all", "from": "yyyy-MM-dd" }`. `from` defaults to 60 days ago.
 
 1. `callerEmail`, then look up `Lotus_Users`, using the 403 rule above. Compose `roles` = `split(Roles, ';')`.
-2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, and `Lotus_ClientHours`. Get `Lotus_Users` too, but only for staff.
-3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals and resolutions (resolution keys start with the email). Return `operators` as just their own user row and `client` as `[]`. Operators must never receive anyone else's rows.
+2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` from `Lotus_Settings`.
+3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
 4. Response 200 (field names are lower camel case, exactly):
 
 ```json
@@ -158,9 +193,14 @@ Trigger *When an HTTP request is received*, POST, **Any user in my tenant**. Bod
   "punches": [{ "id": "", "ts": "", "operatorId": "", "email": "", "name": "", "type": "in", "location": "RED", "station": "Robot 1", "shiftId": "", "grace": 0, "source": "laptop", "flag": "", "note": "" }],
   "resolutions": [{ "key": "", "outcome": "accept", "reason": "", "endTime": "", "by": "", "at": "" }],
   "approvals": [{ "email": "", "operatorId": "", "date": "", "status": "approved", "hours": 5.5, "computed": 5.5, "note": "", "final": false, "by": "", "at": "" }],
-  "client": [{ "week": "2026-11-02", "hours": 61.5 }]
+  "client": [{ "week": "2026-11-02", "hours": 61.5 }],
+  "notices": [{ "id": "N-…", "email": "", "operatorId": "", "weekStart": "2026-11-09", "kind": "operator-schedule", "subject": "", "sentAt": "", "by": "", "test": true, "snapshot": [] }],
+  "templates": [{ "id": "operator-schedule", "subject": "", "html": "", "original": false, "updatedAt": "", "updatedBy": "" }],
+  "emailTestMode": true
 }
 ```
+
+`snapshot` is `json(Snapshot)`. Leave `Ready` out of `templates`; the app doesn't need it.
 
 `type` is `toLower(InOut)`, and `flag` is `early` when `Flag` is not empty.
 
@@ -221,6 +261,28 @@ Body `{ "email", "operatorId", "date", "hours", "computed", "note" }`.
 
 Add a `Lotus_Approvals` row with `Status` `approved` or `reopened`. Respond `{ "ok": true, "approval": { … } }`.
 
+### `email_send`: role `scheduler`
+
+The app fills in each email from the templates and sends them ready to go. Body:
+
+```json
+{ "kind": "schedule", "weekStart": "2026-11-09",
+  "messages": [ { "to": "avery.lin@centific.com", "operatorId": "OP-0001", "name": "Avery Lin", "kind": "operator-schedule", "subject": "", "html": "", "snapshot": [] } ] }
+```
+
+Up to 25 messages per call. For each message:
+
+1. `to` must be an active row in `Lotus_Users` with the `operator` role, else 400 `{"error":"<to> isn't a Lotus operator"}` and nothing is sent. This keeps the flow from emailing anyone outside the project.
+2. `html` must be under 200 KB.
+3. Send with **Send an email from a shared mailbox (V2)**, mailbox `project_lotus@centific.com`, *Is HTML* = Yes, *Reply To* = `project_lotus@centific.com`. While `EmailTestMode` is Yes, send to `project_lotus@centific.com` instead, with a first line `Test mode · intended for <to>` above the HTML.
+4. Add a `Lotus_Notices` row (`Test` = `EmailTestMode`, `Snapshot` = `string(snapshot)`).
+
+Respond `{ "ok": true, "notices": [ …the new rows, same shape as Read… ] }`. One `Lotus_Audit` row per message (`After` without `Html`).
+
+### `template_save`: role `scheduler`
+
+Body `{ "id", "subject", "html", "ready", "original"? }`. `id` must be one of the three template ids. Upsert `Lotus_Templates` by `Title` = `id`, set `UpdatedAt` and `UpdatedBy`. Respond `{ "template": { "id", "subject", "html", "original", "updatedAt", "updatedBy" } }`.
+
 ### `client`: role `approver` or `scheduler`
 
 Body `{ "week", "hours" }`. Upsert `Lotus_ClientHours` by `Title` = week, or delete the row when `hours` is null. Respond `{ "ok": true }`.
@@ -241,10 +303,22 @@ Body `{ "week", "hours" }`. Upsert `Lotus_ClientHours` by `Title` = week, or del
     - Body: who they're paired with (the other operators on the same robot whose times overlap).
     - Body: the line "Clock in on the Lotus page when you arrive. Clock-in opens 10 minutes before your start."
 3. Set `ReminderSentAt` = `utcNow()` on each shift you emailed, so nobody gets a second reminder if the flow re-runs.
-4. **Dry-run switch:** a Compose named `dryRun`, default `true`. While it is true, send everything to `project_lotus@centific.com` only, with the intended recipient at the top of the body, and leave `ReminderSentAt` unset. The scheduling team checks a few days of dry runs before it is turned off.
-5. **Avoiding duplicates:** before `dryRun` goes false, the scheduling team turns off their existing Outlook reminder process. Note this in the flow's description.
+4. **Test mode:** read `EmailTestMode` from `Lotus_Settings`. While it is Yes, send everything to `project_lotus@centific.com` only, with the intended recipient at the top of the body, and leave `ReminderSentAt` unset. The scheduling team checks a few days of test emails before it is switched off.
+5. **Avoiding duplicates:** before `EmailTestMode` goes to No, the scheduling team turns off their existing Outlook reminder process. Note this in the flow's description.
 
-## 5. Tests to run before handing over
+## 5. Flow: **Lotus Approval Reminder** (scheduled)
+
+The proposed weekly cycle: operators record time, approvers approve last week's timesheets by Monday, then reporting pulls the approved hours.
+
+- **Trigger:** recurrence, every Monday at 8:00 AM Pacific.
+- **Sender:** the shared mailbox, as above. Honour `EmailTestMode`.
+
+1. Last week = the Monday 7 days ago to yesterday (Sunday), site-local. Compose `reviewWeek` as `Nov 2 – 8` (`MMM d – d`, or `MMM d – MMM d` across months).
+2. `openDays` = the number of distinct `Email` + `Date` pairs in `Lotus_Punches` for last week that have no `Lotus_Approvals` row with `Status` = `approved` (the latest row per `DayKey`). Compose it as `<n> operator-days`. If it is 0, stop: there is nothing to approve.
+3. Get the `approver-weekly` row from `Lotus_Templates`. If it is missing, send the alias a plain email "The Lotus approval reminder template is missing. Open the Emails page in Lotus once to create it." and stop.
+4. For each active `Lotus_Users` row with `approver` in `Roles`: take `Ready` and `Subject`, replace `{{approverFirstName}}` / `{approverFirstName}` (first word of `Name`), `{{reviewWeek}}` / `{reviewWeek}` and `{{openDays}}` / `{openDays}`, and send it.
+
+## 6. Tests to run before handing over
 
 1. Call **Lotus Read** with no token. It must fail with 401, from Power Automate itself.
 2. Call **Lotus Read** with a token for an operator. You get only that operator's rows, and `operators` holds only them.
@@ -253,7 +327,10 @@ Body `{ "week", "hours" }`. Upsert `Lotus_ClientHours` by `Title` = week, or del
 5. As an operator, call `approve_day`. You get 403.
 6. As an approver, call `approve_day` with `hours` ≠ `computed` and no note. You get 400. With a note it saves, and a `Lotus_Audit` row appears.
 7. Four different operators clock in within one minute. You get four rows with the right names.
-8. Run the reminder flow with `dryRun` = true. One email per operator arrives at the alias, and `ReminderSentAt` stays empty.
+8. Run the reminder flow with `EmailTestMode` = Yes. One email per operator arrives at the alias, and `ReminderSentAt` stays empty.
+9. As a scheduler, call `email_send` with a `to` that isn't in `Lotus_Users`. You get 400 and no email. With a real operator and `EmailTestMode` = Yes, the email arrives at the alias with the test line, and a `Lotus_Notices` row has `Test` = Yes.
+10. As an operator, call `email_send` or `template_save`. You get 403. Call Read as an operator: `notices` and `templates` are empty.
+11. Run the approval reminder with `EmailTestMode` = Yes. One email per approver arrives at the alias with the three fields filled in.
 
 When done, reply with:
 - the two HTTP trigger URLs

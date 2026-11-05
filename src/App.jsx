@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
-import { CalendarDays, ChartColumn, ClipboardCheck, Clock, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
+import { CalendarDays, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
 import { CFG, DEMO } from './lib/config.js';
 import { MS_AUTH, ROLES, hasRole } from './lib/auth.js';
@@ -16,6 +16,7 @@ import { Schedule } from './views/Schedule.jsx';
 import { Review } from './views/Review.jsx';
 import { Roster } from './views/Roster.jsx';
 import { Reports } from './views/Reports.jsx';
+import { Emails } from './views/Emails.jsx';
 import { OperatorSheet, SearchSheet } from './components/Search.jsx';
 import centificMark from './assets/centific-mark.png';
 
@@ -35,6 +36,8 @@ const ADMIN_NAV = [
   { id: 'admin/hours', label: 'Hours', icon: ChartColumn, view: Hours, roles: ['scheduler', 'approver'] },
   { id: 'admin/records', label: 'Records', icon: List, view: Records, roles: ['scheduler', 'approver'] },
   { id: 'admin/reports', label: 'Reports', icon: FileSpreadsheet, view: Reports, roles: ['approver', 'reporting'] },
+  // Editing templates is desk work, so it stays off the phone tab bar.
+  { id: 'admin/emails', label: 'Emails', icon: Mail, view: Emails, roles: ['scheduler', 'approver'], phone: false },
 ];
 const CHECKIN = { id: 'checkin', label: 'Clock in', icon: Clock, view: CheckIn };
 const NO_ACCESS = { id: 'admin/none', label: 'Admin', view: NoAccess };
@@ -207,8 +210,8 @@ export default function App() {
 
       {main}
 
-      <nav className="tabbar" aria-label="Admin" style={{ gridTemplateColumns: `repeat(${nav.length || 1}, 1fr)` }}>
-        {nav.map((n) => (
+      <nav className="tabbar" aria-label="Admin" style={{ gridTemplateColumns: `repeat(${nav.filter((n) => n.phone !== false).length || 1}, 1fr)` }}>
+        {nav.filter((n) => n.phone !== false).map((n) => (
           <a key={n.id} href={`#/${n.id}`} className={clsx('tab', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
             <n.icon size={22} aria-hidden="true" />
             <span>{n.label}</span>

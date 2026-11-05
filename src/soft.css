@@ -217,3 +217,4 @@ body { letter-spacing: -0.005em; }
 .profile-stats strong { font-family: var(--op-serif); font-weight: 500; font-variant-numeric: lining-nums tabular-nums; font-size: 1.25rem; }
 
 .skeleton { background: var(--op-bg); box-shadow: var(--op-in-shallow); }
+[data-sonner-toast] [data-description] { color: inherit !important; opacity: 0.75; }

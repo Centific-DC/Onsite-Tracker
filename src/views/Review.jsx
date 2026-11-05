@@ -56,12 +56,21 @@ export function Review() {
     }
   };
 
+  // Each week's timesheets are due the Monday after it ends (the proposed cycle:
+  // approve by Monday, then the approved hours go to agency reporting).
+  const due = addDays(wk0, 7);
+  const openN = count('needs_review') + count('ready') + count('in_progress');
+  const dueTag = !openN ? (count('approved') ? <Tag tone="on">All approved</Tag> : null)
+    : dayKey(due) < dayKey(now) ? <Tag tone="bad">Overdue since {fmtDay(due)}</Tag>
+    : dayKey(due) === dayKey(now) ? <Tag tone="warn">Due today</Tag>
+    : <Tag tone="muted">Due {fmtDay(due)}</Tag>;
+
   return (
     <div className="view view-enter">
       <header className="page-head">
         <div>
           <h1 className="large-title">Review</h1>
-          <p className="lede">Week of {weekLabel(wk0)} · {count('needs_review')} need review · {count('ready')} ready · {count('approved')} approved</p>
+          <p className="lede">Week of {weekLabel(wk0)} · {count('needs_review')} need review · {count('ready')} ready · {count('approved')} approved {dueTag}</p>
         </div>
         <div className="stepper" role="group" aria-label="Week">
           <button type="button" className="icon-btn" aria-label="Previous week" onClick={() => setWk0(addDays(wk0, -7))}><ChevronLeft size={18} /></button>

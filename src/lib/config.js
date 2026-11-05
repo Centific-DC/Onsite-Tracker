@@ -1,12 +1,14 @@
 // public/config.js sets window.ONSITE_CONFIG, so the site can be reconfigured
 // on GitHub Pages without rebuilding.
 export const CFG = Object.assign(
-  { readUrl: '', writeUrl: '', project: '', locations: [], stations: [], shiftHours: 6, earlyGraceMinutes: 15, weeklyHourCap: 37, pairingMinSessions: 2 },
+  { readUrl: '', writeUrl: '', appUrl: 'https://dk-centific.github.io/Onsite-Tracker/', project: '', locations: [], stations: [], shiftHours: 6, earlyGraceMinutes: 15, weeklyHourCap: 37, pairingMinSessions: 2 },
   typeof window !== 'undefined' ? window.ONSITE_CONFIG : {},
 );
 export const READ_URL = String(CFG.readUrl || '').trim();
 export const WRITE_URL = String(CFG.writeUrl || '').trim();
 export const DEMO = !READ_URL || !WRITE_URL;
+// Where emails send people: the operator page and the admin Review view.
+export const APP_URL = String(CFG.appUrl || '').trim().replace(/#.*$/, '');
 
 // Older configs list bare `stations`; they become one unnamed lab.
 export const LOCATIONS = (CFG.locations?.length ? CFG.locations : [{ id: 'SITE', name: 'Site', robots: CFG.stations?.length ? CFG.stations : ['Robot 1'], templates: [], graceMinutes: 10 }])

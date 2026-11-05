@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Mail, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS } from '../lib/config.js';
@@ -10,6 +10,8 @@ import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, mondayOf, parseDay, weekL
 import { useHashQuery, useMedia, useNow } from '../lib/hooks.js';
 import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx';
 import { ShiftSheet } from '../components/ShiftSheet.jsx';
+import { SendSchedules } from '../components/SendSchedules.jsx';
+import { noticeStatus } from '../lib/email/notices.js';
 import { STATUS, backfillStart, dayPlan, shiftHours, shiftTimes } from '../lib/schedule.js';
 
 const PAIR = 2;
@@ -36,7 +38,10 @@ const hmEnd = (t) => fmtTime(shiftTimes({ date: '2026-01-05', start: t.start, en
 // one column per day, as many places in each as the shift needs (config `seats`).
 // An empty place is a button that books it. Problems are listed once at the top.
 export function Schedule() {
-  const { data } = useStore();
+  const { data, session } = useStore();
+  const canSend = !!session?.roles?.includes('scheduler');
+  const testMode = data.emailTestMode !== false;
+  const [mailing, setMailing] = useState(false);
   const now = useNow(60000);
   const phone = useMedia('(max-width: 767px)');
   const [wk0, setWk0] = useState(() => mondayOf(new Date()));
@@ -101,6 +106,13 @@ export function Schedule() {
     missing.length && { tone: 'warn', label: 'Missing', text: missing.map((r) => `${stub(r.name)} ${STATUS[r.status].label.toLowerCase()} ${wd(r.date)}`).join(' · ') },
   ].filter(Boolean);
 
+  // Schedule emails for the week on screen (never for a week already over).
+  const weekOver = dayKey(addDays(wk0, 7)) <= dayKey(now);
+  const mail = useMemo(() => (canSend && !weekOver ? noticeStatus(data, wk0, testMode) : []), [canSend, weekOver, data, dayKey(wk0), testMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  const unsent = mail.filter((e) => e.status === 'unsent').length;
+  const changedN = mail.filter((e) => e.status === 'changed').length;
+  const whichWeek = thisWeek ? 'This week’s' : dayKey(wk0) === dayKey(addDays(mondayOf(now), 7)) ? 'Next week’s' : `The ${weekLabel(wk0)}`;
+
   return (
     <div className="view view-enter view-wide">
       <header className="page-head">
@@ -112,9 +124,32 @@ export function Schedule() {
           <button type="button" className="icon-btn" aria-label="Previous week" onClick={() => setWk0(addDays(wk0, -7))}><ChevronLeft size={18} /></button>
           <button type="button" className="btn btn-plain btn-sm" disabled={thisWeek} onClick={() => setWk0(mondayOf(new Date()))}>This week</button>
           <button type="button" className="icon-btn" aria-label="Next week" onClick={() => setWk0(addDays(wk0, 7))}><ChevronRight size={18} /></button>
+          {canSend && !weekOver && (
+            <button type="button" className="btn btn-primary btn-sm" aria-label={phone ? 'Email schedules' : undefined} onClick={() => setMailing(true)}>
+              <Mail size={16} />{!phone && ' Email schedules'}{unsent + changedN > 0 && <span className="mail-count" aria-label={`${unsent + changedN} to send`}>{unsent + changedN}</span>}
+            </button>
+          )}
           <button type="button" className="btn btn-primary btn-sm" onClick={() => setAdding({ date: dayKey(thisWeek ? now : wk0) })}><Plus size={16} /> Add shift</button>
         </div>
       </header>
+
+      {canSend && unsent + changedN > 0 && (
+        <div className="mail-banner" role="status">
+          <span className="mail-banner-icon" aria-hidden="true"><Mail size={18} /></span>
+          <span className="mail-banner-text">
+            <strong>
+              {unsent
+                ? `${whichWeek} schedule hasn’t gone out to ${unsent} ${unsent === 1 ? 'operator' : 'operators'}`
+                : `${changedN} ${changedN === 1 ? 'operator’s' : 'operators’'} shifts changed after their email`}
+            </strong>
+            <span>
+              {unsent && changedN ? `${changedN} more had shifts change after their last email. ` : ''}
+              {mail.length - unsent - changedN > 0 ? 'Everyone else is up to date.' : ''}
+            </span>
+          </span>
+          <button type="button" className="btn btn-primary" onClick={() => setMailing(true)}>Review and send</button>
+        </div>
+      )}
 
       <div className="toolbar">
         {LOCATIONS.length > 1 && <Segmented label="Lab" value={lab} onChange={setLab} options={[{ value: 'all', label: 'All labs' }, ...LOCATIONS.map((l) => ({ value: l.id, label: l.name }))]} />}
@@ -206,6 +241,7 @@ export function Schedule() {
       </p>
 
       <SlotSheet value={slot} onClose={() => setSlot(null)} status={status} isNew={isNew} onAdd={(init) => { setSlot(null); setAdding(init); }} now={now} />
+      <SendSchedules open={mailing} onOpenChange={setMailing} wk0={wk0} entries={mail} testMode={testMode} />
       <ShiftSheet open={!!adding} onOpenChange={(o) => !o && setAdding(null)} initial={adding} backfill={adding?.backfill} />
     </div>
   );
