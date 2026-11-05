@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
 import { CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
-import { CFG, DEMO, DEMO_CHOSEN, LIVE_READY, setDemo } from './lib/config.js';
+import { CFG, DEMO, DEMO_CHOSEN, LIVE_READY } from './lib/config.js';
 import { ROLES, hasRole } from './lib/auth.js';
 import { LOCAL_AUTH } from './lib/auth/api.js';
 import { go, useMedia, useRoute } from './lib/hooks.js';
@@ -54,7 +54,7 @@ const LEGACY = { today: 'admin/today', schedule: 'admin/schedule', hours: 'admin
 
 export default function App() {
   const route = useRoute();
-  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching } = useStore();
+  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching, demo } = useStore();
   const [settings, setSettings] = useState(false);
   const systemDark = useMedia('(prefers-color-scheme: dark)');
   const phone = useMedia('(max-width: 767px)');
@@ -157,7 +157,7 @@ export default function App() {
         : loadedAt ? `Updated ${fmtTime(loadedAt)}` : '';
 
   const main = (
-    <main className="main" key={item.id}>
+    <main className="main" key={`${item.id}-${demo ? 'demo' : 'live'}`}>
       {data || (!isAdmin && authStage !== 'signedIn') ? <View /> : <div className="view"><div className="skeleton" /><div className="skeleton tall" /></div>}
     </main>
   );
@@ -303,7 +303,8 @@ function NoAccess() {
 }
 
 function SettingsSheet({ open, onOpenChange, admin, onTour }) {
-  const { theme, setTheme, device, setDevice, session, signOut, resetDemo } = useStore();
+  const { theme, setTheme, device, setDevice, session, signOut, resetDemo, switchDemo } = useStore();
+  const [switching, setSwitching] = useState(false);
   const latest = useUpdate((s) => s.latest);
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title="Settings">
@@ -353,9 +354,29 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
       )}
       <Group title="Data" footer={!LIVE_READY ? 'Sample data saved only in this browser. Add the Power Automate flow URLs to go live.' : DEMO ? 'Sample operators and shifts, kept in this browser. Nothing is saved to SharePoint or emailed. Sign-in stays real.' : 'Reads and writes the Lotus lists on SharePoint through Power Automate.'}>
         <Row title="Source" trailing={DEMO ? 'Demo' : 'Live · SharePoint'} />
-        {LIVE_READY && admin && (
-          <button type="button" role="switch" aria-checked={DEMO} className="row row-btn" onClick={() => setDemo(!DEMO)}>
-            <span className="row-main"><span className="row-title">Demo data</span><span className="row-sub">{DEMO ? 'On in this browser. Switch off for the real data.' : 'Try things out with sample data in this browser'}</span></span>
+        {admin && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={DEMO}
+            aria-busy={switching || undefined}
+            className="row row-btn"
+            disabled={!LIVE_READY}
+            onClick={async () => {
+              if (switching) return;
+              const on = !DEMO;
+              setSwitching(true);
+              try {
+                await switchDemo(on);
+                toast(on ? 'Demo data on' : 'Live data loaded', { description: on ? 'Sample operators and shifts in this browser only.' : 'Reading the Lotus lists on SharePoint.' });
+              } catch (e) {
+                toast.error('Couldn’t load the live data', { description: e.message });
+              } finally {
+                setSwitching(false);
+              }
+            }}
+          >
+            <span className="row-main"><span className="row-title">Demo data</span><span className="row-sub">{!LIVE_READY ? 'Always on until the flow URLs are added to the site' : DEMO ? 'On in this browser. Switch off to load the real data.' : 'Off. Switch on to try things with sample data in this browser.'}</span></span>
             <span className="row-trail"><span className={clsx('switch', DEMO && 'is-on')} aria-hidden="true"><span /></span></span>
           </button>
         )}
@@ -373,12 +394,14 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
 // On a live site with demo data switched on, always on screen, so nobody mistakes
 // sample operators for real ones. (Without flow URLs the Demo tag says it instead.)
 function DemoBanner() {
+  const switchDemo = useStore((s) => s.switchDemo);
+  useStore((s) => s.demo); // re-render when the switch flips
   if (!DEMO_CHOSEN) return null;
   return (
     <div className="demo-banner" role="status">
       <span className="demo-banner-dot" aria-hidden="true" />
       <span><strong>Demo data</strong><span className="demo-banner-more"> · sample operators, nothing is saved or emailed</span></span>
-      <button type="button" className="link" onClick={() => setDemo(false)}>Show real data</button>
+      <button type="button" className="link" onClick={() => switchDemo(false).then(() => toast('Live data loaded'), (e) => toast.error('Couldn’t load the live data', { description: e.message }))}>Show real data</button>
     </div>
   );
 }
