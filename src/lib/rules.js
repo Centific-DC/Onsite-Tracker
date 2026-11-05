@@ -4,6 +4,11 @@ import { shiftTimes, shiftHours } from './schedule.js';
 
 const PAIR = 2;
 const overlaps = (a, b) => a.start < b.end && b.start < a.end;
+// Two shifts on one robot are a pair when they share more than an hour: the
+// 30-minute handover between Afternoon and Night isn't a pairing.
+const HANDOVER_MIN = 60;
+const mins = (hm) => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
+export const sharesShift = (a, b) => Math.min(mins(a.end), mins(b.end)) - Math.max(mins(a.start), mins(b.start)) > HANDOVER_MIN;
 
 // Completed sessions per operator: the count imported from the roster, plus days
 // the app has seen them finish a session since that import.
@@ -14,26 +19,40 @@ export function completedSessions(op, sessions) {
   return (Number(op.completedSessions) || 0) + days.size;
 }
 
-// Slots on one robot where everyone booked at the same time is still new: fewer
-// than `pairingMinSessions` completed sessions each. Two new operators should
-// never be paired without someone noticing.
+// Experienced or new. An admin can mark an operator either way on Roster, and
+// that mark wins. Without one, fewer than `pairingMinSessions` completed sessions
+// means new.
+export const EXPERIENCE = {
+  experienced: { label: 'Experienced', tone: 'on' },
+  new: { label: 'New', tone: 'warn' },
+};
+export function experience(op, sessions, min = CFG.pairingMinSessions) {
+  const done = completedSessions(op, sessions);
+  const mark = op?.experience === 'experienced' || op?.experience === 'new' ? op.experience : '';
+  return { level: mark || (done < min ? 'new' : 'experienced'), marked: !!mark, done };
+}
+export const isNew = (op, sessions, min) => !!op && experience(op, sessions, min).level === 'new';
+
+// Slots on one robot where everyone booked at the same time is new. Every pair
+// needs at least one experienced operator, so two new ones together are flagged.
 export function pairingRisks(schedule, operators, sessions, min = CFG.pairingMinSessions) {
   const byEmail = new Map((operators || []).map((o) => [o.email, o]));
   const groups = new Map();
   for (const r of schedule || []) {
     const k = `${r.date}|${r.station}`;
     if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push({ ...r, ...shiftTimes(r) });
+    groups.get(k).push(r);
   }
   const out = [];
   for (const rows of groups.values()) {
     for (let i = 0; i < rows.length; i++) {
       for (let j = i + 1; j < rows.length; j++) {
         const a = rows[i], b = rows[j];
-        if (a.email === b.email || !overlaps(a, b)) continue;
-        const ca = completedSessions(byEmail.get(a.email), sessions);
-        const cb = completedSessions(byEmail.get(b.email), sessions);
-        if (ca < min && cb < min) out.push({ date: a.date, station: a.station, ids: [a.id, b.id], names: [a.name, b.name], counts: [ca, cb] });
+        if (a.email === b.email || !sharesShift(a, b)) continue;
+        const oa = byEmail.get(a.email), ob = byEmail.get(b.email);
+        const ca = completedSessions(oa, sessions);
+        const cb = completedSessions(ob, sessions);
+        if (isNew(oa, sessions, min) && isNew(ob, sessions, min)) out.push({ date: a.date, station: a.station, ids: [a.id, b.id], names: [a.name, b.name], counts: [ca, cb] });
       }
     }
   }
@@ -86,7 +105,7 @@ export function checkNewShift(shift, schedule, operators, sessions, wk0) {
     out.push({ code: c.kind, text: c.kind === 'overlap' ? `${shift.name} already has an overlapping shift on another robot that day.` : `${shift.name} is already booked at another lab that day.` });
   }
   for (const p of pairingRisks(next, operators, sessions).filter((p) => p.ids.includes(id))) {
-    out.push({ code: 'pairing', text: `${p.names[0]} (${p.counts[0]}) and ${p.names[1]} (${p.counts[1]}) both have fewer than ${CFG.pairingMinSessions} completed sessions.` });
+    out.push({ code: 'pairing', text: `${p.names[0]} and ${p.names[1]} are both new operators. Every pair needs at least one experienced operator.` });
   }
   return out;
 }

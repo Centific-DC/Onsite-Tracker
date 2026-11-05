@@ -62,7 +62,8 @@ const matchLocation = (v) => {
 
 // "7:00 AM", "07:00", "17:30", "5 PM" all become 24h "HH:mm".
 export function toHHMM(v) {
-  const m = String(v || '').trim().match(/^(\d{1,2})(?::(\d{2}))?\s*([ap])?\.?m?\.?$/i);
+  // Time zone suffixes (PDT, PST, PT) are dropped: times are the lab's local time.
+  const m = String(v || '').trim().replace(/\s*\(?\b(?:[A-Z]{1,2}[SD]?T|UTC|GMT)\)?$/i, '').match(/^(\d{1,2})(?::(\d{2}))?\s*([ap])?\.?m?\.?$/i);
   if (!m) return '';
   let h = Number(m[1]);
   const min = Number(m[2] || 0);
@@ -138,12 +139,17 @@ export function planScheduleImport(text, operators, schedule) {
     const op = ops.find((o) => (email && o.email === email) || (!email && name && o.name.toLowerCase() === name.toLowerCase()));
     let start = toHHMM(pick(r, map, 'start'));
     let end = toHHMM(pick(r, map, 'end'));
-    if ((!start || !end) && pick(r, map, 'shift')) {
-      const [a, b] = pick(r, map, 'shift').split(/\s*(?:-|–|\bto\b)\s*/i);
-      start ||= toHHMM(a); end ||= toHHMM(b);
-    }
     const robot = pick(r, map, 'robot');
     const loc = matchLocation(pick(r, map, 'location')) || locationOfRobot(robot)?.id || op?.location || '';
+    const shiftText = pick(r, map, 'shift');
+    if ((!start || !end) && shiftText) {
+      // "7:00 AM - 12:30 PM PDT", or "Night 5:00 PM - 11:00 PM", or just "Night".
+      const times = shiftText.replace(/^[^\d]*(?=\d)/, '');
+      const [a, b] = times.split(/\s*(?:-|–|\bto\b)\s*/i);
+      start ||= toHHMM(a); end ||= toHHMM(b);
+      const byLabel = (LOCATIONS.find((l) => l.id === loc)?.templates || []).find((t) => shiftText.toLowerCase().startsWith(t.label.toLowerCase()));
+      if ((!start || !end) && byLabel) { start = byLabel.start; end = byLabel.end; }
+    }
     const station = robot && locationOfRobot(robot) ? robot : LOCATIONS.find((l) => l.id === loc)?.robots[0] || '';
     const why = !date ? 'No date' : !op ? `Unknown operator ${email || name}` : !start || !end ? 'No start or end time' : !loc ? 'No location' : '';
     if (why) { plan.skip.push({ line: i + 2, name: name || email, reason: why }); continue; }

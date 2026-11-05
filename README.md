@@ -29,7 +29,7 @@ With the flow URLs or the `auth` block empty in [public/config.js](public/config
 
 1. Build the lists and flows with [docs/lotus-flows.md](docs/lotus-flows.md).
 2. Register a single-page app in Entra ID (redirect URI = the site URL, delegated permission for Power Automate) and put its `clientId` and `tenantId` into `public/config.js`.
-3. Put the Read and Write trigger URLs into `public/config.js`. Adjust `locations` (robots, shift templates, grace) as labs change.
+3. Put the Read and Write trigger URLs into `public/config.js`. Adjust `locations` (robots, shift templates and how many operators each needs, the days each lab runs, grace) as labs change.
 4. Push to `main`; GitHub Pages redeploys. `config.js` is copied as is, so settings can change without a rebuild.
 
 ## Design

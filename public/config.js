@@ -17,17 +17,20 @@ window.ONSITE_CONFIG = {
   // labs, because hours worked merge everyone's time per robot per day. To add a
   // robot (say a second one in Mountain View), add its name to that lab's list.
   // Template times are the lab's local time; overlapping templates are expected
-  // handovers, never a flag.
+  // handovers, never a flag. `seats` is how many operators each shift needs per day,
+  // across the lab's robots (operators work in pairs, so 4 = both robots).
+  // `days` are the days the lab runs: 0 = Sunday … 6 = Saturday.
   locations: [
     {
       id: 'RED',
       name: 'Redmond Lab',
       robots: ['Robot 1', 'Robot 2'],
       templates: [
-        { id: 'RED-AM', label: 'Morning', start: '07:00', end: '12:30' },
-        { id: 'RED-MID', label: 'Afternoon', start: '12:00', end: '17:30' },
-        { id: 'RED-PM', label: 'Evening', start: '17:00', end: '23:00' },
+        { id: 'RED-AM', label: 'Morning', start: '07:00', end: '12:30', seats: 2 },
+        { id: 'RED-MID', label: 'Afternoon', start: '12:00', end: '17:30', seats: 2 },
+        { id: 'RED-PM', label: 'Night', start: '17:00', end: '23:00', seats: 4 },
       ],
+      days: [0, 1, 2, 3, 4, 5, 6],
       // Minutes before a shift's start when clock-in opens, with a warning.
       graceMinutes: 10,
     },
@@ -37,9 +40,10 @@ window.ONSITE_CONFIG = {
       robots: ['Robot 3'],
       // Placeholder until the Bay Area shift times are confirmed.
       templates: [
-        { id: 'MTV-AM', label: 'Morning', start: '07:00', end: '12:30' },
-        { id: 'MTV-MID', label: 'Afternoon', start: '12:00', end: '17:30' },
+        { id: 'MTV-AM', label: 'Morning', start: '07:00', end: '12:30', seats: 2 },
+        { id: 'MTV-MID', label: 'Afternoon', start: '12:00', end: '17:30', seats: 2 },
       ],
+      days: [1, 2, 3, 4, 5],
       graceMinutes: 10,
     },
   ],

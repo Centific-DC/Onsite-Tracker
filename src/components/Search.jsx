@@ -5,7 +5,8 @@ import { useStore } from '../lib/store.js';
 import { CFG, locationName } from '../lib/config.js';
 import { hasRole } from '../lib/auth.js';
 import { buildSessions } from '../lib/hours.js';
-import { completedSessions, weeklyLoad } from '../lib/rules.js';
+import { completedSessions, experience, isNew, weeklyLoad } from '../lib/rules.js';
+import { ExperienceSelect } from './Experience.jsx';
 import { describe, search } from '../lib/search.js';
 import { reviewDays } from '../lib/review.js';
 import { addDays, dayKey, fmtDay, fmtHrsU, fmtLongDay, fmtTime, mondayOf, parseDay } from '../lib/time.js';
@@ -33,7 +34,7 @@ export function SearchSheet() {
   const now = useMemo(() => new Date(), [searching]); // eslint-disable-line react-hooks/exhaustive-deps
   const { sessions } = useMemo(() => buildSessions(data?.punches || [], now), [data?.punches, now]);
   const canReview = hasRole(session, 'approver');
-  const res = useMemo(() => (data ? search(data, q, { now, completed: (o) => completedSessions(o, sessions), minSessions: CFG.pairingMinSessions }) : null), [data, q, now, sessions]);
+  const res = useMemo(() => (data ? search(data, q, { now, isNew: (o) => isNew(o, sessions) }) : null), [data, q, now, sessions]);
   useEffect(() => { if (searching) { setQ(''); setActive(0); } }, [searching]);
   useEffect(() => setActive(0), [q]);
 
@@ -45,8 +46,7 @@ export function SearchSheet() {
       if (canReview && k <= dayKey(now)) items.push({ key: `r${k}`, group: 'Go to', icon: <ClipboardCheck size={18} />, title: `Review ${fmtLongDay(parseDay(k))}`, run: () => { close(); openReview('', k); } });
     }
     for (const o of res.operators.slice(0, MAX)) {
-      const done = completedSessions(o, sessions);
-      items.push({ key: `o${o.email}`, group: 'Operators', avatar: o.name, title: <>{o.name} {done < CFG.pairingMinSessions && <Tag tone="warn">New</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}</>, sub: `${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${o.email}`, run: () => openProfile(o.email) });
+      items.push({ key: `o${o.email}`, group: 'Operators', avatar: o.name, title: <>{o.name} {isNew(o, sessions) && <Tag tone="warn">New</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}</>, sub: `${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${o.email}`, run: () => openProfile(o.email) });
     }
     if (canReview) {
       for (const d of res.days.slice(0, MAX)) {
@@ -158,7 +158,11 @@ export function OperatorSheet() {
           <Row title="Home lab" trailing={locationName(o.location) || 'None'} />
           {o.cohort && <Row title="Cohort" trailing={o.cohort} />}
           {o.training && <Row title="Training" trailing={o.training} />}
-          <Row title="Experience" trailing={done < CFG.pairingMinSessions ? <Tag tone="warn">New · don’t pair with another new operator</Tag> : 'Experienced'} />
+          <Row
+            title="Experience"
+            subtitle={experience(o, sessions).level === 'new' ? 'Pair with an experienced operator' : 'Can pair with a new operator'}
+            trailing={canBook ? <ExperienceSelect op={o} sessions={sessions} /> : <Tag tone={experience(o, sessions).level === 'new' ? 'warn' : 'on'}>{experience(o, sessions).level === 'new' ? 'New' : 'Experienced'}{experience(o, sessions).marked ? '' : ' · auto'}</Tag>}
+          />
           {(load?.over || next?.over) && <Row title={<Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>} subtitle={load?.over ? 'This week' : 'Next week'} />}
         </Group>
         <Group title="Coming up">

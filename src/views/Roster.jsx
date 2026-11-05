@@ -4,7 +4,8 @@ import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS, locationName } from '../lib/config.js';
 import { buildSessions } from '../lib/hours.js';
-import { completedSessions, weeklyLoad } from '../lib/rules.js';
+import { completedSessions, experience, weeklyLoad } from '../lib/rules.js';
+import { ExperienceSelect } from '../components/Experience.jsx';
 import { planRosterImport, planScheduleImport } from '../lib/importer.js';
 import { claimName } from '../lib/onboarding.js';
 import { dayKey, mondayOf, fmtHrsU } from '../lib/time.js';
@@ -16,6 +17,7 @@ export function Roster() {
   const { data, openProfile } = useStore();
   const [q, setQ] = useState('');
   const [lab, setLab] = useState('all');
+  const [level, setLevel] = useState('all');
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const now = new Date();
@@ -25,6 +27,7 @@ export function Roster() {
     .filter((o) => (o.roles || ['operator']).includes('operator'))
     .filter((o) => lab === 'all' || o.location === lab)
     .filter((o) => `${o.name} ${o.email} ${o.id} ${o.cohort}`.toLowerCase().includes(q.toLowerCase()))
+    .filter((o) => level === 'all' || experience(o, sessions).level === level)
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
@@ -41,23 +44,24 @@ export function Roster() {
       </header>
       <div className="toolbar">
         <Segmented label="Lab" value={lab} onChange={setLab} options={[{ value: 'all', label: 'All labs' }, ...LOCATIONS.map((l) => ({ value: l.id, label: l.name }))]} />
+        <Segmented label="Experience" value={level} onChange={setLevel} options={[{ value: 'all', label: 'Everyone' }, { value: 'experienced', label: 'Experienced' }, { value: 'new', label: 'New' }]} />
         <label className="search search-inline">
           <Search size={16} aria-hidden="true" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, email, ID or cohort" aria-label="Search roster" />
         </label>
       </div>
-      <Group footer={`New means fewer than ${CFG.pairingMinSessions} completed sessions: two new operators shouldn't be paired. The weekly limit is ${CFG.weeklyHourCap} hrs.`}>
+      <Group footer={`Every pair needs at least one experienced operator. Pick Experienced or New for anyone, or leave it on Auto, where fewer than ${CFG.pairingMinSessions} completed sessions means new. Your choice stays when the roster is re-imported. The weekly limit is ${CFG.weeklyHourCap} hrs.`}>
         {ops.map((o) => {
           const done = completedSessions(o, sessions);
+          const x = experience(o, sessions);
           const w = load.get(o.email);
           return (
             <Row
               key={o.email}
-              onClick={() => openProfile(o.email)}
-              leading={<Avatar name={o.name} />}
-              title={<>{o.name} {done < CFG.pairingMinSessions && <Tag tone="warn">New · {done} done</Tag>}{w?.over && <Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}</>}
-              subtitle={`${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${done} sessions completed${o.training ? ` · ${o.training}` : ''}`}
-              trailing={<span className="mono-num">{w ? fmtHrsU(w.hours) : '–'}</span>}
+              leading={<Avatar name={o.name} tone={x.level === 'new' ? 'warn' : undefined} />}
+              title={<><button type="button" className="name-link" onClick={() => openProfile(o.email)}>{o.name}</button> {x.level === 'new' && <Tag tone="warn">New</Tag>}{w?.over && <Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}</>}
+              subtitle={`${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${done} sessions completed · ${w ? fmtHrsU(w.hours) : '0 hrs'} this week`}
+              trailing={<ExperienceSelect op={o} sessions={sessions} />}
             />
           );
         })}

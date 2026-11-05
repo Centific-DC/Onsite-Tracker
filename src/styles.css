@@ -697,7 +697,7 @@ p.err { text-align: center; margin: 0 0 12px; }
 /* ---------- Schedule: week grid of shift slots ---------- */
 .view-wide { max-width: 1240px; }
 .sched-group .group-body { overflow-x: auto; }
-.sched { display: grid; grid-template-columns: minmax(150px, 180px) repeat(var(--days), minmax(108px, 1fr)); min-width: max-content; }
+.sched { display: grid; grid-template-columns: minmax(130px, 160px) repeat(var(--days), minmax(96px, 1fr)); min-width: calc(130px + var(--days) * 96px); }
 @media (max-width: 767px) { .sched { grid-template-columns: 116px 1fr; min-width: 0; } }
 .sched-row { display: contents; }
 .sched-row > * { border-top: 0.5px solid var(--edge); }
@@ -715,7 +715,7 @@ p.err { text-align: center; margin: 0 0 12px; }
 .sched-cell.is-past { background: var(--surface-2); }
 .sched-cell.is-past .slot { opacity: 0.7; }
 .sched-cell.is-risk::after { content: ''; position: absolute; inset: 3px; border-radius: 10px; box-shadow: 0 0 0 1.5px var(--red); pointer-events: none; }
-.slot { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 8px; border: 0; border-radius: 8px; background: var(--fill); color: var(--ink); font: inherit; font-size: 0.8125rem; text-align: left; cursor: pointer; transition: background-color 150ms var(--ease-out), scale 120ms var(--ease-out); }
+.slot { display: flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 6px 3px 8px; border: 0; border-radius: 8px; background: var(--fill); color: var(--ink); font: inherit; font-size: 0.8125rem; text-align: left; cursor: pointer; transition: background-color 150ms var(--ease-out), scale 120ms var(--ease-out); }
 @media (hover: hover) and (pointer: fine) { .slot:hover { background: var(--fill-hover); } }
 .slot:active { scale: 0.97; }
 .slot:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
@@ -732,7 +732,7 @@ p.err { text-align: center; margin: 0 0 12px; }
 @media (hover: hover) and (pointer: fine) { .slot-open:hover { background: var(--blue-soft); box-shadow: inset 0 0 0 1px var(--blue); } }
 .sched-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: -8px 4px 24px; font-size: 0.8125rem; color: var(--ink-2); }
 .sched-legend > span { display: inline-flex; align-items: center; gap: 6px; }
-.legend-risk::before { content: ''; width: 14px; height: 10px; border-radius: 3px; box-shadow: 0 0 0 1.5px var(--red); }
+.legend-risk::before { content: ""; width: 18px; height: 12px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--red); }
 .day-pick { display: flex; gap: 4px; width: 100%; overflow-x: auto; }
 .day-pick button { flex: 1; min-width: 46px; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 0; border: 0; border-radius: 12px; background: var(--fill); color: var(--ink-2); font: inherit; font-size: 0.75rem; cursor: pointer; }
 .day-pick button strong { font-size: 1rem; color: var(--ink); }
@@ -770,3 +770,18 @@ p.err { text-align: center; margin: 0 0 12px; }
 .sched-head .sched-label { min-height: 0; }
 .slot.is-warn { box-shadow: inset 0 0 0 1.5px var(--yellow); }
 @media (max-width: 767px) { .sched-head { display: none; } .sched-row:nth-child(2) > * { border-top: 0; } }
+.sched-seats { font-size: 0.75rem; color: var(--ink-3); margin-top: 2px; }
+.slot-robot { font-size: 0.6875rem; font-weight: 600; color: var(--ink-2); background: var(--surface); border-radius: 5px; padding: 0 5px; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 0.5px var(--edge-strong); }
+.slot.is-risk { box-shadow: inset 0 0 0 1.5px var(--red); }
+.cell-note { font-size: 0.75rem; color: var(--ink-3); padding: 2px 4px; }
+.cell-note.is-warn { color: var(--yellow-text); }
+.sched-cell.is-closed { background: var(--surface-2); }
+.exp-select { appearance: none; border: 0; border-radius: 8px; padding: 6px 26px 6px 10px; background: var(--fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2372777d' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 9px center; color: var(--ink); font: inherit; font-size: 0.875rem; cursor: pointer; }
+.exp-select:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.name-link { border: 0; background: none; padding: 0; font: inherit; font-weight: inherit; color: inherit; cursor: pointer; text-align: left; }
+@media (hover: hover) and (pointer: fine) { .name-link:hover { color: var(--blue-text); } }
+.name-link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+.hint.field-hint { text-align: left; justify-content: flex-start; margin: 0; padding: 0 16px 12px; font-size: 0.8125rem; }
+.slot-robot.is-new { color: var(--yellow-text); background: var(--yellow-soft); box-shadow: 0 0 0 1px color-mix(in srgb, var(--yellow) 60%, transparent); }
+.sched-legend > span > .slot-robot + .chip-new { margin-left: 4px; }
+.exp-select { min-width: 172px; }

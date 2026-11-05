@@ -10,7 +10,9 @@ export const DEMO = !READ_URL || !WRITE_URL;
 
 // Older configs list bare `stations`; they become one unnamed lab.
 export const LOCATIONS = (CFG.locations?.length ? CFG.locations : [{ id: 'SITE', name: 'Site', robots: CFG.stations?.length ? CFG.stations : ['Robot 1'], templates: [], graceMinutes: 10 }])
-  .map((l) => ({ graceMinutes: 10, templates: [], ...l }));
+  .map((l) => ({ graceMinutes: 10, templates: [], days: [0, 1, 2, 3, 4, 5, 6], ...l }))
+  // A template without `seats` needs a pair on every robot.
+  .map((l) => ({ ...l, templates: l.templates.map((t) => ({ seats: 2 * l.robots.length, ...t })) }));
 export const ROBOTS = LOCATIONS.flatMap((l) => l.robots);
 CFG.stations = ROBOTS;
 

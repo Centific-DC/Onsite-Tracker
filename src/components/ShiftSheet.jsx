@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { LOCATIONS, locationById, locationOfRobot } from '../lib/config.js';
 import { buildSessions } from '../lib/hours.js';
-import { checkNewShift } from '../lib/rules.js';
+import { checkNewShift, isNew, sharesShift } from '../lib/rules.js';
 import { fmtDay, fmtTime, mondayOf, parseDay } from '../lib/time.js';
 import { shiftTimes } from '../lib/schedule.js';
 import { Group, Sheet } from './ui.jsx';
@@ -40,6 +40,12 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
   const ops = (data.operators || []).filter((o) => o.active !== false && (o.roles || ['operator']).includes('operator') && !booked.has(o.email));
   const choices = [...ops.filter((o) => o.location === f.location), ...ops.filter((o) => o.location !== f.location)];
   const { sessions } = useMemo(() => buildSessions(data.punches), [data.punches]);
+  // Who is already on this robot at this time. If they're all new, the next one
+  // must be experienced, so experienced operators are listed first.
+  const byEmail = new Map((data.operators || []).map((o) => [o.email, o]));
+  const partners = (data.schedule || []).filter((r) => r.date === f.date && r.station === f.station && sharesShift(r, { start, end }));
+  const needExperienced = partners.length > 0 && partners.every((r) => isNew(byEmail.get(r.email), sessions));
+  const sorted = needExperienced ? [...choices.filter((o) => !isNew(o, sessions)), ...choices.filter((o) => isNew(o, sessions))] : choices;
 
   const changeLocation = (e) => {
     const NL = locationById(e.target.value);
@@ -115,9 +121,14 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
           <span>Operator</span>
           <select value={f.who || ''} onChange={set('who')} className="field-select">
             <option value="" disabled>Choose…</option>
-            {choices.map((p) => <option key={p.email} value={p.email}>{p.name}{p.location !== f.location ? ` (${locationById(p.location)?.name || 'no home lab'})` : ''}</option>)}
+            {sorted.map((p) => <option key={p.email} value={p.email}>{p.name}{isNew(p, sessions) ? ' · New' : ''}{p.location !== f.location ? ` (${locationById(p.location)?.name || 'no home lab'})` : ''}</option>)}
           </select>
         </label>
+        {partners.length > 0 && (
+          <p className={needExperienced ? 'hint hint-warn field-hint' : 'hint field-hint'}>
+            On {f.station} with {partners.map((r) => `${r.name}${isNew(byEmail.get(r.email), sessions) ? ' (new)' : ''}`).join(', ')}.{needExperienced ? ' Pick an experienced operator.' : ''}
+          </p>
+        )}
         <label className="field-row"><span>Note</span><input value={f.note || ''} onChange={set('note')} placeholder="Optional" /></label>
       </Group>
     </Sheet>

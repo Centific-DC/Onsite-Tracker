@@ -101,7 +101,7 @@ const matchesWords = (o, words) => words.every((w) => fields(o).split(/[\s@.]+/)
 const DEFAULT_BACK_DAYS = 42;
 const DEFAULT_AHEAD_DAYS = 21;
 
-export function search(data, q, { now = new Date(), completed = () => Infinity, minSessions = 2 } = {}) {
+export function search(data, q, { now = new Date(), isNew = () => false } = {}) {
   const p = parseQuery(q, now);
   const empty = { query: p, operators: [], days: [], shifts: [], dayLinks: [] };
   if (!String(q || '').trim()) return empty;
@@ -112,7 +112,7 @@ export function search(data, q, { now = new Date(), completed = () => Infinity, 
   const hasWords = p.words.length > 0;
 
   let people = hasWords ? ops.filter((o) => matchesWords(o, p.words)) : ops;
-  if (p.newOnly) people = people.filter((o) => completed(o) < minSessions);
+  if (p.newOnly) people = people.filter((o) => isNew(o));
   if (p.labs.length) people = people.filter((o) => !o.location || p.labs.includes(o.location));
   const emails = new Set(people.map((o) => o.email));
   // Words that match nobody can't narrow anything, so there's nothing to show.

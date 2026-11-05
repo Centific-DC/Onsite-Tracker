@@ -89,6 +89,8 @@ export const normOperator = (o) => ({
   completedSessions: Number(o.completedSessions ?? o.CompletedSessions) || 0,
   completedAsOf: String(o.completedAsOf ?? o.CompletedAsOf ?? ''),
   training: String(o.training ?? o.TrainingStatus ?? ''),
+  // Set by an admin: 'experienced' or 'new'. Empty means decided by completed sessions.
+  experience: ['experienced', 'new'].includes(String(o.experience ?? o.Experience ?? '').toLowerCase()) ? String(o.experience ?? o.Experience).toLowerCase() : '',
   active: o.active ?? o.Active ?? true,
 });
 
@@ -150,7 +152,7 @@ let demoActor = 'demo';
 export const setDemoActor = (email) => { demoActor = email || 'demo'; };
 
 export const demo = {
-  KEY: 'lotus-demo-v1',
+  KEY: 'lotus-demo-v2',
   load() {
     let d = storage.get(this.KEY, null);
     if (!d) { d = seed(); storage.set(this.KEY, d); }
@@ -255,24 +257,32 @@ function seed() {
     ['Morgan Diaz', R, 16], ['Casey Novak', R, 7], ['Jamie Ortiz', R, 8], ['Priya Raman', R, 10],
     ['Taylor Brooks', R, 13], ['Quinn Hale', R, 6], ['Drew Sato', R, 1], ['Reese Park', R, 0],
     ['Alex Moreno', M, 9], ['Blair Kim', M, 5], ['Cameron Wu', M, 4], ['Dana Ito', M, 3],
-    ['Sky Patel', R, 2],
+    ['Sky Patel', R, 2], ['Kai Tan', R, 15], ['Noor Aziz', R, 8], ['Lena Ross', R, 6], ['Omar Haddad', R, 5],
   ].map(([name, loc, done], i) => ({
     id: `OP-${String(i + 1).padStart(4, '0')}`, email: `${name.toLowerCase().replace(' ', '.')}@example.com`, name,
     location: loc.id, roles: ['operator'], cohort: done >= 8 ? 'Cohort 1' : done >= 3 ? 'Cohort 2' : 'Cohort 3',
     completedSessions: done, completedAsOf: today, training: done >= 2 ? 'Trained' : 'In training', active: true,
+    // An admin's mark: Lena has sessions on record but isn't ready to lead a pair yet.
+    experience: name === 'Lena Ross' ? 'new' : '',
   }));
   const op = (n) => ops.find((o) => o.name === n);
-  // Robot, template and the two operators on it, every weekday.
+  // Robot, template, the pair on it, and the days they work. Redmond runs every day:
+  // a pair on Morning, a pair on Afternoon and two pairs (both robots) on Night.
+  const WEEKDAYS = [1, 2, 3, 4, 5];
+  const WEEKEND = [0, 6];
+  const R2 = R.robots[1] || R.robots[0];
   const crews = [
-    [R.robots[0], tpl(R, 0), 'Avery Lin', 'Jordan Pike'],
-    [R.robots[1] || R.robots[0], tpl(R, 0), 'Sam Okafor', 'Riley Chen'],
-    [R.robots[0], tpl(R, 1), 'Morgan Diaz', 'Casey Novak'],
-    [R.robots[1] || R.robots[0], tpl(R, 1), 'Jamie Ortiz', 'Priya Raman'],
-    [R.robots[0], tpl(R, 2), 'Taylor Brooks', 'Quinn Hale'],
+    [R.robots[0], tpl(R, 0), 'Avery Lin', 'Jordan Pike', WEEKDAYS],
+    [R.robots[0], tpl(R, 1), 'Morgan Diaz', 'Casey Novak', WEEKDAYS],
+    [R.robots[0], tpl(R, 2), 'Taylor Brooks', 'Quinn Hale', WEEKDAYS],
     // Two operators with fewer than 2 completed sessions together: a pairing risk.
-    [R.robots[1] || R.robots[0], tpl(R, 2), 'Drew Sato', 'Reese Park'],
-    [M.robots[0], tpl(M, 0), 'Alex Moreno', 'Blair Kim'],
-    [M.robots[0], tpl(M, 1), 'Cameron Wu', 'Dana Ito'],
+    [R2, tpl(R, 2), 'Drew Sato', 'Reese Park', WEEKDAYS],
+    [R.robots[0], tpl(R, 0), 'Sam Okafor', 'Riley Chen', WEEKEND],
+    [R.robots[0], tpl(R, 1), 'Jamie Ortiz', 'Priya Raman', WEEKEND],
+    [R.robots[0], tpl(R, 2), 'Kai Tan', 'Noor Aziz', WEEKEND],
+    [R2, tpl(R, 2), 'Lena Ross', 'Omar Haddad', WEEKEND],
+    [M.robots[0], tpl(M, 0), 'Alex Moreno', 'Blair Kim', WEEKDAYS],
+    [M.robots[0], tpl(M, 1), 'Cameron Wu', 'Dana Ito', WEEKDAYS],
   ];
   const schedule = [];
   const punches = [];
@@ -292,12 +302,12 @@ function seed() {
   const now = new Date();
   const wk0 = mondayOf(now);
   const start = addDays(wk0, -7);
-  const end = addDays(wk0, 11);
+  const end = addDays(wk0, 13);
   for (let d = new Date(start); d <= end; d = addDays(d, 1)) {
-    if (d.getDay() === 0 || d.getDay() === 6) continue;
     const k = dayKey(d);
     const di = Math.round((d - start) / 864e5);
-    for (const [robot, t, a, b] of crews) {
+    for (const [robot, t, a, b, on] of crews) {
+      if (!on.includes(d.getDay())) continue;
       for (const who of [a, b]) {
         const r = book(k, who, robot, t);
         const sIn = at(k, t.start);
@@ -312,8 +322,8 @@ function seed() {
         if (who === 'Jordan Pike' && di === 2) continue; // forgot to clock out last Wednesday
         let tout = new Date(sOut.getTime() + (Math.round(rnd() * 4) - 1) * 6e4);
         let extra = {};
-        if (who === 'Riley Chen' && di === 1) { tout = at(k, t.start, 195); extra = { flag: 'early', note: 'Felt unwell, told the client lead' }; }
-        if (who === 'Priya Raman' && di === 3) tout = at(k, t.end, 18); // stayed late to finish a reset
+        if (who === 'Riley Chen' && di === 5) { tout = at(k, t.start, 195); extra = { flag: 'early', note: 'Felt unwell, told the client lead' }; }
+        if (who === 'Priya Raman' && di === 6) tout = at(k, t.end, 18); // stayed late to finish a reset
         if (who === 'Taylor Brooks' && di === 4) tout = at(k, t.end, 12);
         if (tout > now) continue;
         punch(tout, r, 'out', extra);
@@ -336,7 +346,7 @@ function seed() {
     const k = dayKey(addDays(start, i));
     for (const o of ops) {
       const mine = schedule.filter((r) => r.email === o.email && r.date === k);
-      if (!mine.length || (o.name === 'Jordan Pike' && i === 2) || (o.name === 'Riley Chen' && i === 1)) continue;
+      if (!mine.length || (o.name === 'Jordan Pike' && i === 2)) continue;
       const h = mine.reduce((a, r) => a + (at(k, r.end) - at(k, r.start)) / 36e5, 0);
       approvals.push({ email: o.email, operatorId: o.id, date: k, status: 'approved', hours: h, computed: h, note: '', final: false, by: 'manager@example.com', at: at(dayKey(addDays(start, 7)), '09:30', i).toISOString() });
     }

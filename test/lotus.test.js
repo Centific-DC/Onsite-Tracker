@@ -318,3 +318,52 @@ describe('admin search', async () => {
     expect(r.shifts.every((s) => s.date === d)).toBe(true);
   });
 });
+
+describe('real Redmond shift pattern', async () => {
+  const { planScheduleImport, toHHMM } = await import('../src/lib/importer.js');
+  const { LOCATIONS } = await import('../src/lib/config.js');
+  it('Redmond runs every day: 2 on Morning, 2 on Afternoon, 4 on Night', () => {
+    const red = LOCATIONS.find((l) => l.id === 'RED');
+    expect(red.days).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(red.templates.map((t) => [t.label, t.seats])).toEqual([['Morning', 2], ['Afternoon', 2], ['Night', 4]]);
+  });
+  it('reads times with a time zone, and shift names alone', () => {
+    expect(toHHMM('11:00 PM PDT')).toBe('23:00');
+    expect(toHHMM('7:00 AM PST')).toBe('07:00');
+    const ops = [{ id: 'OP-1', email: 'a@x.com', name: 'A', location: 'RED' }];
+    const plan = planScheduleImport('Date,Email,Shift\n11/7/2026,a@x.com,5:00 PM - 11:00 PM PDT\n11/8/2026,a@x.com,Night\n', ops, []);
+    expect(plan.add.map((x) => [x.start, x.end, x.template])).toEqual([['17:00', '23:00', 'RED-PM'], ['17:00', '23:00', 'RED-PM']]);
+  });
+});
+
+describe('operator experience', async () => {
+  const { experience, pairingRisks, checkNewShift } = await import('../src/lib/rules.js');
+  const mk = (name, done, exp = '') => ({ email: `${name}@x.com`, name, completedSessions: done, completedAsOf: '2026-11-01', experience: exp });
+  const sh = (o, id) => ({ id, date: '2026-11-10', email: o.email, name: o.name, station: 'Robot 1', location: 'RED', start: '17:00', end: '23:00' });
+  it('an admin mark beats completed sessions, both ways', () => {
+    expect(experience(mk('a', 0), []).level).toBe('new');
+    expect(experience(mk('a', 0, 'experienced'), []).level).toBe('experienced');
+    expect(experience(mk('a', 30, 'new'), []).level).toBe('new');
+    expect(experience(mk('a', 30, 'new'), []).marked).toBe(true);
+  });
+  it('a pair with no experienced operator is flagged, using the mark', () => {
+    const vet = mk('vet', 40, 'new');
+    const rookie = mk('rookie', 0);
+    expect(pairingRisks([sh(vet, 1), sh(rookie, 2)], [vet, rookie], [])).toHaveLength(1);
+    const promoted = mk('rookie', 0, 'experienced');
+    expect(pairingRisks([sh(vet, 1), sh(promoted, 2)], [vet, promoted], [])).toHaveLength(0);
+    const w = checkNewShift(sh(rookie, 'new1'), [sh(vet, 1)], [vet, rookie], [], new Date(2026, 10, 9));
+    expect(w.map((x) => x.code)).toContain('pairing');
+  });
+});
+
+describe('handover is not a pairing', async () => {
+  const { pairingRisks } = await import('../src/lib/rules.js');
+  it('two new operators on Afternoon and Night of one robot are not a pair', () => {
+    const a = { email: 'a@x.com', name: 'A', completedSessions: 0 };
+    const b = { email: 'b@x.com', name: 'B', completedSessions: 0 };
+    const r = (o, id, start, end) => ({ id, date: '2026-11-10', email: o.email, name: o.name, station: 'Robot 1', start, end });
+    expect(pairingRisks([r(a, 1, '12:00', '17:30'), r(b, 2, '17:00', '23:00')], [a, b], [])).toEqual([]);
+    expect(pairingRisks([r(a, 1, '17:00', '23:00'), r(b, 2, '17:00', '23:00')], [a, b], [])).toHaveLength(1);
+  });
+});

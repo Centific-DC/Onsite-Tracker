@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS } from '../lib/config.js';
-import { completedSessions, conflicts, pairingRisks, weeklyLoad } from '../lib/rules.js';
+import { conflicts, isNew as isNewOp, pairingRisks, weeklyLoad } from '../lib/rules.js';
 import { buildSessions } from '../lib/hours.js';
 import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, mondayOf, parseDay, weekLabel, fmtHrsU, shortName } from '../lib/time.js';
 import { useHashQuery, useMedia, useNow } from '../lib/hooks.js';
@@ -13,6 +13,15 @@ import { ShiftSheet } from '../components/ShiftSheet.jsx';
 import { STATUS, backfillStart, dayPlan, shiftHours, shiftTimes } from '../lib/schedule.js';
 
 const PAIR = 2;
+// "Robot 2" -> "R2", the tag on each person in a shift that spans robots.
+const shortRobot = (r) => r.replace(/^robot\s*/i, 'R');
+// Fill a robot's pair before starting the next: the robot with an odd count first,
+// then the emptiest.
+const nextRobot = (loc, rows) => {
+  const n = new Map(loc.robots.map((r) => [r, rows.filter((x) => x.station === r).length]));
+  const odd = loc.robots.find((r) => n.get(r) % 2 === 1);
+  return odd || [...loc.robots].sort((a, b) => n.get(a) - n.get(b))[0];
+};
 const wd = (k) => parseDay(k).toLocaleDateString([], { weekday: 'short' });
 // "Avery Lin" -> "Avery L.", so two names fit in a narrow cell.
 const stub = (name) => {
@@ -23,9 +32,9 @@ const stub = (name) => {
 const hm = (t) => fmtTime(shiftTimes({ date: '2026-01-05', start: t.start, end: t.end }).start);
 const hmEnd = (t) => fmtTime(shiftTimes({ date: '2026-01-05', start: t.start, end: t.end }).end);
 
-// The week as a grid of shift slots: one row per robot and shift template, one
-// column per day. Each slot holds a pair; an empty place is a button that books it.
-// Problems are listed once at the top instead of on every row.
+// The week as a grid of shift slots: one row per shift (Morning, Afternoon, Night),
+// one column per day, as many places in each as the shift needs (config `seats`).
+// An empty place is a button that books it. Problems are listed once at the top.
 export function Schedule() {
   const { data } = useStore();
   const now = useNow(60000);
@@ -41,9 +50,10 @@ export function Schedule() {
   const [slot, setSlot] = useState(null); // { k, robot, template, rows }
 
   const [focusDay, setFocusDay] = useState(null);
-  // Weekdays always; a weekend day only when something is booked on it.
+  // Days a shown lab runs, plus any other day with something booked on it.
+  const runs = (loc, d) => loc.days.includes(d.getDay());
   const days = [...Array(7)].map((_, i) => addDays(wk0, i))
-    .filter((d) => (d.getDay() !== 0 && d.getDay() !== 6) || dayKey(d) === focusDay || schedule.some((r) => r.date === dayKey(d)));
+    .filter((d) => labs.some((l) => runs(l, d)) || dayKey(d) === focusDay || schedule.some((r) => r.date === dayKey(d) && robots.includes(r.station)));
   const [pick, setPick] = useState(() => dayKey(now));
   useEffect(() => { if (!days.some((d) => dayKey(d) === pick)) setPick(dayKey(days.find((d) => dayKey(d) === dayKey(now)) || days[0])); }, [dayKey(wk0)]); // eslint-disable-line react-hooks/exhaustive-deps
   // A link from search (?day=…) opens that week, on that day on phones.
@@ -66,19 +76,22 @@ export function Schedule() {
   const over = weeklyLoad(schedule, wk0).filter((x) => x.over);
   const clashes = conflicts(weekSched);
   const watch = new Set([...over.map((x) => x.email), ...clashes.flatMap((c) => c.ids)]);
-  const isNew = (email) => { const o = ops.get(email); return o && completedSessions(o, sessions) < CFG.pairingMinSessions; };
+  const isNew = (email) => isNewOp(ops.get(email), sessions);
 
-  // Which template a shift belongs to; anything else goes in its robot's "Other times" row.
+  // Which template a shift belongs to; anything else goes in the "Other times" row.
   const inTemplate = (r, loc) => (r.template ? loc.templates.find((t) => t.id === r.template) : loc.templates.find((t) => t.start === r.start && t.end === r.end));
-  const rowsFor = (loc, robot) => {
-    const list = loc.templates.map((t) => ({ key: `${robot}|${t.id}`, robot, template: t }));
-    if (weekSched.some((r) => r.station === robot && !inTemplate(r, loc))) list.push({ key: `${robot}|other`, robot, template: null });
+  const rowsFor = (loc) => {
+    const list = loc.templates.map((t) => ({ key: t.id, template: t }));
+    if (weekSched.some((r) => loc.robots.includes(r.station) && !inTemplate(r, loc))) list.push({ key: 'other', template: null });
     return list;
   };
-  const cellRows = (loc, row, k) => weekSched.filter((r) => r.date === k && r.station === row.robot && (row.template ? inTemplate(r, loc)?.id === row.template.id : !inTemplate(r, loc)));
+  const cellRows = (loc, row, k) => weekSched
+    .filter((r) => r.date === k && loc.robots.includes(r.station) && (row.template ? inTemplate(r, loc)?.id === row.template.id : !inTemplate(r, loc)))
+    .sort((a, b) => a.station.localeCompare(b.station) || a.start.localeCompare(b.start) || a.name.localeCompare(b.name));
+  const free = (loc, row, d, rows) => (row.template && runs(loc, d) ? Math.max(0, row.template.seats - rows.length) : 0);
 
   const futureDays = days.filter((d) => dayKey(d) >= dayKey(now));
-  const openCount = labs.reduce((a, l) => a + l.robots.reduce((b, robot) => b + l.templates.reduce((c, t) => c + futureDays.reduce((e, d) => e + Math.max(0, PAIR - cellRows(l, { robot, template: t }, dayKey(d)).length), 0), 0), 0), 0);
+  const openCount = labs.reduce((a, l) => a + l.templates.reduce((c, t) => c + futureDays.reduce((e, d) => e + free(l, { template: t }, d, cellRows(l, { template: t }, dayKey(d))), 0), 0), 0);
   const missing = [...status.values()].filter((r) => robots.includes(r.station) && (r.status === 'late' || r.status === 'noshow'));
   const booked = weekSched.reduce((a, r) => a + shiftHours(r), 0);
   const attention = [
@@ -123,62 +136,73 @@ export function Schedule() {
         </Group>
       )}
 
-      {labs.map((loc) => (
+      {labs.map((loc) => {
+        // Each lab shows the days it runs (and any day with a booking there).
+        const cols = phone ? shown : shown.filter((d) => runs(loc, d) || dayKey(d) === focusDay || weekSched.some((r) => r.date === dayKey(d) && loc.robots.includes(r.station)));
+        return (
         <Group key={loc.id} title={loc.name} className="sched-group">
-          <div className="sched" style={{ '--days': shown.length }} role="table" aria-label={`${loc.name} schedule`}>
+          <div className="sched" style={{ '--days': cols.length }} role="table" aria-label={`${loc.name} schedule`}>
             <div className="sched-row sched-head" role="row">
               <span role="columnheader" className="sched-label" />
-              {shown.map((d) => (
+              {cols.map((d) => (
                 <span key={+d} role="columnheader" className={clsx('sched-day', dayKey(d) === dayKey(now) && 'is-today', dayKey(d) === focusDay && 'is-focus')}>
                   {d.toLocaleDateString([], { weekday: 'short' })} <strong>{d.getDate()}</strong>
                 </span>
               ))}
             </div>
-            {loc.robots.map((robot) => rowsFor(loc, robot).map((row, ri) => (
-              <div key={row.key} className={clsx('sched-row', ri === 0 && 'is-first')} role="row">
+            {rowsFor(loc).map((row) => (
+              <div key={row.key} className="sched-row" role="row">
                 <span role="rowheader" className="sched-label">
-                  {ri === 0 && <span className="sched-robot">{robot}</span>}
                   <span className="sched-tpl">{row.template ? <>{row.template.label} <span>{hm(row.template)}–{hmEnd(row.template)}</span></> : 'Other times'}</span>
+                  {row.template && <span className="sched-seats">{row.template.seats} operators{loc.robots.length > 1 ? ` · ${Math.ceil(row.template.seats / PAIR)} ${Math.ceil(row.template.seats / PAIR) === 1 ? 'robot' : 'robots'}` : ''}</span>}
                 </span>
-                {shown.map((d) => {
+                {cols.map((d) => {
                   const k = dayKey(d);
                   const rows = cellRows(loc, row, k);
                   const past = k < dayKey(now);
-                  const empty = row.template ? Math.max(0, PAIR - rows.length) : 0;
+                  const empty = free(loc, row, d, rows);
+                  const extra = row.template && rows.length > row.template.seats ? rows.length - row.template.seats : 0;
                   return (
-                    <div key={k} role="cell" className={clsx('sched-cell', past && 'is-past', k === focusDay && 'is-focus', rows.some((r) => riskIds.has(r.id)) && 'is-risk')}>
+                    <div key={k} role="cell" className={clsx('sched-cell', past && 'is-past', k === focusDay && 'is-focus', !runs(loc, d) && 'is-closed')}>
                       {rows.map((r) => {
                         const st = status.get(r.id)?.status;
                         return (
-                          <button key={r.id} type="button" className={clsx('slot', (watch.has(r.email) || watch.has(r.id)) && 'is-warn')} data-status={st} onClick={() => setSlot({ k, loc, robot, template: row.template, rows })} title={`${r.name} · ${r.start}–${r.end}${st ? ` · ${STATUS[st].label}` : ''}`}>
+                          <button key={r.id} type="button" className={clsx('slot', (watch.has(r.email) || watch.has(r.id)) && 'is-warn', riskIds.has(r.id) && 'is-risk')} data-status={st} onClick={() => setSlot({ k, loc, template: row.template, rows })} title={`${r.name} · ${r.station} · ${r.start}–${r.end}${st ? ` · ${STATUS[st].label}` : ''}`}>
                             <span className="slot-dot" aria-hidden="true" />
                             <span className="slot-name">{stub(r.name)}</span>
-                            {isNew(r.email) && <span className="chip-new">new</span>}
+                            {loc.robots.length > 1
+                              ? <span className={clsx('slot-robot', isNew(r.email) && 'is-new')} title={isNew(r.email) ? 'New operator' : undefined}>{shortRobot(r.station)}</span>
+                              : isNew(r.email) && <span className="chip-new">new</span>}
                             {!row.template && <span className="slot-time">{r.start}</span>}
                           </button>
                         );
                       })}
                       {!past && [...Array(empty)].map((_, i) => (
-                        <button key={`o${i}`} type="button" className="slot slot-open" aria-label={`Book ${robot} ${row.template.label} on ${fmtDay(d)}`} onClick={() => setAdding({ date: k, location: loc.id, station: robot, start: row.template.start, end: row.template.end })}>
+                        <button key={`o${i}`} type="button" className="slot slot-open" aria-label={`Book ${row.template.label} at ${loc.name} on ${fmtDay(d)}`} onClick={() => setAdding({ date: k, location: loc.id, station: nextRobot(loc, rows), start: row.template.start, end: row.template.end })}>
                           <Plus size={13} aria-hidden="true" /> Open
                         </button>
                       ))}
+                      {past && empty > 0 && <span className="cell-note">{empty} unfilled</span>}
+                      {extra > 0 && <span className="cell-note is-warn">{extra} more than needed</span>}
+                      {!runs(loc, d) && !rows.length && <span className="cell-note">Closed</span>}
                     </div>
                   );
                 })}
               </div>
-            )))}
+            ))}
           </div>
         </Group>
-      ))}
+        );
+      })}
       <p className="sched-legend">
         <span data-status="onsite"><i /> On site</span>
         <span data-status="done"><i /> Worked</span>
         <span data-status="upcoming"><i /> Booked</span>
         <span data-status="late"><i /> Not here yet</span>
         <span data-status="noshow"><i /> No-show</span>
-        <span><span className="chip-new">new</span> fewer than {CFG.pairingMinSessions} sessions</span>
-        <span className="legend-risk">Red outline: two new operators together</span>
+        {robots.length > 1 && <span><span className="slot-robot">R1</span> robot</span>}
+        <span>{robots.length > 1 && <span className="slot-robot is-new">R2</span>}{LOCATIONS.some((l) => l.robots.length === 1 && labs.includes(l)) && <span className="chip-new">new</span>} new operator (set on Roster)</span>
+        <span className="legend-risk">Red outline: two new operators paired on one robot</span>
       </p>
 
       <SlotSheet value={slot} onClose={() => setSlot(null)} status={status} isNew={isNew} onAdd={(init) => { setSlot(null); setAdding(init); }} now={now} />
@@ -187,7 +211,7 @@ export function Schedule() {
   );
 }
 
-// One slot on one day: who's in it, their status, and remove, backfill or add.
+// One shift on one day: who's in it, their status, and remove, backfill or add.
 function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
   const { data, removeShift } = useStore();
   const rows = value ? (data.schedule || []).filter((r) => value.rows.some((x) => x.id === r.id)) : [];
@@ -197,7 +221,7 @@ function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
   const remove = async (r) => {
     try {
       await removeShift(r.id);
-      toast(`Removed ${r.name}'s shift`, { description: `${value.robot} · ${fmtDay(parseDay(value.k))}` });
+      toast(`Removed ${r.name}'s shift`, { description: `${r.station} · ${fmtDay(parseDay(value.k))}` });
       if (rows.length === 1) onClose();
     } catch (e) {
       toast.error("Couldn't remove the shift", { description: e.message });
@@ -208,11 +232,11 @@ function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
     <Sheet
       open={!!value}
       onOpenChange={(o) => !o && onClose()}
-      title={value ? `${value.robot} · ${t ? t.label : 'Other times'}` : ''}
-      description={value ? `${fmtLongDay(parseDay(value.k))} · ${value.loc.name}${t ? ` · ${hm(t)}–${hmEnd(t)}` : ''}` : ''}
+      title={value ? `${t ? t.label : 'Other times'} · ${value.loc.name}` : ''}
+      description={value ? `${fmtLongDay(parseDay(value.k))}${t ? ` · ${hm(t)}–${hmEnd(t)} · ${rows.length} of ${t.seats} booked` : ''}` : ''}
       footer={value && !past && (late
         ? <button type="button" className="btn btn-primary btn-block" onClick={() => onAdd({ date: late.date, location: value.loc.id, station: late.station, start: backfillStart(late, now), end: late.end, note: `Backfill for ${late.name}`, backfill: late.name })}>Backfill for {shortName(late.name)}</button>
-        : <button type="button" className="btn btn-plain btn-block" onClick={() => onAdd({ date: value.k, location: value.loc.id, station: value.robot, start: t?.start, end: t?.end })}>Add an operator</button>)}
+        : <button type="button" className="btn btn-plain btn-block" onClick={() => onAdd({ date: value.k, location: value.loc.id, station: nextRobot(value.loc, rows), start: t?.start, end: t?.end })}>Add an operator</button>)}
     >
       <Group>
         {live.map((r) => (
@@ -220,7 +244,7 @@ function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
             key={r.id}
             leading={<Avatar name={r.name} tone={r.status ? STATUS[r.status].tone : undefined} />}
             title={<>{r.name} {r.status && r.status !== 'upcoming' && <Tag tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Tag>}{isNew(r.email) && <Tag tone="warn">New</Tag>}</>}
-            subtitle={`${fmtTime(shiftTimes(r).start)}–${fmtTime(shiftTimes(r).end)}${r.note ? ` · ${r.note}` : ''}${r.elsewhere ? ` · clocked in on ${r.elsewhere}` : ''}`}
+            subtitle={`${r.station} · ${fmtTime(shiftTimes(r).start)}–${fmtTime(shiftTimes(r).end)}${r.note ? ` · ${r.note}` : ''}${r.elsewhere ? ` · clocked in on ${r.elsewhere}` : ''}`}
             trailing={!past ? <button type="button" className="link" onClick={() => remove(r)}>Remove</button> : null}
           />
         ))}

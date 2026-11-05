@@ -43,6 +43,7 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
 | `CompletedSessions` | number | `4` | From Active Roster 2 |
 | `CompletedAsOf` | text | `2026-11-05` | Date of the import that set `CompletedSessions` |
 | `TrainingStatus` | text | `Trained` | From Active Roster 2 |
+| `Experience` | choice | `experienced` | Set by an admin on Roster: `experienced`, `new`, or empty (then the app decides from `CompletedSessions`). Every pair needs at least one experienced operator |
 | `Active` | yes/no | Yes | |
 
 Seed it with the staff who need access: schedulers (recruiting), approvers (delivery managers) and reporting (agency reporting). I will send their emails and roles separately.
@@ -198,9 +199,10 @@ Body `{ "id": "S-…" }`. Delete it, and return `{ "ok": true }` even if it was 
 
 ### `users_upsert`: role `scheduler`
 
-Body `{ "users": [ { "id"?: "OP-…", "email", "name", "location", "cohort", "completedSessions", "completedAsOf", "training", "roles"?: ["operator"], "active"?: true } ] }`. Up to 500 per call, used by the Active Roster 2 import.
+Body `{ "users": [ { "id"?: "OP-…", "email", "name", "location", "cohort", "completedSessions", "completedAsOf", "training", "experience"?: "experienced" | "new" | "", "roles"?: ["operator"], "active"?: true } ] }`. Up to 500 per call, used by the Active Roster 2 import and when an admin marks an operator Experienced or New.
 
 - Match users by email.
+- Change only the fields present in the body. The roster import never sends `experience`, so an admin's mark survives re-imports.
 - A new operator without an `id` gets the next free `OP-0000` number. Find the highest existing number and add one, so numbers are never reused.
 - Only staff with the `approver` role may grant roles other than `operator`. Ignore `roles` from a scheduler.
 
