@@ -8,6 +8,8 @@ export const READ_URL = String(CFG.readUrl || '').trim();
 export const WRITE_URL = String(CFG.writeUrl || '').trim();
 // Live once both data flow URLs are set. Until then the app always shows demo data.
 export const LIVE_READY = !!(READ_URL && WRITE_URL);
+// Operator preview tab (public/preview.js): demo data and demo sign-in, this tab only.
+export const PREVIEW = !!CFG.preview;
 // Demo data on a live site (Settings > Data, per browser, as in Project Atlas): sample
 // operators and shifts kept in this browser; nothing is saved to SharePoint or emailed.
 // Sign-in stays real. These are live bindings: setDemo() flips them in place and the
