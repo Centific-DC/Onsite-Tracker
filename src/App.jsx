@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
-import { CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
+import { CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, Eye, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
-import { CFG, DEMO, DEMO_CHOSEN, LIVE_READY } from './lib/config.js';
+import { CFG, DEMO, DEMO_CHOSEN, LIVE_READY, PREVIEW } from './lib/config.js';
 import { useTimings } from './lib/timing.js';
 import { ROLES, hasRole } from './lib/auth.js';
-import { LOCAL_AUTH } from './lib/auth/api.js';
+import { DEMO_PASSWORD, LOCAL_AUTH } from './lib/auth/api.js';
 import { go, useMedia, useRoute } from './lib/hooks.js';
 import { fmtTime } from './lib/time.js';
 import { Group, Row, Segmented, Sheet, StatusLine, Tag } from './components/ui.jsx';
@@ -69,6 +69,12 @@ export default function App() {
   }, [theme, resolved]);
 
   useEffect(() => { init(); }, [init]);
+  // The operator preview tab signs itself in as the demo operator, who then picks
+  // which sample operator to be.
+  useEffect(() => {
+    if (!PREVIEW || authStage !== 'signedOut') return;
+    useStore.getState().signIn('Lotus-operator', DEMO_PASSWORD).catch((e) => toast.error('Preview didn’t start', { description: e.message }));
+  }, [authStage]);
   // A sign-in lasts 12 hours, then it's back to the sign-in screen without a reload.
   useEffect(() => {
     if (!session?.expiresAt) return undefined;
@@ -252,6 +258,9 @@ export default function App() {
         <a className="side-out" href="#/" target="_blank" rel="noopener">
           <ExternalLink size={15} aria-hidden="true" /> Open the operator page
         </a>
+        <a className="side-out" href="?preview=operator#/" target="_blank" rel="noopener" title="Opens the operator page as a sample operator, on demo data. Nothing is saved.">
+          <Eye size={15} aria-hidden="true" /> Preview as an operator
+        </a>
         <div className="side-who">
           <span className="row-title">{session.name}</span>
           <span className="row-sub">{(session.roles || []).map((r) => ROLES[r]).join(' · ')}</span>
@@ -420,6 +429,15 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
 function DemoBanner() {
   const switchDemo = useStore((s) => s.switchDemo);
   useStore((s) => s.demo); // re-render when the switch flips
+  if (PREVIEW) {
+    return (
+      <div className="demo-banner" role="status">
+        <span className="demo-banner-dot" aria-hidden="true" />
+        <span><strong>Operator preview</strong><span className="demo-banner-more"> · demo data in this tab only, nothing is saved or emailed</span></span>
+        <button type="button" className="link" onClick={() => window.close()}>Close</button>
+      </div>
+    );
+  }
   if (!DEMO_CHOSEN) return null;
   return (
     <div className="demo-banner" role="status">
