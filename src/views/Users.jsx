@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Check, KeyRound, UserPlus } from 'lucide-react';
+import { Check, KeyRound, Mail, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { ROLES, ROLE_NOTE } from '../lib/auth.js';
 import * as auth from '../lib/auth/api.js';
 import { tempPassword, passwordProblem } from '../lib/auth/crypto.js';
 import { Avatar, Group, Row, Select, Sheet, Tag } from '../components/ui.jsx';
-import { SignInFields, TempReveal, suggestUsername } from '../components/SignInSetup.jsx';
+import { ResetLinkSheet, SignInFields, TempReveal, suggestUsername } from '../components/SignInSetup.jsx';
 
 // Users: who can sign in to Lotus, with which roles, as in Project Atlas. Adding
 // a person or resetting a password makes a temp password here in the browser and
@@ -49,6 +49,7 @@ export function Users() {
   const [loadError, setLoadError] = useState('');
   // { mode: 'add' } | { mode: 'edit', username } | { mode: 'reset', username } | { mode: 'temp', user, temp }
   const [sheet, setSheet] = useState(null);
+  const [linking, setLinking] = useState(null); // whose reset link is being sent
 
   const load = useCallback(async () => {
     try { setUsers(await auth.listUsers(token)); setLoadError(''); } catch (e) { setLoadError(e.message || 'Couldn’t load sign-ins.'); }
@@ -93,7 +94,7 @@ export function Users() {
       <Sheet
         open={!!sheet && (sheet.mode !== 'edit' || !!editing)}
         onOpenChange={(o) => { if (!o) setSheet(null); }}
-        title={sheet?.mode === 'add' ? 'Add a person' : sheet?.mode === 'temp' ? sheet.user.name : sheet?.mode === 'reset' ? `Reset ${editing?.name || ''}’s password` : editing?.name || ''}
+        title={sheet?.mode === 'add' ? 'Add a person' : sheet?.mode === 'temp' ? sheet.user.name : sheet?.mode === 'reset' ? `Temp password for ${editing?.name || ''}` : editing?.name || ''}
         description={sheet?.mode === 'add' ? 'Set their username and a temp password. They choose their own password at first sign-in.' : sheet?.mode === 'temp' ? 'Their sign-in' : editing ? `${editing.username} · ${editing.email}` : ''}
       >
         {sheet?.mode === 'temp' && <TempReveal user={sheet.user} temp={sheet.temp} onDone={() => setSheet(null)} />}
@@ -126,6 +127,7 @@ export function Users() {
               load();
             }}
             onReset={() => setSheet({ mode: 'reset', username: editing.username })}
+            onLink={() => { setLinking(editing); setSheet(null); }}
             onToggle={async () => {
               await auth.updateUser(token, editing.username, { active: !editing.active });
               toast.success(editing.active ? `${editing.name} can no longer sign in` : `${editing.name} can sign in again`);
@@ -145,11 +147,12 @@ export function Users() {
           />
         )}
       </Sheet>
+      <ResetLinkSheet user={linking} op={linking && (data?.operators || []).find((o) => o.email === linking.email)} onClose={() => { setLinking(null); load(); }} />
     </div>
   );
 }
 
-function UserForm({ user, self, roster = [], taken, onSave, onReset, onToggle }) {
+function UserForm({ user, self, roster = [], taken, onSave, onReset, onLink, onToggle }) {
   const adding = !user;
   const [form, setForm] = useState(() => (user ? { ...user } : empty()));
   const [error, setError] = useState('');
@@ -205,7 +208,8 @@ function UserForm({ user, self, roster = [], taken, onSave, onReset, onToggle })
       </Group>
       {!adding && !self && (
         <div className="user-more">
-          <button type="button" className="btn btn-plain btn-sm" onClick={onReset} disabled={!!busy}><KeyRound size={15} aria-hidden="true" /> Reset password</button>
+          {user.active && <button type="button" className="btn btn-plain btn-sm" onClick={onLink} disabled={!!busy}><Mail size={15} aria-hidden="true" /> Email a reset link</button>}
+          <button type="button" className="btn btn-plain btn-sm" onClick={onReset} disabled={!!busy}><KeyRound size={15} aria-hidden="true" /> Set a temp password</button>
           <button type="button" className={user.active ? 'btn btn-plain btn-sm btn-danger-text' : 'btn btn-plain btn-sm'} onClick={run('toggle', onToggle)} disabled={!!busy} aria-busy={busy === 'toggle' || undefined}>
             {busy === 'toggle' ? 'Saving…' : user.active ? 'Turn off sign-in' : 'Turn sign-in back on'}
           </button>
@@ -238,7 +242,7 @@ function ResetForm({ user, onReset }) {
       </Group>
       <p className="login-error" role="alert">{error}</p>
       <div className="user-foot">
-        <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy || undefined}>{busy ? 'Resetting…' : 'Reset password'}</button>
+        <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy || undefined}>{busy ? 'Saving…' : 'Set temp password'}</button>
       </div>
     </form>
   );

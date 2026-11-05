@@ -58,3 +58,51 @@ describe('sign-in', () => {
     expect(passwordProblem('a long enough sentence', 'avery')).toBeNull();
   });
 });
+
+import { codeHash, resetCode } from '../src/lib/auth/crypto.js';
+
+describe('password reset link', () => {
+  let token;
+  beforeEach(async () => {
+    mem.clear();
+    seedLocalUsers([
+      { username: 'Lotus-admin', email: 'lead@example.com', name: 'Lead', roles: ['admin', 'scheduler'], ...(await saltedHash('Testing12345')) },
+      { username: 'avery', email: 'avery@example.com', name: 'Avery', roles: ['operator'], ...(await saltedHash('Old-password-1')) },
+    ]);
+    token = (await signIn('Lotus-admin', 'Testing12345')).body.token;
+  });
+  const finish = async (username, code, password) => {
+    const fresh = await saltedHash(password);
+    return localAuth({ op: 'reset', username, codeHash: await codeHash(code), newSalt: fresh.salt, newHash: fresh.hash });
+  };
+
+  it('only an admin starts one, and the old password works until it is used', async () => {
+    const a = (await signIn('avery', 'Old-password-1')).body.token;
+    const code = resetCode();
+    expect(localAuth({ op: 'user.reset_link', token: a, username: 'avery', codeHash: await codeHash(code) }).status).toBe(403);
+    const r = localAuth({ op: 'user.reset_link', token, username: 'avery', codeHash: await codeHash(code) });
+    expect(r.status).toBe(200);
+    expect(Date.parse(r.body.expiresAt) - Date.now()).toBeGreaterThan(23 * 36e5);
+    expect((await signIn('avery', 'Old-password-1')).status).toBe(200);
+  });
+
+  it('sets the new password once, signs them out everywhere, and refuses a wrong or used code', async () => {
+    const old = (await signIn('avery', 'Old-password-1')).body.token;
+    const code = resetCode();
+    localAuth({ op: 'user.reset_link', token, username: 'avery', codeHash: await codeHash(code) });
+    expect((await finish('avery', resetCode(), 'New-password-22')).status).toBe(400);
+    expect((await finish('avery', code, 'New-password-22')).status).toBe(200);
+    expect((await signIn('avery', 'New-password-22')).body.user.mustChangePassword).toBe(false);
+    expect((await signIn('avery', 'Old-password-1')).status).toBe(401);
+    expect(localAuth({ op: 'signout', token: old }).status).toBe(200);
+    expect(localAuth({ op: 'user.list', token: old }).status).toBe(401);
+    expect((await finish('avery', code, 'Another-pass-33')).status).toBe(400);
+  });
+
+  it('a newer temp password cancels the link', async () => {
+    const code = resetCode();
+    localAuth({ op: 'user.reset_link', token, username: 'avery', codeHash: await codeHash(code) });
+    localAuth({ op: 'user.reset', token, username: 'avery', ...(await saltedHash('Temp-pass-1234')) });
+    expect((await finish('avery', code, 'New-password-22')).status).toBe(400);
+  });
+});

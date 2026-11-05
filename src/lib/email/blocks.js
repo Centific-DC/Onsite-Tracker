@@ -26,6 +26,9 @@ export const FIELDS = {
   signInUsername: { label: 'Username' },
   tempPassword: { label: 'Temp password', secret: true },
   tempExpires: { label: 'Temp password expires' },
+  // The password reset email: the link works once, so it is secret like a password.
+  resetLink: { label: 'Reset link', secret: true },
+  resetExpires: { label: 'Reset link expires' },
 };
 export const FIELD_IDS = Object.keys(FIELDS);
 export const FIELD_LABEL = Object.fromEntries(FIELD_IDS.map((id) => [id, FIELDS[id].label]));

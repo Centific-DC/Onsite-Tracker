@@ -3,7 +3,7 @@
 // Project Atlas sign-in: usernames and passwords that an admin hands out.
 
 import { AUTH_URL } from '../config.js';
-import { hashPassword, saltedHash } from './crypto.js';
+import { codeHash, hashPassword, resetCode, saltedHash } from './crypto.js';
 import { timed } from '../timing.js';
 import { errorText } from '../api.js';
 import { localAuth, localUsernames, seedLocalUsers } from './localFlow.js';
@@ -152,4 +152,22 @@ export async function resetUser(token, username, temp) {
   const { salt, hash } = await saltedHash(temp);
   await call({ op: 'user.reset', token, username, salt, hash });
   salts.delete(clean(username));
+}
+
+/**
+ * Starts a password reset for someone (admin only): makes a one-time code and has
+ * the flow keep its hash. Their current password keeps working until they use the
+ * link. Resolves to { code, expiresAt }; the code goes only in the reset email.
+ */
+export async function startReset(token, username) {
+  const code = resetCode();
+  const r = await call({ op: 'user.reset_link', token, username, codeHash: await codeHash(code) });
+  return { code, expiresAt: r.expiresAt };
+}
+
+/** Sets a new password from a reset link. Anyone with the link can call it, once. */
+export async function finishReset(username, code, password) {
+  const fresh = await saltedHash(password);
+  await call({ op: 'reset', username: clean(username), codeHash: await codeHash(code), newSalt: fresh.salt, newHash: fresh.hash });
+  salts.set(clean(username), Promise.resolve(fresh.salt));
 }

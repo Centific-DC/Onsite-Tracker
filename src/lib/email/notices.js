@@ -25,11 +25,14 @@ export function weekShifts(schedule, email, wk0) {
     .sort((x, y) => x.date.localeCompare(y.date) || x.start.localeCompare(y.start));
 }
 
+// Sign-in emails are notices too (dated the day they went out), but say nothing about the schedule.
+const NOT_SCHEDULE = new Set(['operator-welcome', 'operator-reset']);
+
 /** The latest schedule notice for an operator and week. Test sends only count while test mode is on. */
 export function latestNotice(notices, email, wk0, testMode) {
   const wk = dayKey(wk0);
   return (notices || [])
-    .filter((n) => n.email === email && n.weekStart === wk && Boolean(n.test) === Boolean(testMode))
+    .filter((n) => n.email === email && n.weekStart === wk && Boolean(n.test) === Boolean(testMode) && !NOT_SCHEDULE.has(n.kind))
     .sort((a, b) => String(b.sentAt).localeCompare(String(a.sentAt)))[0] || null;
 }
 

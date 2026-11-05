@@ -7,6 +7,7 @@ import { DEMO } from '../lib/config.js';
 import { FIELD_LABEL, isBlockField, isSecretField } from '../lib/email/blocks.js';
 import { DARK, LIGHT } from '../lib/email/palette.js';
 import { AUDIENCE_LABEL, TEMPLATES, TEMPLATE_FIELDS } from '../lib/email/templates.js';
+import { resetLinkFor, resetValues } from '../lib/email/reset.js';
 import { buildEmail, copyRich, fillFields, fillSubject, sanitize, tintedLogo, toPlainText } from '../lib/email/render.js';
 import { useTemplates } from '../lib/email/useTemplates.js';
 import { noticeStatus, scheduleValues } from '../lib/email/notices.js';
@@ -76,6 +77,7 @@ export function Emails() {
     if (!person) return {};
     // A sample temp password: the real one is made when an admin adds the operator.
     if (meta.id === 'operator-welcome') return welcomeValues({ name: person.entry.op.name, location: person.entry.op.location, username: suggestUsername(person.entry.op.email), temp: 'Sample-Temp-48271' });
+    if (meta.id === 'operator-reset') return resetValues({ name: person.entry.op.name, username: suggestUsername(person.entry.op.email), link: resetLinkFor(suggestUsername(person.entry.op.email), 'sample-code'), expires: new Date(Date.now() + 864e5) });
     return scheduleValues(person.entry, samples.wk1);
   }, [meta.audience, meta.id, person, samples]);
 
