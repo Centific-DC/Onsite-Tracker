@@ -76,6 +76,7 @@ export function Roster() {
               title={<><button type="button" className="name-link" onClick={() => openProfile(o.email)}>{o.name}</button> {x.level === 'new' && <Tag tone="warn">New</Tag>}{w?.over && <Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}{signIns.admin && signIns.users && (signInOf.has(o.email) ? signInTag(signInOf.get(o.email)) : o.active !== false && <button type="button" className="tag-btn" onClick={() => setSettingUp(o)}><KeyRound size={12} aria-hidden="true" /> Set up sign-in</button>)}</>}
               subtitle={`${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${done} sessions completed · ${w ? fmtHrsU(w.hours) : '0 hrs'} this week`}
               trailing={<ExperienceSelect op={o} sessions={sessions} />}
+              className="row-wrap"
             />
           );
         })}
