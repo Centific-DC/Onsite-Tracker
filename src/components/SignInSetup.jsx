@@ -87,6 +87,7 @@ export function useWelcome() {
 }
 
 const EMAILED = {
+  sending: (n, e) => `Sending the welcome email to ${e}… You can close this; it keeps going.`,
   sent: (n, e) => `Emailed to ${e} with their username, temp password and a button to open Lotus. ${n} chooses their own password at the first sign-in.`,
   test: () => 'Test mode is on, so the welcome email went to project_lotus@centific.com, not to them. Share these yourself until test mode is off.',
   demo: () => 'Demo mode: no email leaves this browser. In the live app they get the welcome email.',

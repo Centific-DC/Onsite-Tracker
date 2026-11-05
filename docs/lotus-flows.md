@@ -26,6 +26,15 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
     - Always `Content-Type: application/json`.
     - Errors are `{"error":"<message a person can read>"}` with status 400, 403, 404 or 409.
     - Success is status 200.
+- **Speed** (user ask, 2026-11-05: adding an operator and sending emails took far too long). The app waits up to 110 s, then gives up. Targets:
+    - Under 3 s: `signin`, `salt`, a one-user `users_upsert`, `user.create`, one welcome `email_send`, `punch`, `fill_in`.
+    - Under 5 s: Read for an operator; under 10 s: Read `all` for staff; under 15 s: a 20-row `users_upsert` or a 10-message `email_send`.
+    - How:
+        - *Get items* with a `$filter` and `Top Count` (1 when looking up one row), never a whole list just to find one row.
+        - Read a list once and use *Filter array* inside loops, not a *Get items* per item.
+        - Give *Apply to each* concurrency (10 to 20) wherever the items don't depend on each other.
+        - Independent steps go in parallel branches.
+        - Respond as soon as the result is known, and put audit rows and notification emails that the answer doesn't depend on after the Response.
 - **Pagination:** turn on pagination (threshold 5000) on every *Get items*, so lists over 100 rows aren't cut off.
 - **Columns:** text is *Single line of text* unless marked otherwise. The list's built-in `Title` column holds the key shown in each table. Don't rename internal column names after creating them.
 
@@ -71,7 +80,9 @@ The first admin is created by the Auth flow's `bootstrap` op (below). After that
 | `Email` | text | `avery.lin@centific.com` |
 | `Name` | text | `Avery Lin` |
 | `Location` | text | `RED` |
-| `Robot` | text | `Robot 1` |
+| `Robot` | text | `Robot 1`, or empty = any robot (user rule, 2026-11-05: the robot is optional as long as operators know who they're paired with) |
+| `Pair` | text | `P-3k9x2a1b`. Shifts with the same `Pair` on the same `Date` are partners, whatever their robot. Empty = pair the old way (same `Date`, `Location` and `Robot`, overlapping more than 60 minutes) |
+| `Replaces` | text | `S-…` of a no-show this shift replaces. That shift drops out of its pair; it stays on the schedule as the record of the no-show |
 | `Template` | text | `RED-AM` (empty for a custom time) |
 | `Start` | text | `07:00` (24h, site-local) |
 | `End` | text | `12:30` |
@@ -221,15 +232,21 @@ Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action":
 1. The token check above gives `callerEmail` and the caller's row. Compose `roles` = `split(Roles, ';')`.
 2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` from `Lotus_Settings`.
 3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
-   - **The one exception is partners' names** (user decision, 2026-11-05). Before filtering, for each of the caller's shifts, find the other `Lotus_Shifts` rows with the same `Date`, `Location` and `Station`, a different `Email`, whose time overlaps at least half of the caller's shift (so the half-hour handover between Morning and Afternoon doesn't count; an end at or before the start runs past midnight). Return them as `partners`: `[{ "shiftId": "<the caller's shift id>", "name": "<the partner's Name>" }]`. Send only these two fields: never the partner's email, operator ID, times, punches or hours. A shift with a blank `Station` has no partners. Staff callers get `partners: []` (they already have the whole schedule).
+   - **The one exception is partners' names** (user decision, 2026-11-05). Before filtering, for each of the caller's shifts, find its partners among the other `Lotus_Shifts` rows of the same `Date` with a different `Email`, leaving out any row that another row's `Replaces` points to:
+     - if either shift has a `Pair`, partners are the rows with the **same non-empty `Pair`** (robot and times don't matter);
+     - if neither has one, partners are rows with the same `Location` and the same non-empty `Robot` whose time overlaps the caller's by **more than 60 minutes** (so the half-hour handover between shifts doesn't count; an end at or before the start runs past midnight).
+
+     Return them as `partners`: `[{ "shiftId": "<the caller's shift id>", "name": "<the partner's Name>" }]`. Send only these two fields: never the partner's email, operator ID, times, punches or hours. Staff callers get `partners: []` (they already have the whole schedule).
+   - **Open spots, for operators only** (user rule, 2026-11-05: if A doesn't show, C can pair with B). List today's shifts (site-local) at the caller's `HomeLocation` where: the booked operator has no `IN` punch today; now is past the shift's start plus the lab's grace (10 minutes) and more than 30 minutes before its end; no other row `Replaces` it; and it isn't the caller's. Skip the list entirely if the caller already clocked in today. Return `openSpots`: `[{ "shiftId", "location", "station", "start", "end", "template", "date" }]`. **No names, emails or operator IDs**: the caller only learns their partner's name after taking the spot. Staff get `openSpots: []`.
 4. Response 200 (field names are lower camel case, exactly):
 
 ```json
 {
   "me": { "email": "", "name": "", "operatorId": "", "roles": ["operator"], "location": "RED" },
   "operators": [{ "id": "OP-0007", "email": "", "name": "", "location": "RED", "roles": ["operator"], "cohort": "", "completedSessions": 4, "completedAsOf": "", "training": "", "active": true }],
-  "schedule": [{ "id": "S-…", "date": "", "operatorId": "", "email": "", "name": "", "location": "RED", "station": "Robot 1", "template": "RED-AM", "start": "07:00", "end": "12:30", "note": "" }],
+  "schedule": [{ "id": "S-…", "date": "", "operatorId": "", "email": "", "name": "", "location": "RED", "station": "Robot 1", "template": "RED-AM", "start": "07:00", "end": "12:30", "note": "", "pair": "P-…", "replaces": "" }],
   "partners": [{ "shiftId": "S-…", "name": "Avery Lin" }],
+  "openSpots": [{ "shiftId": "S-…", "location": "RED", "station": "", "start": "17:00", "end": "23:00", "template": "RED-NIGHT", "date": "2026-11-05" }],
   "punches": [{ "id": "", "ts": "", "operatorId": "", "email": "", "name": "", "type": "in", "location": "RED", "station": "Robot 1", "shiftId": "", "grace": 0, "source": "laptop", "flag": "", "note": "" }],
   "resolutions": [{ "key": "", "outcome": "accept", "reason": "", "endTime": "", "by": "", "at": "" }],
   "approvals": [{ "email": "", "operatorId": "", "date": "", "status": "approved", "hours": 5.5, "computed": 5.5, "note": "", "final": false, "by": "", "at": "" }],
@@ -259,6 +276,7 @@ Body: `{ "type": "in" | "out", "shiftId": "", "location": "", "station": "", "de
 4. If now is earlier than start minus grace, return **409** `{"error":"Clock-in opens at <h:mm AM/PM>", "code":"early", "opensAt":"<ISO>"}`. If now is after the end, return **409** `{"error":"That shift has ended", "code":"over"}`.
 5. `GraceMinutes` = whole minutes from now to the start when now is before the start, else 0.
 6. Without a `shiftId`, it is an unscheduled clock-in. Allow it, with `ShiftID` empty. `location` and `station` must be set.
+   - A shift with an empty `Robot`: the app asks the operator which robot at clock-in and sends it as `station`. Save it on the punch (`Robot`), so hours worked still merge per robot. `station` must be one of the lab's robots.
    - **Home lab only** (user rule, 2026-11-05: the labs are far apart, so nobody works at both). If the caller's `Lotus_Users` row has a `HomeLocation`, the punch's `location` must equal it, else **403** `{"error":"You can only clock in at <lab name>.","code":"lab"}`. This applies with or without a `shiftId`.
 7. If the caller already has an `IN` today with no `OUT` after it, return **409** `{"error":"You're already clocked in", "code":"open"}`.
 
@@ -270,13 +288,23 @@ If `Flag` = `Left early`, send an email from the shared mailbox (the email step 
 
 ### `shift_upsert`: role `scheduler`
 
-Body: `{ "shifts": [ { "id"?: "", "date", "operatorId", "email", "name", "location", "station", "template", "start", "end", "note", "source" } ] }`. Up to 200 per call.
+Body: `{ "shifts": [ { "id"?: "", "date", "operatorId", "email", "name", "location", "station", "template", "start", "end", "note", "source", "pair", "replaces" } ] }`. Up to 200 per call. `station` may be empty (any robot). Save `pair` and `replaces` as sent. When the scheduler pairs someone with a shift that has no `Pair` yet, or replaces a no-show, the app sends the partners' rows again in the same call with the new `Pair`, so save them all.
 
 For each shift: check that `date` is `yyyy-MM-dd`, `start` and `end` are `HH:mm`, and `email` is in `Lotus_Users`. **Home lab only:** if that user's row has a `HomeLocation`, the shift's `location` must equal it, else 400 `{"error":"<name> works at <lab name> only."}` and nothing in the call is saved. With an `id`, update that row. Without one, create it with `Title` = `S-` + `guid()`. Respond `{ "ok": true, "shifts": [ …saved shifts, same shape as Read… ] }`. The app has already shown the scheduler any warnings (37 hrs, conflicts, pairing), so don't block on those.
 
 ### `shift_delete`: role `scheduler`
 
 Body `{ "id": "S-…" }`. Delete it, and return `{ "ok": true }` even if it was already gone.
+
+### `fill_in`: role `operator`
+
+An operator takes an open spot (someone didn't show). Body `{ "shiftId": "S-…" }`: the no-show's shift, from `openSpots`.
+
+1. Get that shift. Check again everything that makes it an open spot (see Read): same lab as the caller's `HomeLocation`, no `IN` from its operator today, past start plus grace and more than 30 minutes before the end, not already replaced, not the caller's. The caller must not be clocked in, and must have no other shift overlapping the rest of this one. Else **409** `{"error":"That spot is already filled, or the shift is nearly over.","code":"taken"}`.
+2. If the shift has no `Pair`, make one (`P-` + 8 characters of `guid()`), and set it on that shift **and on its current partners** (found as in Read's partners rule), so the pair survives the swap.
+3. Create the caller's shift: same `Date`, `Location`, `Robot`, `Template` and `End`; `Start` = now, site-local, rounded down to 5 minutes; `Pair` = that pair; `Replaces` = the no-show's `Title`; `Note` = `Filled in for a no-show`; `Source` = `fill_in`.
+4. Audit row, then respond `{ "ok": true, "shift": { …same shape as Read… } }`. The app then sends a normal `punch` `in` with the new `shiftId` (asking the operator for a robot if `station` is empty).
+5. Optional but useful: email the approvers `Covered no-show: <caller> for <no-show> · <lab> <shift>` (test mode rules apply).
 
 ### `users_upsert`: role `scheduler`
 
@@ -386,6 +414,8 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 16a. After `user.create`, set that row's `TempExpires` to yesterday by hand: `signin` with the right temp password gets 401 `This temp password has expired…`. `user.reset` makes it work again.
 16b. As a scheduler, `shift_upsert` an operator whose `HomeLocation` = `MTV` with `location` = `RED`: 400 and nothing saved. As that operator, `punch` in with `location` = `RED`: 403 `code` = `lab`.
 16c. As an admin, `email_send` a welcome to an operator who must change their password: it arrives (at the alias in test mode), the notice row has no HTML, and the run history shows the inputs as secured. For an operator who already changed their password: 400.
+16d. Pairs: book A and B on the same night with the same `Pair` and empty `Robot`. Read as A: `partners` names B. Book C with `Replaces` = A's shift and the same `Pair`: Read as B names only C.
+16e. Open spots: A doesn't clock in. 15 minutes after the start, Read as C (same home lab, no shift now) lists A's shift in `openSpots` with no name. `fill_in` as C creates C's shift (`Replaces` = A, same `Pair`); a second `fill_in` by D gets 409 `taken`. Read as an operator at the other lab: no spot.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:

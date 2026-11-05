@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { ChevronLeft, ChevronRight, Mail, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
-import { CFG, LOCATIONS } from '../lib/config.js';
+import { CFG, LOCATIONS, locOf } from '../lib/config.js';
 import { conflicts, isNew as isNewOp, pairingRisks, weeklyLoad, wrongLab } from '../lib/rules.js';
 import { buildSessions } from '../lib/hours.js';
 import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, mondayOf, parseDay, weekLabel, fmtHrsU, shortName } from '../lib/time.js';
@@ -12,11 +12,11 @@ import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx'
 import { ShiftSheet } from '../components/ShiftSheet.jsx';
 import { SendSchedules } from '../components/SendSchedules.jsx';
 import { noticeStatus } from '../lib/email/notices.js';
-import { STATUS, backfillStart, dayPlan, shiftHours, shiftTimes } from '../lib/schedule.js';
+import { STATUS, backfillStart, dayPlan, pairOf, robotLabel, shiftHours, shiftTimes } from '../lib/schedule.js';
 
 const PAIR = 2;
 // "Robot 2" -> "R2", the tag on each person in a shift that spans robots.
-const shortRobot = (r) => r.replace(/^robot\s*/i, 'R');
+const shortRobot = (r) => (r ? r.replace(/^robot\s*/i, 'R') : 'Any');
 // Fill a robot's pair before starting the next: the robot with an odd count first,
 // then the emptiest.
 const nextRobot = (loc, rows) => {
@@ -50,6 +50,8 @@ export function Schedule() {
   const [lab, setLab] = useState('all');
   const labs = LOCATIONS.filter((l) => lab === 'all' || l.id === lab);
   const robots = labs.flatMap((l) => l.robots);
+  const labIds = new Set(labs.map((l) => l.id));
+  const inLabs = (r) => labIds.has(locOf(r));
   const { sessions, issues } = useMemo(() => buildSessions(data.punches, now), [data.punches, now]);
   const [adding, setAdding] = useState(null);
   const [slot, setSlot] = useState(null); // { k, robot, template, rows }
@@ -58,7 +60,7 @@ export function Schedule() {
   // Days a shown lab runs, plus any other day with something booked on it.
   const runs = (loc, d) => loc.days.includes(d.getDay());
   const days = [...Array(7)].map((_, i) => addDays(wk0, i))
-    .filter((d) => labs.some((l) => runs(l, d)) || dayKey(d) === focusDay || schedule.some((r) => r.date === dayKey(d) && robots.includes(r.station)));
+    .filter((d) => labs.some((l) => runs(l, d)) || dayKey(d) === focusDay || schedule.some((r) => r.date === dayKey(d) && inLabs(r)));
   const [pick, setPick] = useState(() => dayKey(now));
   useEffect(() => { if (!days.some((d) => dayKey(d) === pick)) setPick(dayKey(days.find((d) => dayKey(d) === dayKey(now)) || days[0])); }, [dayKey(wk0)]); // eslint-disable-line react-hooks/exhaustive-deps
   // A link from search (?day=…) opens that week, on that day on phones.
@@ -75,7 +77,7 @@ export function Schedule() {
   const plans = useMemo(() => new Map(days.map((d) => [dayKey(d), dayPlan(schedule, sessions, issues, d, now)])), [schedule, sessions, issues, dayKey(wk0), now]); // eslint-disable-line react-hooks/exhaustive-deps
   const status = useMemo(() => new Map([...plans.values()].flatMap((p) => p.rows.map((r) => [r.id, r]))), [plans]);
   const ops = useMemo(() => new Map((data.operators || []).map((o) => [o.email, o])), [data.operators]);
-  const weekSched = schedule.filter((r) => r.date >= dayKey(wk0) && r.date < dayKey(addDays(wk0, 7)) && robots.includes(r.station));
+  const weekSched = schedule.filter((r) => r.date >= dayKey(wk0) && r.date < dayKey(addDays(wk0, 7)) && inLabs(r));
   const risks = useMemo(() => pairingRisks(weekSched, data.operators, sessions), [weekSched, data.operators, sessions]);
   const riskIds = new Set(risks.flatMap((x) => x.ids));
   const over = weeklyLoad(schedule, wk0).filter((x) => x.over);
@@ -87,17 +89,17 @@ export function Schedule() {
   const inTemplate = (r, loc) => (r.template ? loc.templates.find((t) => t.id === r.template) : loc.templates.find((t) => t.start === r.start && t.end === r.end));
   const rowsFor = (loc) => {
     const list = loc.templates.map((t) => ({ key: t.id, template: t }));
-    if (weekSched.some((r) => loc.robots.includes(r.station) && !inTemplate(r, loc))) list.push({ key: 'other', template: null });
+    if (weekSched.some((r) => locOf(r) === loc.id && !inTemplate(r, loc))) list.push({ key: 'other', template: null });
     return list;
   };
   const cellRows = (loc, row, k) => weekSched
-    .filter((r) => r.date === k && loc.robots.includes(r.station) && (row.template ? inTemplate(r, loc)?.id === row.template.id : !inTemplate(r, loc)))
-    .sort((a, b) => a.station.localeCompare(b.station) || a.start.localeCompare(b.start) || a.name.localeCompare(b.name));
+    .filter((r) => r.date === k && locOf(r) === loc.id && (row.template ? inTemplate(r, loc)?.id === row.template.id : !inTemplate(r, loc)))
+    .sort((a, b) => (a.pair || a.station || '~').localeCompare(b.pair || b.station || '~') || a.start.localeCompare(b.start) || a.name.localeCompare(b.name));
   const free = (loc, row, d, rows) => (row.template && runs(loc, d) ? Math.max(0, row.template.seats - rows.length) : 0);
 
   const futureDays = days.filter((d) => dayKey(d) >= dayKey(now));
   const openCount = labs.reduce((a, l) => a + l.templates.reduce((c, t) => c + futureDays.reduce((e, d) => e + free(l, { template: t }, d, cellRows(l, { template: t }, dayKey(d))), 0), 0), 0);
-  const missing = [...status.values()].filter((r) => robots.includes(r.station) && (r.status === 'late' || r.status === 'noshow'));
+  const missing = [...status.values()].filter((r) => inLabs(r) && (r.status === 'late' || r.status === 'noshow'));
   const booked = weekSched.reduce((a, r) => a + shiftHours(r), 0);
   const attention = [
     risks.length && { tone: 'bad', label: 'Pairing risk', text: [...new Map(risks.map((x) => [x.names.join('+'), `${x.names.map(stub).join(' + ')} (${[...new Set(risks.filter((y) => y.names.join('+') === x.names.join('+')).map((y) => wd(y.date)))].join(', ')})`])).values()].join(' · ') },
@@ -173,7 +175,7 @@ export function Schedule() {
 
       {labs.map((loc) => {
         // Each lab shows the days it runs (and any day with a booking there).
-        const cols = phone ? shown : shown.filter((d) => runs(loc, d) || dayKey(d) === focusDay || weekSched.some((r) => r.date === dayKey(d) && loc.robots.includes(r.station)));
+        const cols = phone ? shown : shown.filter((d) => runs(loc, d) || dayKey(d) === focusDay || weekSched.some((r) => r.date === dayKey(d) && locOf(r) === loc.id));
         return (
         <Group key={loc.id} title={loc.name} className="sched-group">
           <div className="sched" style={{ '--days': cols.length }} role="table" aria-label={`${loc.name} schedule`}>
@@ -202,7 +204,7 @@ export function Schedule() {
                       {rows.map((r) => {
                         const st = status.get(r.id)?.status;
                         return (
-                          <button key={r.id} type="button" className={clsx('slot', (watch.has(r.email) || watch.has(r.id)) && 'is-warn', riskIds.has(r.id) && 'is-risk')} data-status={st} onClick={() => setSlot({ k, loc, template: row.template, rows })} title={`${r.name} · ${r.station} · ${r.start}–${r.end}${st ? ` · ${STATUS[st].label}` : ''}`}>
+                          <button key={r.id} type="button" className={clsx('slot', (watch.has(r.email) || watch.has(r.id)) && 'is-warn', riskIds.has(r.id) && 'is-risk')} data-status={st} onClick={() => setSlot({ k, loc, template: row.template, rows })} title={`${r.name} · ${robotLabel(r)} · ${r.start}–${r.end}${st ? ` · ${STATUS[st].label}` : ''}`}>
                             <span className="slot-dot" aria-hidden="true" />
                             <span className="slot-name">{stub(r.name)}</span>
                             {loc.robots.length > 1
@@ -257,7 +259,7 @@ function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
   const remove = async (r) => {
     try {
       await removeShift(r.id);
-      toast(`Removed ${r.name}'s shift`, { description: `${r.station} · ${fmtDay(parseDay(value.k))}` });
+      toast(`Removed ${r.name}'s shift`, { description: `${robotLabel(r)} · ${fmtDay(parseDay(value.k))}` });
       if (rows.length === 1) onClose();
     } catch (e) {
       toast.error("Couldn't remove the shift", { description: e.message });
@@ -271,7 +273,7 @@ function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
       title={value ? `${t ? t.label : 'Other times'} · ${value.loc.name}` : ''}
       description={value ? `${fmtLongDay(parseDay(value.k))}${t ? ` · ${hm(t)}–${hmEnd(t)} · ${rows.length} of ${t.seats} booked` : ''}` : ''}
       footer={value && !past && (late
-        ? <button type="button" className="btn btn-primary btn-block" onClick={() => onAdd({ date: late.date, location: value.loc.id, station: late.station, start: backfillStart(late, now), end: late.end, note: `Backfill for ${late.name}`, backfill: late.name })}>Backfill for {shortName(late.name)}</button>
+        ? <button type="button" className="btn btn-primary btn-block" onClick={() => onAdd({ date: late.date, location: value.loc.id, station: late.station, start: backfillStart(late, now), end: late.end, note: `Replacing ${late.name}`, backfill: late.name, replaces: late.id })}>Replace {shortName(late.name)}</button>
         : <button type="button" className="btn btn-plain btn-block" onClick={() => onAdd({ date: value.k, location: value.loc.id, station: nextRobot(value.loc, rows), start: t?.start, end: t?.end })}>Add an operator</button>)}
     >
       <Group>
@@ -280,7 +282,7 @@ function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
             key={r.id}
             leading={<Avatar name={r.name} tone={r.status ? STATUS[r.status].tone : undefined} />}
             title={<>{r.name} {r.status && r.status !== 'upcoming' && <Tag tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Tag>}{isNew(r.email) && <Tag tone="warn">New</Tag>}</>}
-            subtitle={`${r.station} · ${fmtTime(shiftTimes(r).start)}–${fmtTime(shiftTimes(r).end)}${r.note ? ` · ${r.note}` : ''}${r.elsewhere ? ` · clocked in on ${r.elsewhere}` : ''}`}
+            subtitle={`${robotLabel(r)} · ${fmtTime(shiftTimes(r).start)}–${fmtTime(shiftTimes(r).end)}${pairOf(data.schedule, r).length ? ` · with ${pairOf(data.schedule, r).map((x) => shortName(x.name)).join(', ')}` : ''}${r.note ? ` · ${r.note}` : ''}${r.elsewhere ? ` · clocked in on ${r.elsewhere}` : ''}`}
             trailing={!past ? <button type="button" className="link" onClick={() => remove(r)}>Remove</button> : null}
           />
         ))}

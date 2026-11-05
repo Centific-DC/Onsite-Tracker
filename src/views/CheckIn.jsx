@@ -8,7 +8,7 @@ import { hasRole } from '../lib/auth.js';
 import { SignIn } from './SignIn.jsx';
 import { statusOf } from '../lib/hours.js';
 import { myShiftsToday, nextShift } from '../lib/attendance.js';
-import { partnersOf, shiftTimes } from '../lib/schedule.js';
+import { openSpots, partnersOf, robotLabel, shiftTimes } from '../lib/schedule.js';
 import { FLAG, reviewDays } from '../lib/review.js';
 import { addDays, dayKey, firstName, fmtDay, fmtLongDay, fmtTime, greeting, initials, mondayOf, fmtHrsU } from '../lib/time.js';
 import { useNow } from '../lib/hooks.js';
@@ -94,7 +94,7 @@ function WeekWell({ hours }) {
 }
 
 function Person({ person, onDone, laptop }) {
-  const { data, punch, signOut } = useStore();
+  const { data, punch, signOut, fillIn } = useStore();
   const now = useNow(1000);
   const st = statusOf(data.punches, person.email, now);
   const open = st.open;
@@ -106,6 +106,9 @@ function Person({ person, onDone, laptop }) {
   const [reason, setReason] = useState('');
   const [err, setErr] = useState('');
   const [offShift, setOffShift] = useState(false);
+  // A shift with no robot set asks which robot at clock-in, so hours merge per robot.
+  const [robotFor, setRobotFor] = useState(null); // { shift } or { spot }
+  const home = (data.operators || []).find((o) => o.email === person.email)?.location || data.me?.location || '';
 
   const shift = open ? (data.schedule || []).find((r) => r.id === open.shiftId) : null;
   const times = shift ? shiftTimes(shift) : null;
@@ -162,7 +165,7 @@ function Person({ person, onDone, laptop }) {
         ) : (
           <>
             <Pill tone="green" className="op-badge"><span className="op-dot is-green op-pulse" />Clocked in</Pill>
-            <Label className="op-center">On the clock since {fmtTime(since)} · {open.station}</Label>
+            <Label className="op-center">On the clock since {fmtTime(since)} · {open.station}{shift && partnersOf(data, shift).length ? ` · with ${andList(partnersOf(data, shift))}` : ''}</Label>
             <Dial value={shift ? elapsedMs / lengthMs : 0} tone="green" onClick={clockOut} busy={busy} label={`Clock out. ${main} on the clock`}>
               <div className="op-timer op-num" aria-live="off">{main}<span className="op-timer-sec">{sec}</span></div>
               <Label>{shift ? `of ${clockParts(lengthMs)[0]} shift` : 'Not on the schedule'}</Label>
@@ -216,6 +219,28 @@ function Person({ person, onDone, laptop }) {
     pill = <Pill inset>{card.clocked ? 'Worked' : 'Missed'}</Pill>;
   }
   const canClock = next && w.state !== 'early';
+  // Someone in this lab didn't show: an operator without a shift to clock into now can
+  // take the spot. Live, the Read flow lists these (no names); the demo works them out.
+  const spots = canClock ? [] : DEMO ? openSpots(data, person.email, home, now) : (data.openSpots || []);
+  const robotsAt = (loc) => LOCATIONS.find((l) => l.id === loc)?.robots || [];
+  const clockInto = (r) => {
+    if (!r.station && robotsAt(locOf(r)).length > 1) return setRobotFor({ shift: r });
+    doPunch('in', { shiftId: r.id, location: locOf(r), station: r.station || robotsAt(locOf(r))[0] || '' });
+  };
+  const takeSpot = async (spot, station) => {
+    setBusy(true);
+    setErr('');
+    try {
+      const r = await fillIn(spot.shiftId);
+      setRobotFor(null);
+      await doPunch('in', { shiftId: r.id, location: locOf(r), station: station || r.station || robotsAt(locOf(r))[0] || '' });
+    } catch (e) {
+      setErr(`Didn't save: ${e.message}`);
+      toast.error("Couldn't take that spot", { description: e.message });
+      setBusy(false);
+    }
+  };
+  const pickSpot = (spot) => (!spot.station && robotsAt(spot.location).length > 1 ? setRobotFor({ spot }) : takeSpot(spot, ''));
 
   return (
     <div className="op op-screen op-enter" key="off">
@@ -235,7 +260,7 @@ function Person({ person, onDone, laptop }) {
         {card ? (
           <div className="op-details">
             <Detail icon={<Clock size={18} />}><strong>{shiftLabel(card)}</strong> · {fmtTime(card.window.start)}–{fmtTime(card.window.end)}</Detail>
-            <Detail icon={<MapPin size={18} />}>{locationName(locOf(card))} · {card.station}</Detail>
+            <Detail icon={<MapPin size={18} />}>{locationName(locOf(card))} · {robotLabel(card)}</Detail>
             {partnersOf(data, card).length > 0 && <Detail icon={<Users size={18} />}>With {andList(partnersOf(data, card))}</Detail>}
           </div>
         ) : (
@@ -243,13 +268,30 @@ function Person({ person, onDone, laptop }) {
         )}
       </Card>
 
+      {spots.length > 0 && (
+        <Card className="op-shift op-spots">
+          <div className="op-row-between op-shift-top">
+            <Label>Open {spots.length === 1 ? 'spot' : 'spots'} now</Label>
+            <Pill inset tone="yellow">Partner needed</Pill>
+          </div>
+          <p className="op-body">Someone booked here didn't show. If your lead asked you to cover, take the spot: you're booked with their partner until the shift ends, and clocked in.</p>
+          {spots.map((x) => (
+            <div key={x.shiftId} className="op-spot">
+              <Detail icon={<Clock size={18} />}><strong>{shiftLabel(x)}</strong> · until {fmtTime(shiftTimes(x).end)}</Detail>
+              <Detail icon={<MapPin size={18} />}>{locationName(x.location)} · {robotLabel(x)}</Detail>
+              <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={() => pickSpot(x)}>{busy ? 'Saving…' : 'Take this spot and clock in'}</button>
+            </div>
+          ))}
+        </Card>
+      )}
+
       <div className="op-stage">
         {next ? (
           <BigButton
-            onClick={() => doPunch('in', { shiftId: next.id, location: locOf(next), station: next.station })}
+            onClick={() => clockInto(next)}
             disabled={!canClock}
             busy={busy}
-            label={canClock ? `Clock in for ${shiftLabel(next)} on ${next.station}` : `Clock-in opens at ${fmtTime(w.opensAt)}`}
+            label={canClock ? `Clock in for ${shiftLabel(next)} on ${robotLabel(next)}` : `Clock-in opens at ${fmtTime(w.opensAt)}`}
           >
             <LogIn size={34} strokeWidth={2} aria-hidden="true" />
             <span className="op-big-label">{busy ? 'Saving…' : canClock ? 'Clock in' : 'Not yet'}</span>
@@ -269,6 +311,15 @@ function Person({ person, onDone, laptop }) {
 
       <WeekWell hours={week.recorded} />
       <div className="op-foot">{signOutLink}</div>
+      <RobotSheet
+        open={!!robotFor}
+        onOpenChange={(o) => !o && setRobotFor(null)}
+        busy={busy}
+        lab={robotFor ? (robotFor.shift ? locOf(robotFor.shift) : robotFor.spot.location) : ''}
+        title={robotFor?.spot ? 'Take this spot' : 'Which robot?'}
+        description={robotFor?.spot ? 'Pick the robot you’re working on. You’ll see your partner’s name once you’re in.' : `Your shift isn't tied to a robot. Pick the one you're on${partnersOf(data, robotFor?.shift).length ? ` with ${andList(partnersOf(data, robotFor.shift))}` : ''}.`}
+        onConfirm={(station) => (robotFor.spot ? takeSpot(robotFor.spot, station) : doPunch('in', { shiftId: robotFor.shift.id, location: locOf(robotFor.shift), station }).then(() => setRobotFor(null)))}
+      />
       <OffShiftSheet open={offShift} onOpenChange={setOffShift} busy={busy} home={(data.operators || []).find((o) => o.email === person.email)?.location || data.me?.location || ''} onConfirm={(loc, station) => doPunch('in', { location: loc, station })} />
     </div>
   );
@@ -299,6 +350,33 @@ function OffShiftSheet({ open, onOpenChange, onConfirm, busy, home }) {
           </div>
         </Group>
       ))}
+    </Sheet>
+  );
+}
+
+// Which robot, for a shift or open spot that doesn't name one.
+function RobotSheet({ open, onOpenChange, onConfirm, busy, lab, title, description }) {
+  const L = LOCATIONS.find((l) => l.id === lab);
+  const [pick, setPick] = useState('');
+  useEffect(() => { if (open) setPick(''); }, [open]);
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={title}
+      description={description}
+      footer={<button type="button" className="btn btn-primary btn-block" disabled={!pick || busy} onClick={() => onConfirm(pick)}>{busy ? 'Saving…' : 'Clock in'}</button>}
+    >
+      <Group title={L?.name}>
+        <div className="robots" role="radiogroup" aria-label="Robot">
+          {(L?.robots || []).map((s) => (
+            <button key={s} type="button" role="radio" aria-checked={pick === s} className={clsx('robot', pick === s && 'is-on')} onClick={() => setPick(s)}>
+              <span className="robot-name">{s}</span>
+              {pick === s && <span className="robot-check"><Check size={14} strokeWidth={3} /></span>}
+            </button>
+          ))}
+        </div>
+      </Group>
     </Sheet>
   );
 }

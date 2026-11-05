@@ -47,7 +47,7 @@ export function dayPlan(schedule, sessions, issues, day, now = new Date()) {
     else if (now < new Date(start.getTime() + GRACE_MIN * 6e4)) status = 'upcoming';
     else if (now < end) status = 'late';
     else status = 'noshow';
-    const elsewhere = mine.length && !mine.some((s) => s.station === r.station) ? mine[0].station : '';
+    const elsewhere = r.station && mine.length && !mine.some((s) => s.station === r.station) ? mine[0].station : '';
     return { ...r, startAt: start, endAt: end, status, sessions: mine, elsewhere };
   }).sort((a, b) => a.station.localeCompare(b.station) || a.startAt - b.startAt || a.name.localeCompare(b.name));
   const planned = new Set(shifts.map((r) => r.email));
@@ -61,12 +61,17 @@ export function dayPlan(schedule, sessions, issues, day, now = new Date()) {
 // a full pair.
 export function backfills(rows, pairSize = 2) {
   const out = [];
-  for (const station of new Set(rows.map((r) => r.station))) {
-    const mine = rows.filter((r) => r.station === station);
-    const missing = mine.filter((r) => r.status === 'late');
-    const here = mine.filter((r) => r.status === 'onsite').length;
-    const covering = here + mine.filter((r) => r.status === 'upcoming').length;
-    if (missing.length && covering < pairSize) out.push({ station, missing, here, planned: mine.length - mine.filter((r) => r.status === 'done' || r.status === 'noshow').length });
+  const gone = replacedIds(rows);
+  const live = rows.filter((r) => !gone.has(r.id));
+  const seen = new Set();
+  for (const r of live) {
+    if (seen.has(r.id)) continue;
+    const mine = [r, ...live.filter((x) => samePair(x, r))];
+    mine.forEach((x) => seen.add(x.id));
+    const missing = mine.filter((x) => x.status === 'late');
+    const here = mine.filter((x) => x.status === 'onsite').length;
+    const covering = here + mine.filter((x) => x.status === 'upcoming').length;
+    if (missing.length && covering < pairSize) out.push({ station: r.station, location: r.location, missing, here, planned: mine.length - mine.filter((x) => x.status === 'done' || x.status === 'noshow').length });
   }
   return out;
 }
@@ -97,20 +102,51 @@ export function unscheduledIns(schedule, punches) {
   });
 }
 
-// Who an operator works with on a shift: the other operators booked on the same
-// robot for at least half of it (so the half-hour handover between shifts doesn't count). Live, an operator's Read holds only their own shifts,
-// so the flow sends just their partners' names in `partners`; staff (and the demo)
-// see every shift, so the names come from the schedule itself. Names only, never
-// anyone else's times, hours or clock-ins.
+// Pairs. A shift can name its pair (`pair`, shared by both partners) so the robot is
+// optional: operators still know who they work with. A shift without a pair id pairs
+// the old way, with whoever is booked on the same robot for more than the hour-long
+// handover. A shift that someone else's shift `replaces` (a no-show who was swapped
+// out) drops out of its pair.
+const HANDOVER_MIN = 60;
+export const newPairId = () => `P-${Math.random().toString(36).slice(2, 10)}`;
+export const replacedIds = (schedule) => new Set((schedule || []).map((r) => r.replaces).filter(Boolean));
+const overlapMin = (a, b) => { const x = shiftTimes(a), y = shiftTimes(b); return (Math.min(x.end, y.end) - Math.max(x.start, y.start)) / 6e4; };
+export function samePair(a, b) {
+  if (!a || !b || a.id === b.id || a.email === b.email || a.date !== b.date) return false;
+  if (a.pair || b.pair) return !!a.pair && a.pair === b.pair;
+  return !!a.station && a.station === b.station && (a.location || '') === (b.location || '') && overlapMin(a, b) > HANDOVER_MIN;
+}
+/** The other shifts in `shift`'s pair, leaving out anyone who was replaced. */
+export function pairOf(schedule, shift) {
+  const gone = replacedIds(schedule);
+  return (schedule || []).filter((r) => !gone.has(r.id) && samePair(r, shift));
+}
+/** Which robot a shift is on, for people to read. */
+export const robotLabel = (r) => r?.station || 'Any robot';
+
+// Who an operator works with on a shift. Live, an operator's Read holds only their
+// own shifts, so the flow sends just their partners' names in `partners`; staff (and
+// the demo) see every shift, so the names come from the schedule itself. Names only,
+// never anyone else's times, hours or clock-ins.
 export function partnersOf(data, shift) {
-  // A shift with no robot set has no partners (the Read flow does the same).
-  if (!shift?.id || !shift.station) return [];
-  const { start, end } = shiftTimes(shift);
-  const loc = shift.location || '';
-  const fromSchedule = (data.schedule || [])
-    .filter((r) => r.id !== shift.id && r.email !== shift.email && r.station === shift.station && (r.location || '') === loc)
-    .filter((r) => { const t = shiftTimes(r); return Math.min(end, t.end) - Math.max(start, t.start) >= (end - start) / 2; })
-    .map((r) => r.name);
+  if (!shift?.id) return [];
+  const fromSchedule = pairOf(data.schedule, shift).map((r) => r.name);
   const sent = (data.partners || []).filter((p) => p.shiftId === shift.id).map((p) => p.name);
   return [...new Set([...fromSchedule, ...sent].filter(Boolean))];
+}
+
+// Open spots an operator could fill right now, in their home lab: a booked operator
+// hasn't clocked in by the end of the grace period, nobody has replaced them yet, and
+// there's still more than half an hour of the shift left. Live, the Read flow sends
+// these as `openSpots` (no names: only the lab, robot and times). The demo works them
+// out from its full schedule.
+export function openSpots(data, email, home, now = new Date(), graceMin = GRACE_MIN) {
+  const k = dayKey(now);
+  const gone = replacedIds(data.schedule);
+  const inToday = new Set((data.punches || []).filter((p) => p.type === 'in' && dayKey(new Date(p.ts)) === k).map((p) => p.email));
+  if (inToday.has(email)) return [];
+  return (data.schedule || [])
+    .filter((r) => r.date === k && r.email !== email && !gone.has(r.id) && !inToday.has(r.email) && (!home || (r.location || '') === home))
+    .filter((r) => { const t = shiftTimes(r); return now >= new Date(t.start.getTime() + graceMin * 6e4) && now < new Date(t.end.getTime() - 30 * 6e4); })
+    .map((r) => ({ shiftId: r.id, location: r.location, station: r.station, start: r.start, end: r.end, template: r.template, date: r.date }));
 }

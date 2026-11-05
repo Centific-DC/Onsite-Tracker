@@ -205,10 +205,10 @@ function AddOperatorSheet({ open, onOpenChange, signIns }) {
         return;
       }
       signIns.load();
-      let emailed = null;
-      if (mail) { try { emailed = await welcome(o, user.username, login.temp); } catch (e) { emailed = e.message || 'unknown error.'; } }
       toast.success(`Added ${o.name}`, { description: o.id });
-      setMade({ user, temp: login.temp, emailed });
+      // The sign-in is saved: show it now and let the welcome email finish behind it.
+      setMade({ user, temp: login.temp, emailed: mail ? 'sending' : null });
+      if (mail) welcome(o, user.username, login.temp).then((r) => setMade((m) => m && { ...m, emailed: r }), (e) => setMade((m) => m && { ...m, emailed: e.message || 'unknown error.' }));
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -257,9 +257,8 @@ function SetUpSignInSheet({ op, onClose, signIns }) {
       const user = { username: login.username.trim(), email: op.email, name: op.name, roles: ['operator'], operatorId: op.id };
       await auth.createUser(signIns.token, user, login.temp);
       signIns.load();
-      let emailed = null;
-      if (mail) { try { emailed = await welcome(op, user.username, login.temp); } catch (e) { emailed = e.message || 'unknown error.'; } }
-      setMade({ user, temp: login.temp, emailed });
+      setMade({ user, temp: login.temp, emailed: mail ? 'sending' : null });
+      if (mail) welcome(op, user.username, login.temp).then((r) => setMade((m) => m && { ...m, emailed: r }), (e) => setMade((m) => m && { ...m, emailed: e.message || 'unknown error.' }));
     } catch (e) {
       setErr(e.message);
     } finally {

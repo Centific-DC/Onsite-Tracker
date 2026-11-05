@@ -1,6 +1,6 @@
 import { CFG, LOCATIONS, locOf, locationById } from './config.js';
 import { addDays, dayKey } from './time.js';
-import { shiftTimes, shiftHours } from './schedule.js';
+import { replacedIds, samePair, shiftTimes, shiftHours } from './schedule.js';
 
 const PAIR = 2;
 const overlaps = (a, b) => a.start < b.end && b.start < a.end;
@@ -37,22 +37,21 @@ export const isNew = (op, sessions, min) => !!op && experience(op, sessions, min
 // needs at least one experienced operator, so two new ones together are flagged.
 export function pairingRisks(schedule, operators, sessions, min = CFG.pairingMinSessions) {
   const byEmail = new Map((operators || []).map((o) => [o.email, o]));
-  const groups = new Map();
+  const gone = replacedIds(schedule);
+  const byDay = new Map();
   for (const r of schedule || []) {
-    const k = `${r.date}|${r.station}`;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(r);
+    if (gone.has(r.id)) continue;
+    if (!byDay.has(r.date)) byDay.set(r.date, []);
+    byDay.get(r.date).push(r);
   }
   const out = [];
-  for (const rows of groups.values()) {
+  for (const rows of byDay.values()) {
     for (let i = 0; i < rows.length; i++) {
       for (let j = i + 1; j < rows.length; j++) {
         const a = rows[i], b = rows[j];
-        if (a.email === b.email || !sharesShift(a, b)) continue;
+        if (!samePair(a, b)) continue;
         const oa = byEmail.get(a.email), ob = byEmail.get(b.email);
-        const ca = completedSessions(oa, sessions);
-        const cb = completedSessions(ob, sessions);
-        if (isNew(oa, sessions, min) && isNew(ob, sessions, min)) out.push({ date: a.date, station: a.station, ids: [a.id, b.id], names: [a.name, b.name], counts: [ca, cb] });
+        if (isNew(oa, sessions, min) && isNew(ob, sessions, min)) out.push({ date: a.date, station: a.station, ids: [a.id, b.id], names: [a.name, b.name], counts: [completedSessions(oa, sessions), completedSessions(ob, sessions)] });
       }
     }
   }
@@ -85,8 +84,9 @@ export function conflicts(schedule) {
     for (let i = 0; i < rows.length; i++) {
       for (let j = i + 1; j < rows.length; j++) {
         const a = rows[i], b = rows[j];
-        // A double shift on the same robot overlaps by the handover; that's fine.
-        if (overlaps(a, b) && a.station !== b.station) out.push({ kind: 'overlap', date: a.date, name: a.name, email: a.email, ids: [a.id, b.id] });
+        // A double shift overlaps by the handover; that's fine, unless it's on two robots.
+        const shared = (Math.min(a.end, b.end) - Math.max(a.start, b.start)) / 6e4;
+        if (shared > HANDOVER_MIN || (overlaps(a, b) && a.station && b.station && a.station !== b.station)) out.push({ kind: 'overlap', date: a.date, name: a.name, email: a.email, ids: [a.id, b.id] });
         else if (locOf(a) !== locOf(b)) out.push({ kind: 'two_labs', date: a.date, name: a.name, email: a.email, ids: [a.id, b.id] });
       }
     }
@@ -116,7 +116,7 @@ export function checkNewShift(shift, schedule, operators, sessions, wk0) {
   const load = weeklyLoad(next, wk0).find((x) => x.email === shift.email);
   if (load?.over) out.push({ code: 'over_cap', text: `${shift.name} would be booked ${load.hours.toFixed(1)} hrs this week, over the ${CFG.weeklyHourCap} hrs limit.` });
   for (const c of conflicts(next).filter((c) => c.ids.includes(id))) {
-    out.push({ code: c.kind, text: c.kind === 'overlap' ? `${shift.name} already has an overlapping shift on another robot that day.` : `${shift.name} is already booked at another lab that day.` });
+    out.push({ code: c.kind, text: c.kind === 'overlap' ? `${shift.name} already has an overlapping shift that day.` : `${shift.name} is already booked at another lab that day.` });
   }
   for (const p of pairingRisks(next, operators, sessions).filter((p) => p.ids.includes(id))) {
     out.push({ code: 'pairing', text: `${p.names[0]} and ${p.names[1]} are both new operators. Every pair needs at least one experienced operator.` });
