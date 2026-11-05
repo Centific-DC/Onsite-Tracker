@@ -10,6 +10,16 @@ export const storage = {
   remove(k) { try { localStorage.removeItem(k); } catch { /* private mode */ } },
 };
 
+// A flow's own errors are {"error":"text"}. Power Automate's platform errors (flow off,
+// a failed action with no Response, a timeout) are {"error":{"code","message"}}.
+export function errorText(out, status) {
+  const e = out?.error;
+  if (typeof e === 'string' && e) return e;
+  if (e && typeof e === 'object') return [e.message, e.code && `(${e.code})`].filter(Boolean).join(' ') || `The flow answered ${status}.`;
+  if (typeof out?.message === 'string' && out.message) return out.message;
+  return `The flow answered ${status}.`;
+}
+
 async function paPost(url, body) {
   return timed(`${url === READ_URL ? 'Read' : 'Write'} · ${body.action || 'call'}`, paPostRaw(url, body));
 }
@@ -29,7 +39,7 @@ async function paPostRaw(url, body) {
       cache: 'no-store',
     });
     const out = await r.json().catch(() => ({}));
-    if (!r.ok || out?.error) { const e = new Error(out?.error || `HTTP ${r.status}`); e.code = out?.code; e.status = r.status; throw e; }
+    if (!r.ok || out?.error) { const e = new Error(errorText(out, r.status)); e.code = typeof out?.code === 'string' ? out.code : out?.error?.code; e.status = r.status; throw e; }
     return out;
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('The flow took longer than 110 seconds to answer.');

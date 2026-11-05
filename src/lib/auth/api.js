@@ -5,6 +5,7 @@
 import { AUTH_URL } from '../config.js';
 import { hashPassword, saltedHash } from './crypto.js';
 import { timed } from '../timing.js';
+import { errorText } from '../api.js';
 import { localAuth, localUsernames, seedLocalUsers } from './localFlow.js';
 
 const TIMEOUT_MS = 20000;
@@ -51,7 +52,7 @@ async function call(req) {
     const res = await timed(`Sign-in · ${req.op}`, fetch(AUTH_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ schemaVersion: 1, ...req }), signal: ctrl.signal, cache: 'no-store' }));
     let body = {};
     try { body = await res.json(); } catch { /* no body: go by the status */ }
-    if (!res.ok) throw new AuthError(res.status, body.message || body.error || `Sign-in service answered ${res.status}`);
+    if (!res.ok) throw new AuthError(res.status, errorText(body, res.status));
     return body;
   } catch (err) {
     if (err instanceof AuthError) throw err;
