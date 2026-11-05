@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-React + Vite, static build deployed to GitHub Pages. Data: an Excel workbook on SharePoint (DataCollectionUSHUB site) read and written through two Power Automate HTTP flows (Onsite Read, Onsite Write). With no flow URLs configured, the app runs in demo mode on sample data kept in the browser.
+React + Vite, static build deployed to GitHub Pages. Sign-in: Microsoft Entra ID (MSAL). Data: SharePoint lists on the DataCollectionUSHUB site, read and written through two Power Automate HTTP flows (Lotus Read, Lotus Write) restricted to tenant users. With no sign-in or flow URLs configured, the app runs in demo mode on sample data kept in the browser.
 
 ## Users
 
@@ -36,16 +36,14 @@ The unit is the robot, not the person. Two people working the same robot at the 
 
 ## Capabilities and Constraints
 
-- Each check-in records name, email, date, time, in/out, and robot/station. The time comes from the server (`utcNow()` in the flow), not the device clock.
-- A check-out sooner than the shift length (default 6 h, with 15 min grace) needs a reason. It is flagged, and the leads get an email.
-- Flags: left early, no check-out (an IN still open after its day ends counts no hours), no check-in (an OUT with no matching IN).
-- Client "successful hours" are entered weekly by a lead.
-- Schedule: a `Schedule` table (date, person, robot, start, end) says who is expected. Against it, the app shows each shift as on site, not here yet (15 min after start), no-show (shift over, no check-in), or worked; flags check-ins with no shift; and shows a robot as needing a backfill while it has fewer than a pair on site or still due. Leads add, remove and backfill shifts in admin, or edit the sheet directly.
-- Two pages: the check-in page for everyone, and admin (Today, Schedule, Hours, Records) for leads. The people on site are "Operators", never "workers"; on the check-in page the UI uses their names, or "you" and "your robot".
-- Names are unique. Email is identity: the same email keeps the name on record. A new operator whose name is already taken (by another email) is offered the next number, "Jordan Pike 2", and confirms it or changes their name. This applies on the check-in page, the shared tablet and admin's add-shift sheet.
-- Exports: the raw check-in log and per-shift sessions, as CSV.
-- Undecided (waiting on Kate): robot names and count, shift times (the schedule assumes 6 h shifts from 08:00 until told otherwise), the site time zone (assumed Pacific), alert recipients, and the badge-record format.
-- The Team view has no sign-in yet. Anyone with the link can see it.
+- Renamed Lotus (2026-11-05). Goal: the operational source for scheduled shifts, actual attendance and manager-approved hours. Recruiting reports approved hours to the agency; raw check-ins are never treated as payable.
+- Roles: operator, scheduler (recruiting admin), approver (delivery manager), reporting. Individual Microsoft sign-in; roles come from the `Lotus_Users` list and the flows enforce them. Operators only ever receive their own rows. No agency rates or markups anywhere.
+- Locations: Redmond Lab (Robots 1–2; shifts 7:00–12:30, 12:00–17:30, 17:00–23:00) and Mountain View Lab (Robot 3, configurable). Overlapping templates are expected handovers, never a flag. Location shows on every shift, clock-in, view and export.
+- Clock-in is tied to the operator's assigned shift, uses server time only, opens a configurable grace window (10 min) before the start and records the grace used. Unscheduled clock-ins are allowed and flagged. Clock-out after the end is accepted; extra time over 5 min is flagged and only counts if an approver accepts it. A missing clock-out is never filled in silently: the approver sees a system-suggested end and accepts it or types the real time.
+- Approved hours = time inside the scheduled shift + extra time an approver accepted, or an adjusted figure with a note. Weekly review queue (operators' weeks reviewed by Monday), reopenable until the month is final. The approved-hours export has fixed columns for Jaydeep's agency-reporting import (docs/lotus-flows.md, the data contract in the plan).
+- Scheduling: open slots per template, pairing risk when everyone on a slot has under 2 completed sessions (confirm before booking), the 37 hrs weekly limit, conflicts. Recruiting's Excel tracker and Active Roster 2 stay the master for now, imported as CSV; the app can replace them later.
+- Names are unique; a taken name gets the next number ("Jordan Pike 2"). Operator IDs (`OP-0001`) are permanent and are the key in exports.
+- Undecided, needing the user's confirmation: phone location check (proposed: rotating QR site code on the lab laptop), automatic clock-out (built as suggest-only), full Excel replacement, optional episode counts (kept apart from attendance). Shift reminders send from project_lotus@centific.com through the Reminders flow, in dry-run until the old Outlook reminders are off.
 
 ## Brand Commitments
 
