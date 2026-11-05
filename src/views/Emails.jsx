@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
+import { Copy, Moon, PencilLine, Sun } from 'lucide-react';
 import { useStore } from '../lib/store.js';
 import { DEMO } from '../lib/config.js';
 import { FIELD_LABEL, isBlockField } from '../lib/email/blocks.js';
@@ -190,7 +191,20 @@ export function Emails() {
                 ) : (
                   <p className="em-note">The scheduled flow sends this to each approver on Monday at 8:00 AM, with last week’s numbers.</p>
                 )}
-                <Segmented label="Preview mode" size="sm" value={mode} onChange={setMode} options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
+                <div className="em-tools">
+                  <Segmented
+                    label="Preview mode"
+                    size="sm"
+                    value={mode}
+                    onChange={setMode}
+                    options={[
+                      { value: 'light', icon: <Sun size={16} aria-hidden="true" />, aria: 'Light mode preview' },
+                      { value: 'dark', icon: <Moon size={16} aria-hidden="true" />, aria: 'Dark mode preview' },
+                    ]}
+                  />
+                  <button type="button" className="btn btn-plain btn-sm" onClick={copyEmail} aria-label="Copy email"><Copy size={15} aria-hidden="true" /> Copy<span className="em-long"> email</span></button>
+                  {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={startEdit} aria-label="Edit template"><PencilLine size={15} aria-hidden="true" /> Edit<span className="em-long"> template</span></button>}
+                </div>
               </div>
 
               <div className="em-subject">
@@ -202,13 +216,14 @@ export function Emails() {
                 <div className="em-email" dangerouslySetInnerHTML={{ __html: email }} />
               </div>
 
-              <footer className="em-actions">
-                <button type="button" className="btn btn-plain btn-sm" onClick={copyEmail}>Copy email</button>
-                {canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={startEdit}>Edit template</button>}
-              </footer>
             </div>
           ) : (
             <div className="em-pane">
+              <div className="em-actions">
+                {store.isEdited(meta.id) && <button type="button" className="em-reset" onClick={reset}>Reset to original</button>}
+                <button type="button" className="btn btn-plain btn-sm" onClick={cancel}>Cancel</button>
+                <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={busy} aria-busy={busy || undefined}>Save template</button>
+              </div>
               <div className="em-subject-edit">
                 <label className="em-subject-field">
                   <span className="em-eyebrow">Subject</span>
@@ -222,11 +237,6 @@ export function Emails() {
 
               <TemplateEditor key={`${meta.id}-${editorKey}`} initialHtml={draft.html} onChange={onBody} fields={fields} />
 
-              <footer className="em-actions">
-                {store.isEdited(meta.id) && <button type="button" className="em-reset" onClick={reset}>Reset to original</button>}
-                <button type="button" className="btn btn-plain btn-sm" onClick={cancel}>Cancel</button>
-                <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={busy} aria-busy={busy || undefined}>Save template</button>
-              </footer>
             </div>
           )}
         </section>

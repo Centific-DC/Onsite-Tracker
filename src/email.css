@@ -174,3 +174,11 @@ button.em-select svg { width: 14px; height: 14px; color: var(--ink-3); }
   .send-foot > .btn:last-child { flex: 1; }
 }
 @media (prefers-reduced-motion: reduce) { .em-pane, .em-pop, .em-imgbar, .mail-banner { animation: none !important; } .em-item, .em-tool, .em-swatch, .send-check { transition: none; } }
+.em-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.em-tools .seg button { padding: 0 12px; }
+.em-tools .btn svg { margin-right: 2px; }
+@media (max-width: 480px) {
+  .em-tools { width: 100%; flex-wrap: nowrap; gap: 8px; }
+  .em-tools .seg { margin-right: auto; }
+  .em-long { display: none; }
+}
