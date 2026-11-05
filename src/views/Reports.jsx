@@ -7,6 +7,9 @@ import { addDays, dayKey, mondayOf, parseDay, fmtHrsU, fmtDay } from '../lib/tim
 import { Group, Row, Segmented, Tag } from '../components/ui.jsx';
 
 const firstOfMonth = (d, n = 0) => new Date(d.getFullYear(), d.getMonth() + n, 1);
+// "Mon, Nov 2 – Sun, Nov 8, 2026": the downloader's check that it's the right range.
+const fullDay = (d, year) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', ...(year ? { year: 'numeric' } : {}) });
+const rangeLabel = (a, b) => (a.getFullYear() === b.getFullYear() ? `${fullDay(a)} – ${fullDay(b, true)}` : `${fullDay(a, true)} – ${fullDay(b, true)}`);
 
 // Approved hours by operator and day, in the fixed format the agency-reporting
 // sheet imports. Raw clock-ins are on Records and never mixed in here.
@@ -47,7 +50,7 @@ export function Reports() {
       <Group tour="reports-export" title="Approved hours export" footer="One row per operator per day, with stable operator IDs and fixed column names for the agency-reporting sheet. No rates or pay.">
         <Row title="Approved" subtitle={`${rows.length} operator-days · ${byOp.length} operators`} trailing={<span className="mono-num">{fmtHrsU(total)}</span>} />
         {pending.length > 0 && <Row title={<>Not approved yet <Tag tone="warn">{pending.length} days</Tag></>} subtitle="Left out of the export until a manager approves them on Review" />}
-        <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Download approved hours" subtitle={APPROVED_COLUMNS.join(', ')} trailing="CSV" onClick={exportCsv} />
+        <Row leading={<span className="row-icon"><Download size={18} /></span>} title="Download approved hours" subtitle={rangeLabel(from, addDays(to, -1))} trailing="CSV" onClick={exportCsv} />
       </Group>
       <Group title="By operator">
         {byOp.map((o) => <Row key={o.id || o.name} title={o.name} subtitle={`${o.id || 'No ID'} · ${o.days} ${o.days === 1 ? 'day' : 'days'}`} trailing={<span className="mono-num">{fmtHrsU(o.hours)}</span>} />)}
