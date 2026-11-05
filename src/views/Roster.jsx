@@ -115,11 +115,15 @@ export function Roster() {
   );
 }
 
+const USER_BATCH = 5;
+const SHIFT_BATCH = 25;
+
 function ImportSheet({ open, onOpenChange }) {
   const { data, upsertUsers, upsertShifts } = useStore();
   const [kind, setKind] = useState('roster');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
   useEffect(() => { if (open) setText(''); }, [open]);
   const plan = useMemo(() => {
     if (!text.trim()) return null;
@@ -127,16 +131,28 @@ function ImportSheet({ open, onOpenChange }) {
   }, [text, kind, data.operators, data.schedule]);
   const file = async (e) => { const f = e.target.files?.[0]; if (f) setText(await f.text()); };
   const save = async () => {
+    // Small batches, one after another: each Write call stays well under the flow's
+    // two-minute limit however long the sheet is, and a failure says how far it got.
+    const rows = kind === 'roster' ? [...plan.add, ...plan.update].map(({ changed, ...o }) => o) : [...plan.add, ...plan.update]; // eslint-disable-line no-unused-vars
+    const size = kind === 'roster' ? USER_BATCH : SHIFT_BATCH;
+    let saved = 0;
     setBusy(true);
+    setDone({ n: 0, of: rows.length });
     try {
-      if (kind === 'roster') await upsertUsers([...plan.add, ...plan.update].map(({ changed, ...o }) => o)); // eslint-disable-line no-unused-vars
-      else await upsertShifts([...plan.add, ...plan.update]);
+      for (let i = 0; i < rows.length; i += size) {
+        const part = rows.slice(i, i + size);
+        if (kind === 'roster') await upsertUsers(part);
+        else await upsertShifts(part);
+        saved += part.length;
+        setDone({ n: saved, of: rows.length });
+      }
       toast.success(`Imported ${plan.add.length} new, ${plan.update.length} updated`, { description: plan.skip.length ? `${plan.skip.length} rows skipped` : undefined });
       onOpenChange(false);
     } catch (e) {
-      toast.error("Import didn't save", { description: e.message });
+      toast.error("Import didn't finish", { description: `${saved} of ${rows.length} saved. ${e.message} Import the same file again to finish: saved rows show as up to date.` });
     } finally {
       setBusy(false);
+      setDone(null);
     }
   };
   const label = (x) => (kind === 'roster' ? `${x.name} · ${x.email}${x.changed ? ` · ${x.changed.join(', ')}` : ''}` : `${x.date} · ${x.name} · ${locationName(x.location)} ${x.station} · ${x.start}–${x.end}`);
@@ -146,7 +162,7 @@ function ImportSheet({ open, onOpenChange }) {
       onOpenChange={onOpenChange}
       title="Import from recruiting"
       description="Export the sheet as CSV, then upload or paste it. Columns are matched by their headers. Nothing is saved until you confirm."
-      footer={<button type="button" className="btn btn-primary btn-block" disabled={busy || !plan || plan.add.length + plan.update.length === 0} onClick={save}>{busy ? 'Saving…' : plan ? `Import ${plan.add.length + plan.update.length} rows` : 'Import'}</button>}
+      footer={<button type="button" className="btn btn-primary btn-block" disabled={busy || !plan || plan.add.length + plan.update.length === 0} onClick={save}>{busy ? done ? `Saving… ${done.n} of ${done.of}` : 'Saving…' : plan ? `Import ${plan.add.length + plan.update.length} rows` : 'Import'}</button>}
     >
       <div className="pad">
         <Segmented label="What to import" value={kind} onChange={setKind} options={[{ value: 'roster', label: 'Active Roster 2' }, { value: 'schedule', label: 'Schedule' }]} />

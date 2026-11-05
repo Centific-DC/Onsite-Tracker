@@ -29,6 +29,7 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
 - **Speed** (user ask, 2026-11-05: adding an operator and sending emails took far too long). The app waits up to 110 s, then gives up. Targets:
     - Under 3 s: `signin`, `salt`, a one-user `users_upsert`, `user.create`, `user.reset_link`, `reset`, one welcome or reset `email_send`, `punch`, `fill_in`.
     - Under 5 s: Read for an operator; under 10 s: Read `all` for staff; under 15 s: a 20-row `users_upsert` or a 10-message `email_send`.
+    - The app sends a roster import as `users_upsert` calls of at most 5 users, and a schedule import as `shift_upsert` calls of at most 25 shifts, one call after another, so no single call nears the flow's 2-minute limit. Each call must still be idempotent by email (users) or id (shifts).
     - How:
         - *Get items* with a `$filter` and `Top Count` (1 when looking up one row), never a whole list just to find one row.
         - Read a list once and use *Filter array* inside loops, not a *Get items* per item.
