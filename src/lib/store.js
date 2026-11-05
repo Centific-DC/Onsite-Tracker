@@ -144,6 +144,14 @@ export const useStore = create((set, get) => ({
     });
     return saved;
   },
+  // An operator fills an open spot: booked into that pair, then clocked in by the caller.
+  async fillIn(shiftId) {
+    const r = await api.fillIn(shiftId);
+    set((s) => ({ data: { ...s.data, schedule: (s.data.schedule || []).filter((x) => x.id !== r.id).concat(r), openSpots: (s.data.openSpots || []).filter((x) => x.shiftId !== shiftId) } }));
+    // The flow gave the whole pair the pair id; a reload brings the partner's name.
+    get().sync().catch(() => {});
+    return r;
+  },
   addShift(shift) { return get().upsertShifts([shift]).then((r) => r[0]); },
 
   async removeShift(id) {

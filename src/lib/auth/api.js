@@ -8,7 +8,8 @@ import { timed } from '../timing.js';
 import { errorText } from '../api.js';
 import { localAuth, localUsernames, seedLocalUsers } from './localFlow.js';
 
-const TIMEOUT_MS = 20000;
+// The Auth flow can be slow on a cold start; Power Automate itself gives up at about two minutes.
+const TIMEOUT_MS = 110000;
 
 /** True while sign-in runs on the browser-kept stand-in (no Auth flow set). */
 export const LOCAL_AUTH = !AUTH_URL;
@@ -56,6 +57,7 @@ async function call(req) {
     return body;
   } catch (err) {
     if (err instanceof AuthError) throw err;
+    if (err?.name === 'AbortError') throw new AuthError(0, 'The sign-in service took longer than 110 seconds to answer. Try again in a minute.');
     throw new AuthError(0, 'Couldn’t reach the sign-in service. Check your connection and try again.');
   } finally {
     clearTimeout(timer);

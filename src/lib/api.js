@@ -3,6 +3,7 @@ import { CFG, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationName, locatio
 import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
+import { openSpots, samePair } from './schedule.js';
 
 export const storage = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -95,6 +96,9 @@ export function normShift(r) {
     start: hhmm(r.start ?? r.Start),
     end: hhmm(r.end ?? r.End),
     note: String(r.note ?? r.Note ?? ''),
+    // Partners share a pair id, so the robot can stay open. A replacement names the shift it replaces.
+    pair: String(r.pair ?? r.Pair ?? ''),
+    replaces: String(r.replaces ?? r.Replaces ?? ''),
   };
 }
 
@@ -120,6 +124,8 @@ const normAll = (d) => ({
   client: (d.client || []).map((c) => ({ week: String(c.week ?? c.Week ?? '').slice(0, 10), hours: Number(c.hours ?? c.SuccessfulHours) || 0 })),
   schedule: (d.schedule || []).map(normShift).filter((r) => r.date && r.email),
   // Operators only: the names of whoever shares each of their shifts (see partnersOf).
+  // Operators only: spots in their lab they could fill now (someone didn't show). No names.
+  openSpots: (d.openSpots || []).map((x) => ({ shiftId: String(x.shiftId ?? ''), location: String(x.location ?? ''), station: String(x.station ?? ''), start: hhmm(x.start), end: hhmm(x.end), template: String(x.template ?? ''), date: String(x.date ?? '').slice(0, 10) })).filter((x) => x.shiftId),
   partners: (d.partners || []).map((p) => ({ shiftId: String(p.shiftId ?? p.ShiftId ?? ''), name: String(p.name ?? p.Name ?? '').trim() })).filter((p) => p.shiftId && p.name),
   resolutions: d.resolutions || [],
   approvals: (d.approvals || []).map((a) => ({ ...a, hours: Number(a.hours) || 0, computed: Number(a.computed) || 0 })),
@@ -169,6 +175,12 @@ export const api = {
     if (DEMO) return demo.upsertShifts(shifts);
     const out = await paPost(WRITE_URL, { action: 'shift_upsert', shifts });
     return (out.shifts || []).map(normShift);
+  },
+  // An operator takes an open spot (someone didn't show): the flow books them into
+  // that pair from now until the shift's end and answers with the new shift.
+  async fillIn(shiftId) {
+    if (DEMO) return demo.fillIn(shiftId);
+    return normShift((await paPost(WRITE_URL, { action: 'fill_in', shiftId })).shift || {});
   },
   async removeShift(id) {
     if (DEMO) return demo.removeShift(id);
@@ -260,6 +272,22 @@ export const demo = {
     });
     storage.set(this.KEY, d);
     return out;
+  },
+  fillIn(shiftId) {
+    const d = this.load();
+    const me = d.operators.find((o) => o.email === demoActor);
+    const spot = openSpots(d, demoActor, me?.location || '').find((x) => x.shiftId === shiftId);
+    if (!spot) throw new Error('That spot is already filled, or the shift is nearly over.');
+    const gone = d.schedule.find((r) => r.id === shiftId);
+    const pair = gone.pair || `P-${crypto.randomUUID().slice(0, 8)}`;
+    // Everyone in the pair gets the pair id, so the newcomer's partners see their name.
+    for (const r of d.schedule) if (r.id === gone.id || (!r.pair && samePair(r, gone))) r.pair = pair;
+    const now = new Date();
+    const start = `${String(now.getHours()).padStart(2, '0')}:${String(Math.floor(now.getMinutes() / 5) * 5).padStart(2, '0')}`;
+    const r = normShift({ id: `S-${crypto.randomUUID().slice(0, 8)}`, date: gone.date, operatorId: me?.id || '', name: me?.name || demoActor, email: demoActor, location: gone.location, station: gone.station, template: gone.template, start, end: gone.end, note: `Filled in for a no-show`, pair, replaces: gone.id });
+    d.schedule.push(r);
+    this.save(d, 'fill_in', r.id, null, r);
+    return r;
   },
   removeShift(id) {
     const d = this.load();

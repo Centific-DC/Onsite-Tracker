@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Bot, CalendarX, ChevronLeft, ChevronRight, ClockAlert, LogOut, TriangleAlert, UserX } from 'lucide-react';
 import { useStore } from '../lib/store.js';
-import { CFG, LOCATIONS, locationName, locationOfRobot } from '../lib/config.js';
+import { CFG, LOCATIONS, locOf, locationName } from '../lib/config.js';
 import { buildSessions, union } from '../lib/hours.js';
 import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, hoursBetween, fmtHrsU } from '../lib/time.js';
 import { go, useNow } from '../lib/hooks.js';
 import { Avatar, Group, Num, Row, Tag } from '../components/ui.jsx';
 import { RobotLanes } from '../components/RobotLanes.jsx';
 import { ShiftSheet } from '../components/ShiftSheet.jsx';
-import { backfillStart, backfills, dayPlan } from '../lib/schedule.js';
+import { backfillStart, backfills, dayPlan, robotLabel } from '../lib/schedule.js';
 
 export const ISSUE = {
   early: { label: 'Left early', tone: 'bad', icon: <LogOut size={12} /> },
@@ -89,15 +89,15 @@ export function Today() {
       </header>
 
       {needFill.length > 0 && (
-        <Group title="Needs a backfill" className="group-urgent" tour="today-backfill">
+        <Group title="Needs a replacement" className="group-urgent" tour="today-backfill">
           {needFill.flatMap((b) => b.missing.map((r) => (
             <Row
               key={r.id}
               className="row-in"
               leading={<span className="row-icon icon-warn"><Bot size={18} /></span>}
-              title={<>{locationName(locationOfRobot(b.station)?.id)} · {b.station} <Tag tone="warn">{b.here} of {b.planned} on site</Tag></>}
+              title={<>{locationName(b.location)} · {robotLabel(b)} <Tag tone="warn">{b.here} of {b.planned} on site</Tag></>}
               subtitle={`${r.name} isn't here · due ${fmtTime(r.startAt)}–${fmtTime(r.endAt)}`}
-              trailing={<button type="button" className="btn btn-primary btn-sm" onClick={() => setFill(r)}>Backfill</button>}
+              trailing={<button type="button" className="btn btn-primary btn-sm" onClick={() => setFill(r)}>Replace</button>}
             />
           )))}
         </Group>
@@ -114,7 +114,7 @@ export function Today() {
             action={<span className="group-aside"><Num value={worked} format={(v) => `${fmtHrsU(v)}`} /> worked · {live.filter((x) => l.robots.includes(x.station)).length} on site</span>}
             footer={i === LOCATIONS.length - 1 ? "Thin lines are each operator's time. The bar beneath is the robot's hours worked, so two operators working together count once. Overlapping handovers are expected." : undefined}
           >
-            <RobotLanes day={day} sessions={mine} planned={plan.rows.filter((r) => l.robots.includes(r.station) && (r.status === 'late' || r.status === 'noshow' || r.status === 'upcoming'))} stations={l.robots} now={now} pairSize={2} />
+            <RobotLanes day={day} sessions={mine} planned={plan.rows.filter((r) => locOf(r) === l.id && (r.status === 'late' || r.status === 'noshow' || r.status === 'upcoming'))} stations={l.robots} now={now} pairSize={2} />
           </Group>
         );
       })}
@@ -144,7 +144,7 @@ export function Today() {
                 style={{ animationDelay: `${i * 30}ms` }}
                 leading={<Avatar name={s.name} tone="on" />}
                 title={s.name}
-                subtitle={`${locationName(locationOfRobot(s.station)?.id)} · ${s.station} · since ${fmtTime(s.start)}`}
+                subtitle={`${locationName(locOf(s))} · ${s.station} · since ${fmtTime(s.start)}`}
                 trailing={<span className="mono-num">{fmtHrsU(hoursBetween(s.start, now))}</span>}
               />
             )) : <div className="empty-row">Check-ins show up here as operators arrive.</div>}
@@ -156,7 +156,7 @@ export function Today() {
         open={!!fill}
         onOpenChange={(o) => !o && setFill(null)}
         backfill={fill?.name}
-        initial={fill && { date: fill.date, station: fill.station, start: backfillStart(fill, now), end: fill.end, note: `Backfill for ${fill.name}` }}
+        initial={fill && { date: fill.date, location: locOf(fill), station: fill.station, start: backfillStart(fill, now), end: fill.end, note: `Replacing ${fill.name}`, replaces: fill.id }}
       />
     </div>
   );

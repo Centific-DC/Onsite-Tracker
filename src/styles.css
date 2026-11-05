@@ -839,3 +839,7 @@ p.err { text-align: center; margin: 0 0 12px; }
 /* Roster row: experience pill plus the edit button. */
 .row-actions { display: inline-flex; align-items: center; gap: 4px; }
 @media (pointer: coarse) { .row-actions .icon-btn { width: 44px; height: 44px; } }
+
+/* Operator page: open spots someone else didn't show for. */
+.op-spots { display: grid; gap: 12px; }
+.op-spot { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line, rgba(127,127,127,.18)); }

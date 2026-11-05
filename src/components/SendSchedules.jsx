@@ -38,6 +38,7 @@ export function SendSchedules({ open, onOpenChange, wk0, entries, testMode }) {
   const [more, setMore] = useState({});
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(null); // { done, total } while sending
   const [logo, setLogo] = useState(null);
   useEffect(() => { tintedLogo(logoPng, LIGHT.logo).then(setLogo); }, []);
 
@@ -63,20 +64,32 @@ export function SendSchedules({ open, onOpenChange, wk0, entries, testMode }) {
   const send = async () => {
     if (!chosen.length) return;
     setBusy(true);
+    let done = 0;
     try {
       const messages = chosen.map((e) => ({ to: e.op.email, operatorId: e.op.id, name: e.op.name, snapshot: snapshotOf(e.shifts), ...messageFor(e, wk0, templates) }));
-      for (let i = 0; i < messages.length; i += 25) {
-        await sendEmails({ kind: 'schedule', weekStart: dayKey(wk0), messages: messages.slice(i, i + 25) });
-      }
+      // Small batches, three at a time: each call is one flow run, and runs go in parallel.
+      const batches = [];
+      for (let i = 0; i < messages.length; i += 10) batches.push(messages.slice(i, i + 10));
+      setProgress({ done, total: messages.length });
+      const run = async () => {
+        while (batches.length) {
+          const b = batches.shift();
+          await sendEmails({ kind: 'schedule', weekStart: dayKey(wk0), messages: b });
+          done += b.length;
+          setProgress({ done, total: messages.length });
+        }
+      };
+      await Promise.all([run(), run(), run()]);
       const n = messages.length;
       toast.success(`${n} schedule ${n === 1 ? 'email' : 'emails'} ${DEMO ? 'marked as sent' : 'sent'}`, {
         description: DEMO ? 'Demo mode: no email leaves this browser.' : testMode ? 'Test mode: they went to project_lotus@centific.com.' : `Week of ${weekLabel(wk0)}.`,
       });
       onOpenChange(false);
     } catch (e) {
-      toast.error('Couldn’t send the emails', { description: e.message });
+      toast.error('Couldn’t send the emails', { description: `${done ? `${done} sent before this: ` : ''}${e.message}` });
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -108,7 +121,7 @@ export function SendSchedules({ open, onOpenChange, wk0, entries, testMode }) {
             {DEMO ? ' Demo mode: nothing is sent.' : testMode ? ' Test mode is on, so every email goes to project_lotus@centific.com until the team switches it off.' : ''}
           </p>
           <button type="button" className="btn btn-primary" disabled={!chosen.length || busy} aria-busy={busy || undefined} onClick={send}>
-            {busy ? 'Sending…' : `Send ${chosen.length} ${chosen.length === 1 ? 'email' : 'emails'}`}
+            {busy ? (progress?.total > 10 ? `Sending… ${progress.done} of ${progress.total}` : 'Sending…') : `Send ${chosen.length} ${chosen.length === 1 ? 'email' : 'emails'}`}
           </button>
         </div>
       )}
