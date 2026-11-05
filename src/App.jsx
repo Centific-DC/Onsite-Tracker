@@ -4,6 +4,7 @@ import { Toaster, toast } from 'sonner';
 import { CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
 import { CFG, DEMO, DEMO_CHOSEN, LIVE_READY } from './lib/config.js';
+import { useTimings } from './lib/timing.js';
 import { ROLES, hasRole } from './lib/auth.js';
 import { LOCAL_AUTH } from './lib/auth/api.js';
 import { go, useMedia, useRoute } from './lib/hooks.js';
@@ -150,6 +151,13 @@ export default function App() {
   const manualSync = async () => {
     try { await sync({ manual: true }); } catch (e) { toast.error("Couldn't refresh", { description: e.message }); }
   };
+  // Loading with nothing on screen yet: after a few seconds, say why it's taking a while.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (data || !syncing) { setSlow(false); return undefined; }
+    const t = setTimeout(() => setSlow(true), 5000);
+    return () => clearTimeout(t);
+  }, [data, syncing]);
   const status = DEMO
     ? 'Demo data'
     : syncing && !data ? 'Loading…'
@@ -158,7 +166,15 @@ export default function App() {
 
   const main = (
     <main className="main" key={`${item.id}-${demo ? 'demo' : 'live'}`}>
-      {data || (!isAdmin && authStage !== 'signedIn') ? <View /> : <div className="view"><div className="skeleton" /><div className="skeleton tall" /></div>}
+      {data || (!isAdmin && authStage !== 'signedIn') ? <View /> : !syncing && error ? (
+        <div className="view view-narrow">
+          <div className="card pad load-fail" role="alert">
+            <h2 className="group-title">Couldn’t load the Lotus data</h2>
+            <p className="lede">{error}</p>
+            <button type="button" className="btn btn-primary btn-sm" onClick={manualSync}>Try again</button>
+          </div>
+        </div>
+      ) : <div className="view"><div className="skeleton" /><div className="skeleton tall" />{slow && <p className="lede load-slow" role="status">Still loading from SharePoint. The first load can take up to a minute.</p>}</div>}
     </main>
   );
   const actions = (compact) => (
@@ -306,6 +322,7 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
   const { theme, setTheme, device, setDevice, session, signOut, resetDemo, switchDemo } = useStore();
   const [switching, setSwitching] = useState(false);
   const latest = useUpdate((s) => s.latest);
+  const timings = useTimings((s) => s.list);
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title="Settings">
       <Group title="Appearance">
@@ -387,6 +404,13 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
         <Row title="Version" trailing={<span className="mono-num">{VERSION}</span>} />
         {latest && <Row title={`Refresh to update to ${latest}`} onClick={hardRefresh} className="row-action" />}
       </Group>
+      {timings.length > 0 && (
+        <Group title="Speed" footer="How long each recent call took. Most of it is the Power Automate flow's run time.">
+          {timings.slice(0, 6).map((t) => (
+            <Row key={`${t.at}-${t.label}`} title={t.label} trailing={<span className="mono-num">{t.ok ? '' : 'failed · '}{(t.ms / 1000).toFixed(1)} s</span>} />
+          ))}
+        </Group>
+      )}
     </Sheet>
   );
 }

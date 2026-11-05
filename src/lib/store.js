@@ -1,10 +1,13 @@
 import { create } from 'zustand';
 import { api, demo, setDemoActor, storage } from './api.js';
-import { DEMO, setDemo } from './config.js';
+import { AUTH_URL, DEMO, setDemo } from './config.js';
 import * as auth from './auth/api.js';
 import { getAuth, setAuth } from './auth/session.js';
 
 const cached = storage.get('onsite-cache', null);
+const ADMIN_KEY = 'lotus-has-admin';
+const hasAdmin = () => !!AUTH_URL && storage.get(ADMIN_KEY, false);
+const markAdmin = () => { if (AUTH_URL) storage.set(ADMIN_KEY, true); };
 storage.remove('lotus-session'); // the old demo picker's sign-in
 
 // The app's view of a sign-in: { token, expiresAt, username, email, name, roles,
@@ -26,17 +29,23 @@ export const useStore = create((set, get) => ({
   // Who is signed in (see sessionOf), and where sign-in stands: checking | setup |
   // signedOut | mustChange | pick (demo operator account) | signedIn.
   session: savedSession,
-  authStage: savedSession ? stageOf(savedSession) : 'checking',
+  // The sign-in form shows at once; the first-admin check runs behind it (see init).
+  authStage: savedSession ? stageOf(savedSession) : 'signedOut',
 
   me: storage.get('onsite-me', null), // { name, email, station }
   device: storage.get('onsite-device', null), // 'personal' | 'shared'
   theme: storage.get('onsite-theme', 'system'), // 'system' | 'light' | 'dark'
 
   // Signed out: see whether the first admin still has to be set up.
+  // Once anyone has signed in on this device, Lotus has an admin: skip the check, which
+  // costs a whole flow run.
+  // ?setup=1 always checks. Only the real sign-in service counts, not the demo accounts.
   async init() {
-    if (get().authStage !== 'checking') return;
+    const forced = /[?&]setup=1\b/.test(location.search + location.hash);
+    if (get().authStage !== 'signedOut' || (!forced && hasAdmin())) return;
     const empty = await auth.needsSetup().catch(() => false);
-    if (get().authStage === 'checking') set({ authStage: empty ? 'setup' : 'signedOut' });
+    if (empty && get().authStage === 'signedOut') set({ authStage: 'setup' });
+    if (!empty) markAdmin();
   },
 
   async sync({ manual = false } = {}) {
@@ -57,7 +66,7 @@ export const useStore = create((set, get) => ({
       if (DEMO !== wasDemo) return;
       // The first quiet load never shows an error; a manual sync, or a failed
       // refresh over data already on screen, reports it.
-      if (manual || get().data || e.status === 403) set({ error: e.message || 'Unknown error' });
+      set({ error: e.message || 'Unknown error' });
       if (manual) throw e;
     } finally {
       set({ syncing: false });
@@ -78,6 +87,7 @@ export const useStore = create((set, get) => ({
     const session = sessionOf(a);
     setDemoActor(session?.email);
     set({ session, authStage: stageOf(session) });
+    if (session) markAdmin();
     if (session?.roles.includes('operator') && !session.demoPicker) get().setMe({ name: session.name, email: session.email, station: '' });
   },
   async signIn(username, password) {
