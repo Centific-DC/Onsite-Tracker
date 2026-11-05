@@ -4,16 +4,17 @@ Prompt for the bot that builds the backend. Copy everything below the line into 
 
 ---
 
-You are building the backend for **Lotus**, an on-site time-tracking web app used by Centific on the Google Lotus project. The app is a static React page (GitHub Pages). It signs each person in with their Microsoft (Entra ID) work account and talks only to the two HTTP flows below, sending the person's access token. Build the SharePoint lists, the flows and the reminder email exactly as specified, because the app depends on these names and JSON shapes. When something here can't be done as written, stop and report what and why. Don't substitute something else.
+You are building the backend for **Lotus**, an on-site time-tracking web app used by Centific on the Google Lotus project. The app is a static React page (GitHub Pages). Everyone signs in with a **username and password that a Lotus admin hands out** (the same pattern as the Project Atlas app), through the **Lotus Auth** flow below. Sign-in returns a token, and every call to the other two HTTP flows carries it in the body. Build the SharePoint lists, the flows and the reminder email exactly as specified, because the app depends on these names and JSON shapes. When something here can't be done as written, stop and report what and why. Don't substitute something else.
 
 ## Ground rules
 
 - **Site:** SharePoint site `DataCollectionUSHUB` (https://digitaltechedge.sharepoint.com/sites/DataCollectionUSHUB). Create every list there.
-- **Identity comes from the token, never from the request body.** The HTTP triggers must be set to **Who can trigger: Any user in my tenant**. In each flow, get the caller's email from the validated token. Power Automate has already validated it before the flow runs.
-    - Decode the bearer token's payload from the `Authorization` header and read `upn`, falling back to `preferred_username`, lower-cased.
-    - Put this in one Compose named `callerEmail`.
-    - Do a test run, and confirm the value appears in the run history before building further.
-- **Roles** come from the `Lotus_Users` list (below), looked up by `callerEmail`. Someone not in the list, or with `Active` = No, gets **403** `{"error":"Not set up for Lotus. Ask your lead to add you."}`.
+- **Identity comes from the sign-in token, never from anything else in the request body.** No Microsoft accounts are involved. All three HTTP triggers (Lotus Auth, Lotus Read, Lotus Write) are set to **Who can trigger: Anyone**, because the app is a public page and the token is the check.
+    - Every Read and Write body has `"token": "<64 hex characters>"`. The app sends it as `Content-Type: text/plain` (to avoid a CORS preflight), so parse the body with `json(triggerBody())` and don't set a schema that requires `application/json`.
+    - **Token check** (first step of Read and Write, and of the Auth ops that need it): get the `Lotus_Users` row where `Token` = the body's `token` (top 1). If there's no row, `Active` = No, or `TokenExpires` is before `utcNow()`, respond **401** `{"error":"Please sign in again."}`. If `MustChangePassword` = Yes, respond **403** `{"error":"Choose your own password first."}`.
+    - Put the row's `Title` (the email, lower case) in one Compose named `callerEmail`. Everything below uses it.
+- **Roles** come from that same row: `Roles`, split on `;`.
+- **Passwords never reach the flows.** The app hashes them in the browser (PBKDF2-SHA256, 210,000 iterations, 16-byte salt, base64) and sends only the hash. The flow stores and compares hashes and salts; it never computes one.
 - **Time:**
     - Every timestamp the server records is `utcNow()` in ISO 8601 UTC.
     - Site-local date and time use `convertFromUtc(..., 'Pacific Standard Time', ...)`. Both labs (Redmond and Mountain View) are on Pacific time.
@@ -37,16 +38,27 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
 | `Title` | text | `avery.lin@centific.com` | Email, lower case. The key |
 | `Name` | text | `Avery Lin` | Unique among active users. A duplicate gets ` 2`, ` 3` added |
 | `OperatorID` | text | `OP-0007` | Operators only. `OP-` + 4 digits, never reused |
-| `Roles` | text | `operator` or `scheduler;approver` | Any of `operator`, `scheduler`, `approver`, `reporting`, separated by `;` |
+| `Username` | text | `avery.lin` | What they type to sign in. Unique, compared lower-cased. Set by an admin |
+| `Roles` | text | `operator` or `scheduler;approver` | Any of `operator`, `scheduler`, `approver`, `reporting`, `admin`, separated by `;`. Only set through the Auth flow's user ops |
 | `HomeLocation` | text | `RED` | `RED` (Redmond Lab) or `MTV` (Mountain View Lab) |
 | `Cohort` | text | `Cohort 3` | From Active Roster 2 |
 | `CompletedSessions` | number | `4` | From Active Roster 2 |
 | `CompletedAsOf` | text | `2026-11-05` | Date of the import that set `CompletedSessions` |
 | `TrainingStatus` | text | `Trained` | From Active Roster 2 |
 | `Experience` | choice | `experienced` | Set by an admin on Roster: `experienced`, `new`, or empty (then the app decides from `CompletedSessions`). Every pair needs at least one experienced operator |
-| `Active` | yes/no | Yes | |
+| `Active` | yes/no | Yes | No = can't sign in |
+| `PasswordSalt` | text | base64 | Empty = this person has no sign-in yet (e.g. just imported from the roster) |
+| `PasswordHash` | text | base64 | |
+| `MustChangePassword` | yes/no | Yes | Yes after an admin adds or resets them: they must pick their own password |
+| `FailedCount` | number | `0` | Wrong passwords in a row |
+| `LockedUntil` | text | ISO UTC | Set for 15 minutes after 5 wrong passwords |
+| `Token` | text | 64 hex characters | Current sign-in. Empty = signed out |
+| `TokenExpires` | text | ISO UTC | 12 hours after sign-in |
+| `LastSignIn` | text | ISO UTC | |
 
-Seed it with the staff who need access: schedulers (recruiting), approvers (delivery managers) and reporting (agency reporting). I will send their emails and roles separately.
+**Permissions:** this list holds password hashes and sign-in tokens, so only the flows' connection account may read or edit it. Break inheritance and remove everyone else. The Read flow returns users without any of the last seven columns.
+
+The first admin is created by the Auth flow's `bootstrap` op (below). After that, admins add everyone else from the app's Users page.
 
 ### `Lotus_Shifts`: the schedule
 
@@ -176,11 +188,36 @@ One row per template, edited on the app's Emails page. Missing rows mean the app
 
 One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
 
-## 2. Flow: **Lotus Read**
+## 2. Flow: **Lotus Auth**
 
-Trigger *When an HTTP request is received*, POST, **Any user in my tenant**. Body: `{ "action": "all", "from": "yyyy-MM-dd" }`. `from` defaults to 60 days ago.
+Trigger *When an HTTP request is received*, POST, **Anyone**. Body (parse with `json(triggerBody())`): `{ "schemaVersion": 1, "op": "...", ...fields }`. **Switch on `op`.** Replies are JSON; errors are `{"ok": false, "message": "<sentence a person can read>"}` with the status shown. This flow writes a `Lotus_Audit` row (`Action` = `auth_<op>`) for every op except `salt`, without hashes, salts or tokens.
 
-1. `callerEmail`, then look up `Lotus_Users`, using the 403 rule above. Compose `roles` = `split(Roles, ';')`.
+Usernames: compare lower-cased and trimmed. `username` may also be an email, so "find the user" means the `Lotus_Users` row where `toLower(Username)` = it, **or** `Title` = it.
+
+Make the token with `concat(replace(guid(),'-',''), replace(guid(),'-',''))` (64 hex characters).
+
+| `op` | Body | Who | What it does |
+|---|---|---|---|
+| `salt` | `{ "username" }` | anyone | Find the user. If found, `Active` = Yes and `PasswordSalt` isn't empty, respond 200 `{ "salt": PasswordSalt }`. Otherwise respond 200 `{ "salt": "THf0dXNVbmtub3duU2FsdA==" }` (a fixed fake one), so the reply never shows who has an account |
+| `signin` | `{ "username", "hash" }` | anyone | Find the user. If missing, `Active` = No, no `PasswordHash`, or `LockedUntil` is after now: 401 `Username or password is wrong, or the account is locked.` If `hash` ≠ `PasswordHash`: add 1 to `FailedCount`; at 5, set `LockedUntil` = now + 15 minutes and `FailedCount` = 0; respond the same 401. Otherwise set `Token`, `TokenExpires` = now + 12 hours, `FailedCount` = 0, `LockedUntil` empty, `LastSignIn` = now, and respond 200 `{ "ok": true, "token", "expiresAt", "user": USER }` |
+| `change-password` | `{ "token", "currentHash", "newSalt", "newHash" }` | signed in (allowed while `MustChangePassword` = Yes) | Token check. If `currentHash` ≠ `PasswordHash`: 401 `Your current password is wrong.` Else set `PasswordSalt` = `newSalt`, `PasswordHash` = `newHash`, `MustChangePassword` = No. 200 `{ "ok": true, "user": USER }` |
+| `signout` | `{ "token" }` | anyone | Clear `Token` and `TokenExpires` on the row with that token, if any. Always 200 `{ "ok": true }` |
+| `user.list` | `{ "token" }` | `admin` | 200 `{ "ok": true, "users": [ USER + { "active", "lastSignIn", "lockedUntil" } ] }`, every row that has a `Username` |
+| `user.create` | `{ "token", "user": { "username", "email", "name", "roles": [], "operatorId"? }, "salt", "hash" }` | `admin` | `username` not empty, no spaces; `email` valid; at least one known role, else 400. If another row already has that `Username`: 409 `That username is taken.` If a row with that email exists **and has a `PasswordHash`**: 409 `That person already has a sign-in.` If the row exists without one (e.g. imported from the roster), update it; otherwise create it (a new operator gets the next `OP-` number, as in `users_upsert`). Set `Username`, `Name`, `Roles` (joined with `;`), `PasswordSalt` = `salt`, `PasswordHash` = `hash`, `MustChangePassword` = Yes, `Active` = Yes, `FailedCount` = 0. 200 `{ "ok": true }` |
+| `user.update` | `{ "token", "username", "changes": { "name"?, "username"?, "roles"?, "active"? } }` | `admin` | Find the user, else 404. An admin can't change their own `roles` or `active` (400 `You can’t change your own roles or turn off your own sign-in.`). A new `username` must be free (409). `roles` needs at least one known role. `active` = false also clears `Token`. 200 `{ "ok": true }` |
+| `user.reset` | `{ "token", "username", "salt", "hash" }` | `admin` | Find the user, else 404. Set the new salt and hash, `MustChangePassword` = Yes, `FailedCount` = 0, clear `LockedUntil` and `Token`. 200 `{ "ok": true }` |
+| `bootstrap` | `{ "user": { "username", "email", "name" }, "salt", "hash" }` | anyone, **only while no active row has `admin` in `Roles`** | Otherwise 403 `Lotus already has an admin.` Create the row with `Roles` = `admin;scheduler;approver;reporting`, `MustChangePassword` = No, `Active` = Yes. 200 `{ "ok": true }` |
+| anything else | | | 400 `Unknown request.` |
+
+USER is `{ "username", "email", "name", "roles": ["scheduler","approver"], "operatorId", "mustChangePassword": false }`. Never return `PasswordSalt` (except from `salt`), `PasswordHash` or another person's `Token`.
+
+The app opens the first-run screen at `<app URL>?setup=1`. Once an admin exists, `bootstrap` always refuses.
+
+## 3. Flow: **Lotus Read**
+
+Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action": "all", "from": "yyyy-MM-dd", "token": "…" }`. `from` defaults to 60 days ago.
+
+1. The token check above gives `callerEmail` and the caller's row. Compose `roles` = `split(Roles, ';')`.
 2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` from `Lotus_Settings`.
 3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
 4. Response 200 (field names are lower camel case, exactly):
@@ -204,9 +241,9 @@ Trigger *When an HTTP request is received*, POST, **Any user in my tenant**. Bod
 
 `type` is `toLower(InOut)`, and `flag` is `early` when `Flag` is not empty.
 
-## 3. Flow: **Lotus Write**
+## 4. Flow: **Lotus Write**
 
-Trigger as above. Body: `{ "action": "...", ...fields }`. Look up the caller first, then **Switch on `action`**. Each case checks its role: the wrong role gets **403** `{"error":"Your role can't do that"}`. Each case writes its `Lotus_Audit` row before responding.
+Trigger as above (**Anyone**). Body: `{ "action": "...", "token": "…", ...fields }`. Run the token check first, then **Switch on `action`**. Each case checks its role: the wrong role gets **403** `{"error":"Your role can't do that"}`. Each case writes its `Lotus_Audit` row before responding.
 
 ### `punch`: role `operator`
 
@@ -244,7 +281,7 @@ Body `{ "users": [ { "id"?: "OP-…", "email", "name", "location", "cohort", "co
 - Match users by email.
 - Change only the fields present in the body. The roster import never sends `experience`, so an admin's mark survives re-imports.
 - A new operator without an `id` gets the next free `OP-0000` number. Find the highest existing number and add one, so numbers are never reused.
-- Only staff with the `approver` role may grant roles other than `operator`. Ignore `roles` from a scheduler.
+- Ignore `roles`, `username` and every password and token column: roles and sign-ins are changed only through the Auth flow's `user.*` ops, by an admin. A new row gets `Roles` = `operator` and no password (so it can't sign in until an admin gives it one).
 
 Respond `{ "ok": true, "users": [ … ] }`.
 
@@ -291,7 +328,7 @@ Body `{ "week", "hours" }`. Upsert `Lotus_ClientHours` by `Title` = week, or del
 
 400 `{"error":"Unknown action"}`.
 
-## 4. Flow: **Lotus Shift Reminders** (scheduled)
+## 5. Flow: **Lotus Shift Reminders** (scheduled)
 
 - **Trigger:** recurrence, daily at 3:00 PM Pacific.
 - **Sender:** send every email with **Office 365 Outlook → Send an email from a shared mailbox (V2)**, mailbox `project_lotus@centific.com`. The flow's connection account needs *Send As* on that mailbox.
@@ -306,7 +343,7 @@ Body `{ "week", "hours" }`. Upsert `Lotus_ClientHours` by `Title` = week, or del
 4. **Test mode:** read `EmailTestMode` from `Lotus_Settings`. While it is Yes, send everything to `project_lotus@centific.com` only, with the intended recipient at the top of the body, and leave `ReminderSentAt` unset. The scheduling team checks a few days of test emails before it is switched off.
 5. **Avoiding duplicates:** before `EmailTestMode` goes to No, the scheduling team turns off their existing Outlook reminder process. Note this in the flow's description.
 
-## 5. Flow: **Lotus Approval Reminder** (scheduled)
+## 6. Flow: **Lotus Approval Reminder** (scheduled)
 
 The proposed weekly cycle: operators record time, approvers approve last week's timesheets by Monday, then reporting pulls the approved hours.
 
@@ -318,12 +355,12 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 3. Get the `approver-weekly` row from `Lotus_Templates`. If it is missing, send the alias a plain email "The Lotus approval reminder template is missing. Open the Emails page in Lotus once to create it." and stop.
 4. For each active `Lotus_Users` row with `approver` in `Roles`: take `Ready` and `Subject`, replace `{{approverFirstName}}` / `{approverFirstName}` (first word of `Name`), `{{reviewWeek}}` / `{reviewWeek}` and `{{openDays}}` / `{openDays}`, and send it.
 
-## 6. Tests to run before handing over
+## 7. Tests to run before handing over
 
-1. Call **Lotus Read** with no token. It must fail with 401, from Power Automate itself.
-2. Call **Lotus Read** with a token for an operator. You get only that operator's rows, and `operators` holds only them.
+1. Call **Lotus Read** with no token, and with a made-up token. Both get 401 `Please sign in again.`
+2. Call **Lotus Read** with an operator's token (from `signin`). You get only that operator's rows, and `operators` holds only them.
 3. Call **Lotus Write** `punch` `in` 20 minutes before a shift. You get 409 `early`. At 6 minutes before, it saves with `GraceMinutes` = 6.
-4. Send a body `email` that is someone else's. The punch is still saved under `callerEmail`.
+4. Send a body `email` that is someone else's. The punch is still saved under `callerEmail` (the token's owner).
 5. As an operator, call `approve_day`. You get 403.
 6. As an approver, call `approve_day` with `hours` ≠ `computed` and no note. You get 400. With a note it saves, and a `Lotus_Audit` row appears.
 7. Four different operators clock in within one minute. You get four rows with the right names.
@@ -331,8 +368,14 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 9. As a scheduler, call `email_send` with a `to` that isn't in `Lotus_Users`. You get 400 and no email. With a real operator and `EmailTestMode` = Yes, the email arrives at the alias with the test line, and a `Lotus_Notices` row has `Test` = Yes.
 10. As an operator, call `email_send` or `template_save`. You get 403. Call Read as an operator: `notices` and `templates` are empty.
 11. Run the approval reminder with `EmailTestMode` = Yes. One email per approver arrives at the alias with the three fields filled in.
+12. **Auth:** `salt` for an unknown username returns the fake salt with 200. `bootstrap` creates the first admin, then refuses a second time with 403.
+13. Five wrong `signin` hashes in a row lock the account: the sixth, with the right hash, still gets 401 until 15 minutes pass. A right hash after the lock clears works and resets `FailedCount`.
+14. As a non-admin, call `user.list` or `user.create`: 403. As an admin, `user.create` on an operator imported by `users_upsert` (no password yet) gives that same row a sign-in; a second `user.create` for them gets 409.
+15. After `user.create` or `user.reset`, signing in works but Read answers 403 `Choose your own password first.` until `change-password` succeeds. `user.reset` and `user.update` with `active` = false sign the person out (their old token gets 401).
+16. `signout` clears the token: the same token on Read gets 401. A token older than 12 hours gets 401.
+17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:
-- the two HTTP trigger URLs
-- the exact expression you used for `callerEmail`
+- the three HTTP trigger URLs (Lotus Auth, Lotus Read, Lotus Write)
+- the expression you used to parse the text/plain body
 - anything you couldn't build as specified

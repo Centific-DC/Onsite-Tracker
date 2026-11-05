@@ -1,10 +1,17 @@
 import { create } from 'zustand';
 import { api, demo, setDemoActor, storage } from './api.js';
 import { DEMO } from './config.js';
-import { MS_AUTH, msAccount, msSignIn, msSignOut } from './auth.js';
+import * as auth from './auth/api.js';
+import { getAuth, setAuth } from './auth/session.js';
 
 const cached = storage.get('onsite-cache', null);
-const savedSession = MS_AUTH ? null : storage.get('lotus-session', null);
+storage.remove('lotus-session'); // the old demo picker's sign-in
+
+// The app's view of a sign-in: { token, expiresAt, username, email, name, roles,
+// operatorId, mustChange, demoPicker, picked }.
+const sessionOf = (a) => (a ? { token: a.token, expiresAt: a.expiresAt, ...a.user, roles: a.user.roles || [], mustChange: !!a.user.mustChangePassword } : null);
+const stageOf = (s) => (!s ? 'signedOut' : s.mustChange ? 'mustChange' : s.demoPicker && !s.picked ? 'pick' : 'signedIn');
+const savedSession = sessionOf(getAuth());
 setDemoActor(savedSession?.email);
 
 export const useStore = create((set, get) => ({
@@ -13,35 +20,32 @@ export const useStore = create((set, get) => ({
   syncing: false,
   error: '',
 
-  // Who is signed in: { email, name, roles, operatorId, demo }. With Microsoft
-  // sign-in it comes from the account plus the role list the Read flow returns.
+  // Who is signed in (see sessionOf), and where sign-in stands: checking | setup |
+  // signedOut | mustChange | pick (demo operator account) | signedIn.
   session: savedSession,
-  authReady: !MS_AUTH,
+  authStage: savedSession ? stageOf(savedSession) : 'checking',
 
   me: storage.get('onsite-me', null), // { name, email, station }
   device: storage.get('onsite-device', null), // 'personal' | 'shared'
   theme: storage.get('onsite-theme', 'system'), // 'system' | 'light' | 'dark'
 
+  // Signed out: see whether the first admin still has to be set up.
   async init() {
-    if (!MS_AUTH) return;
-    try {
-      const a = await msAccount();
-      set({ session: a ? { ...a, roles: [], demo: false } : null, authReady: true });
-    } catch (e) {
-      set({ authReady: true, error: e.message });
-    }
+    if (get().authStage !== 'checking') return;
+    const empty = await auth.needsSetup().catch(() => false);
+    if (get().authStage === 'checking') set({ authStage: empty ? 'setup' : 'signedOut' });
   },
 
   async sync({ manual = false } = {}) {
     if (get().syncing) return;
-    if (MS_AUTH && !get().session) return;
+    if (!['signedIn', 'pick'].includes(get().authStage)) return;
     set({ syncing: true, ...(manual ? { error: '' } : {}) });
     try {
       const data = await api.all();
       const at = new Date();
       if (!DEMO) storage.set('onsite-cache', { data, at: at.toISOString() });
       const patch = { data, loadedAt: at, error: '' };
-      if (data.me && get().session && !get().session.demo) patch.session = { ...get().session, ...data.me, roles: data.me.roles };
+      if (data.me?.email && get().session && !get().session.demoPicker) patch.session = { ...get().session, ...data.me, roles: data.me.roles || get().session.roles };
       set(patch);
     } catch (e) {
       // The first quiet load never shows an error; a manual sync, or a failed
@@ -53,20 +57,44 @@ export const useStore = create((set, get) => ({
     }
   },
 
-  signInDemo(person) {
-    const session = { email: person.email, name: person.name, roles: person.roles || ['operator'], operatorId: person.id || '', demo: true };
-    storage.set('lotus-session', session);
-    setDemoActor(session.email);
-    set({ session });
-    if (session.roles.includes('operator')) get().setMe({ name: person.name, email: person.email, station: '' });
+  keepAuth(a) {
+    setAuth(a);
+    const session = sessionOf(a);
+    setDemoActor(session?.email);
+    set({ session, authStage: stageOf(session) });
+    if (session?.roles.includes('operator') && !session.demoPicker) get().setMe({ name: session.name, email: session.email, station: '' });
   },
-  async signIn() { await msSignIn(); },
+  async signIn(username, password) {
+    get().keepAuth(await auth.signIn(username, password));
+    // The roles decide the landing page: staff without the operator role go to admin.
+    const s = get().session;
+    if (s && !s.roles.includes('operator') && !location.hash.startsWith('#/admin')) location.hash = '/admin';
+  },
+  async changePassword(current, next) {
+    const a = getAuth();
+    if (!a) return;
+    await auth.changePassword(a.token, a.user.username, current, next);
+    get().keepAuth({ ...a, user: { ...a.user, mustChangePassword: false } });
+  },
+  async setUp(user, password) {
+    await auth.bootstrap(user, password);
+    get().keepAuth(await auth.signIn(user.username, password));
+  },
+  // Demo only: the shared Lotus-operator account picks which operator to be.
+  pickOperator(o) {
+    const a = getAuth();
+    if (!a?.user.demoPicker) return;
+    get().keepAuth({ ...a, user: { ...a.user, email: o.email, name: o.name, operatorId: o.id, picked: true } });
+    get().setMe({ name: o.name, email: o.email, station: '' });
+  },
   async signOut() {
-    storage.remove('lotus-session');
+    const token = getAuth()?.token;
     storage.remove('onsite-cache');
+    setAuth(null);
     setDemoActor('');
-    set({ session: null });
-    if (MS_AUTH) await msSignOut();
+    set({ session: null, authStage: 'signedOut', ...(DEMO ? {} : { data: null, loadedAt: null }) });
+    // The flow clears its copy too; if it can't be reached the token still runs out.
+    if (token) await auth.signOut(token).catch(() => {});
   },
 
   async punch(body) {

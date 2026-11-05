@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
-import { CalendarDays, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
+import { CalendarDays, ChevronRight, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
 import { CFG, DEMO } from './lib/config.js';
-import { MS_AUTH, ROLES, hasRole } from './lib/auth.js';
+import { ROLES, hasRole } from './lib/auth.js';
+import { LOCAL_AUTH } from './lib/auth/api.js';
 import { go, useMedia, useRoute } from './lib/hooks.js';
 import { fmtTime } from './lib/time.js';
 import { Group, Row, Segmented, Sheet, StatusLine, Tag } from './components/ui.jsx';
@@ -17,6 +18,7 @@ import { Review } from './views/Review.jsx';
 import { Roster } from './views/Roster.jsx';
 import { Reports } from './views/Reports.jsx';
 import { Emails } from './views/Emails.jsx';
+import { Users as UsersView } from './views/Users.jsx';
 import { OperatorSheet, SearchSheet } from './components/Search.jsx';
 import centificMark from './assets/centific-mark.png';
 
@@ -38,6 +40,9 @@ const ADMIN_NAV = [
   { id: 'admin/reports', label: 'Reports', icon: FileSpreadsheet, view: Reports, roles: ['approver', 'reporting'] },
   // Editing templates is desk work, so it stays off the phone tab bar.
   { id: 'admin/emails', label: 'Emails', icon: Mail, view: Emails, roles: ['scheduler', 'approver'], phone: false },
+  // Who can sign in, and with which roles: opened from Settings, not the sidebar.
+  // The Lotus Auth flow checks the admin role too.
+  { id: 'admin/users', label: 'Users', icon: KeyRound, view: UsersView, roles: ['admin'], phone: false, hidden: true },
 ];
 const CHECKIN = { id: 'checkin', label: 'Clock in', icon: Clock, view: CheckIn };
 const NO_ACCESS = { id: 'admin/none', label: 'Admin', view: NoAccess };
@@ -45,7 +50,7 @@ const LEGACY = { today: 'admin/today', schedule: 'admin/schedule', hours: 'admin
 
 export default function App() {
   const route = useRoute();
-  const { sync, init, theme, data, syncing, error, loadedAt, session, authReady, setSearching } = useStore();
+  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching } = useStore();
   const [settings, setSettings] = useState(false);
   const systemDark = useMedia('(prefers-color-scheme: dark)');
   const phone = useMedia('(max-width: 767px)');
@@ -59,15 +64,22 @@ export default function App() {
   }, [theme, resolved]);
 
   useEffect(() => { init(); }, [init]);
+  // A sign-in lasts 12 hours, then it's back to the sign-in screen without a reload.
+  useEffect(() => {
+    if (!session?.expiresAt) return undefined;
+    const ms = Date.parse(session.expiresAt) - Date.now();
+    const t = setTimeout(() => { signOut(); toast('Signed out', { description: 'Your sign-in ran out after 12 hours. Sign in again to carry on.' }); }, Math.max(0, Math.min(ms, 2 ** 31 - 1)));
+    return () => clearTimeout(t);
+  }, [session?.expiresAt, signOut]);
   // Load now, then refresh every minute while the page is visible.
   useEffect(() => {
-    if (!authReady) return undefined;
+    if (authStage !== 'signedIn' && authStage !== 'pick') return undefined;
     sync();
     const id = setInterval(() => { if (!document.hidden) sync(); }, 60000);
     const onVis = () => { if (!document.hidden) sync(); };
     document.addEventListener('visibilitychange', onVis);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
-  }, [sync, authReady, session?.email]);
+  }, [sync, authStage, session?.email]);
 
   // Older links (#/today, #/hours, #/records) and a bare #/admin land on the admin views.
   useEffect(() => {
@@ -118,7 +130,7 @@ export default function App() {
 
   const main = (
     <main className="main" key={item.id}>
-      {data || (!isAdmin && !session) ? <View /> : <div className="view"><div className="skeleton" /><div className="skeleton tall" /></div>}
+      {data || (!isAdmin && authStage !== 'signedIn') ? <View /> : <div className="view"><div className="skeleton" /><div className="skeleton tall" /></div>}
     </main>
   );
   const actions = (compact) => (
@@ -154,7 +166,7 @@ export default function App() {
     );
   }
 
-  if (!session) {
+  if (authStage !== 'signedIn') {
     return (
       <div className="app app-checkin">
         <header className="topbar topbar-checkin">
@@ -182,7 +194,7 @@ export default function App() {
           </button>
         )}
         <nav className="side-nav" aria-label="Admin">
-          {nav.map((n) => (
+          {nav.filter((n) => !n.hidden).map((n) => (
             <a key={n.id} href={`#/${n.id}`} className={clsx('side-link', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
               <n.icon size={18} aria-hidden="true" />
               {n.label}
@@ -210,8 +222,8 @@ export default function App() {
 
       {main}
 
-      <nav className="tabbar" aria-label="Admin" style={{ gridTemplateColumns: `repeat(${nav.filter((n) => n.phone !== false).length || 1}, 1fr)` }}>
-        {nav.filter((n) => n.phone !== false).map((n) => (
+      <nav className="tabbar" aria-label="Admin" style={{ gridTemplateColumns: `repeat(${nav.filter((n) => n.phone !== false && !n.hidden).length || 1}, 1fr)` }}>
+        {nav.filter((n) => n.phone !== false && !n.hidden).map((n) => (
           <a key={n.id} href={`#/${n.id}`} className={clsx('tab', n.id === item.id && 'is-active')} aria-current={n.id === item.id ? 'page' : undefined}>
             <n.icon size={22} aria-hidden="true" />
             <span>{n.label}</span>
@@ -290,14 +302,19 @@ function SettingsSheet({ open, onOpenChange, admin }) {
           </div>
         </Group>
       )}
+      {hasRole(session, 'admin') && (
+        <Group title="Admin" footer="Add people, set their roles, and reset passwords.">
+          <Row leading={<KeyRound size={18} aria-hidden="true" />} title="Users and sign-ins" trailing={<ChevronRight size={18} aria-hidden="true" />} onClick={() => { onOpenChange(false); go('admin/users'); }} />
+        </Group>
+      )}
       {session && (
         <Group title="Signed in">
-          <Row title={session.name} subtitle={`${session.email} · ${(session.roles || []).map((r) => ROLES[r]).join(', ')}${session.demo ? ' · demo' : ''}`} trailing={<button type="button" className="link" onClick={() => { onOpenChange(false); signOut(); }}><LogOut size={14} /> Sign out</button>} />
+          <Row title={session.name} subtitle={`${session.username || session.email} · ${(session.roles || []).map((r) => ROLES[r]).join(', ')}${LOCAL_AUTH ? ' · demo' : ''}`} trailing={<button type="button" className="link" onClick={() => { onOpenChange(false); signOut(); }}><LogOut size={14} /> Sign out</button>} />
         </Group>
       )}
       <Group title="Data" footer={DEMO ? 'Sample data saved only in this browser. Add the Power Automate flow URLs to config.js to go live.' : 'Reads and writes the Lotus lists on SharePoint through Power Automate.'}>
         <Row title="Source" trailing={DEMO ? 'Demo' : 'Live · SharePoint'} />
-        <Row title="Sign-in" trailing={MS_AUTH ? 'Microsoft' : 'Demo'} />
+        <Row title="Sign-in" trailing={LOCAL_AUTH ? 'Demo · this browser' : 'Lotus username'} />
         {DEMO && <Row title="Reset sample data" onClick={() => { resetDemo(); toast('Sample data reset'); }} className="row-action" />}
       </Group>
     </Sheet>

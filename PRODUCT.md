@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-React + Vite, static build deployed to GitHub Pages. Sign-in: Microsoft Entra ID (MSAL). Data: SharePoint lists on the DataCollectionUSHUB site, read and written through two Power Automate HTTP flows (Lotus Read, Lotus Write) restricted to tenant users. With no sign-in or flow URLs configured, the app runs in demo mode on sample data kept in the browser.
+React + Vite, static build deployed to GitHub Pages. Sign-in: usernames and passwords that a Lotus admin hands out, as in the Project Atlas app (Lotus Auth flow; the browser sends only a PBKDF2 hash; temp passwords must be changed at first sign-in; 12-hour sign-in tokens). Data: SharePoint lists on the DataCollectionUSHUB site, read and written through the Power Automate HTTP flows Lotus Read and Lotus Write, which check the sign-in token on every call. With no flow URLs configured, the app runs in demo mode on sample data kept in the browser.
 
 ## Users
 
@@ -37,7 +37,7 @@ The unit is the robot, not the person. Two people working the same robot at the 
 ## Capabilities and Constraints
 
 - Renamed Lotus (2026-11-05). Goal: the operational source for scheduled shifts, actual attendance and manager-approved hours. Recruiting reports approved hours to the agency; raw check-ins are never treated as payable.
-- Roles: operator, scheduler (recruiting admin), approver (delivery manager), reporting. Individual Microsoft sign-in; roles come from the `Lotus_Users` list and the flows enforce them. Operators only ever receive their own rows. No agency rates or markups anywhere.
+- Roles: operator, scheduler (recruiting admin), approver (delivery manager), reporting, admin (manages sign-ins). Everyone has their own username; admins set it and a temp password when adding an operator on Roster, or from Settings → Users and sign-ins. Roles come from the `Lotus_Users` list and the flows enforce them. Operators only ever receive their own rows. No agency rates or markups anywhere.
 - Locations: Redmond Lab (Robots 1–2; runs 7 days; Morning 7:00–12:30 needs 2 operators, Afternoon 12:00–17:30 needs 2, Night 17:00–23:00 needs 4, a pair on each robot) and Mountain View Lab (Robot 3, configurable). Overlapping templates are expected handovers, never a flag. Location shows on every shift, clock-in, view and export.
 - Clock-in is tied to the operator's assigned shift, uses server time only, opens a configurable grace window (10 min) before the start and records the grace used. Unscheduled clock-ins are allowed and flagged. Clock-out after the end is accepted; extra time over 5 min is flagged and only counts if an approver accepts it. A missing clock-out is never filled in silently: the approver sees a system-suggested end and accepts it or types the real time.
 - Approved hours = time inside the scheduled shift + extra time an approver accepted, or an adjusted figure with a note. Weekly review queue (operators' weeks reviewed by Monday), reopenable until the month is final. The approved-hours export has fixed columns for Jaydeep's agency-reporting import (docs/lotus-flows.md, the data contract in the plan).

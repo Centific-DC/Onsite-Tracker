@@ -1,5 +1,5 @@
 import { CFG, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationOfRobot } from './config.js';
-import { flowToken } from './auth.js';
+import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
 
@@ -13,11 +13,12 @@ async function paPost(url, body) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 30000);
   try {
-    const token = await flowToken();
+    // Every call carries the sign-in token; the flow looks up who it belongs to.
+    // text/plain: the HTTP trigger answers no CORS preflight, which application/json would trigger.
     const r = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ ...body, token: getToken() }),
       signal: ctrl.signal,
       cache: 'no-store',
     });
@@ -293,22 +294,6 @@ export const demo = {
   },
   reset() { storage.remove(this.KEY); },
 };
-
-// Demo-only sign-in accounts (requested by the project owner for the demo). They
-// live in the browser bundle, so they are a demo gate, not security; the live app
-// signs in with Microsoft and the flows check every role.
-export const DEMO_ACCOUNTS = [
-  { username: 'Lotus-operator', password: 'Testing12345', kind: 'operator' },
-  { username: 'Lotus-admin', password: 'Testing12345', kind: 'admin' },
-];
-
-// Demo staff. Synthetic people; real staff come from Lotus_Users. Lotus-admin signs in as the first.
-export const DEMO_STAFF = [
-  { email: 'lead@example.com', name: 'Project lead (demo)', roles: ['scheduler', 'approver', 'reporting'] },
-  { email: 'scheduler@example.com', name: 'Recruiting scheduler (demo)', roles: ['scheduler'] },
-  { email: 'manager@example.com', name: 'Delivery manager (demo)', roles: ['approver'] },
-  { email: 'reporting@example.com', name: 'Agency reporting (demo)', roles: ['reporting'] },
-];
 
 // Two weeks of made-up shifts at both labs, so every view and flag has something to show.
 function seed() {

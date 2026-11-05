@@ -1,12 +1,14 @@
 // public/config.js sets window.ONSITE_CONFIG, so the site can be reconfigured
 // on GitHub Pages without rebuilding.
 export const CFG = Object.assign(
-  { readUrl: '', writeUrl: '', appUrl: 'https://dk-centific.github.io/Onsite-Tracker/', project: '', locations: [], stations: [], shiftHours: 6, earlyGraceMinutes: 15, weeklyHourCap: 37, pairingMinSessions: 2 },
+  { readUrl: '', writeUrl: '', authUrl: '', appUrl: 'https://dk-centific.github.io/Onsite-Tracker/', project: '', locations: [], stations: [], shiftHours: 6, earlyGraceMinutes: 15, weeklyHourCap: 37, pairingMinSessions: 2 },
   typeof window !== 'undefined' ? window.ONSITE_CONFIG : {},
 );
 export const READ_URL = String(CFG.readUrl || '').trim();
 export const WRITE_URL = String(CFG.writeUrl || '').trim();
 export const DEMO = !READ_URL || !WRITE_URL;
+// The Lotus Auth flow (usernames and passwords). Empty = accounts kept in this browser.
+export const AUTH_URL = String(CFG.authUrl || '').trim();
 // Where emails send people: the operator page and the admin Review view.
 export const APP_URL = String(CFG.appUrl || '').trim().replace(/#.*$/, '');
 

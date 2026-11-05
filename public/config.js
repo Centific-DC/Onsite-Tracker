@@ -6,10 +6,10 @@ window.ONSITE_CONFIG = {
   readUrl: '',
   writeUrl: '',
 
-  // Microsoft sign-in (Entra ID single-page app registration). With both set, everyone
-  // signs in with their own work account and the flows check their role. Empty =
-  // demo sign-in, where you pick who you are.
-  auth: { clientId: '', tenantId: '' },
+  // Lotus Auth flow URL: usernames and passwords that a Lotus admin hands out
+  // (docs/lotus-flows.md). Empty = sign-ins kept in this browser only, with the demo
+  // accounts Lotus-admin and Lotus-operator.
+  authUrl: '',
 
   project: 'Google Lotus on-site',
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Upload, UserPlus } from 'lucide-react';
+import { KeyRound, Search, Upload, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS, locationName } from '../lib/config.js';
@@ -10,6 +10,17 @@ import { planRosterImport, planScheduleImport } from '../lib/importer.js';
 import { claimName } from '../lib/onboarding.js';
 import { dayKey, mondayOf, fmtHrsU } from '../lib/time.js';
 import { Avatar, Group, Row, Segmented, Select, Sheet, Tag } from '../components/ui.jsx';
+import * as auth from '../lib/auth/api.js';
+import { SignInFields, TempReveal, newSignIn, signInProblem, suggestUsername, useSignIns } from '../components/SignInSetup.jsx';
+
+// An operator's sign-in, as admins see it on the Roster.
+function signInTag(u) {
+  if (!u) return null;
+  if (!u.active) return <Tag tone="muted">Sign-in off</Tag>;
+  if (u.lockedUntil && Date.parse(u.lockedUntil) > Date.now()) return <Tag tone="bad">Locked</Tag>;
+  if (u.mustChangePassword) return <Tag tone="warn">Temp password</Tag>;
+  return null;
+}
 
 // Who can be scheduled: operator IDs, home lab, experience and this week's load.
 // Recruiting's Active Roster 2 and scheduling tracker come in through Import.
@@ -20,6 +31,9 @@ export function Roster() {
   const [level, setLevel] = useState('all');
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [settingUp, setSettingUp] = useState(null); // an operator without a sign-in
+  const signIns = useSignIns();
+  const signInOf = useMemo(() => new Map((signIns.users || []).map((u) => [u.email, u])), [signIns.users]);
   const now = new Date();
   const { sessions } = useMemo(() => buildSessions(data.punches, now), [data.punches]); // eslint-disable-line react-hooks/exhaustive-deps
   const load = useMemo(() => new Map(weeklyLoad(data.schedule, mondayOf(now)).map((x) => [x.email, x])), [data.schedule]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -59,7 +73,7 @@ export function Roster() {
             <Row
               key={o.email}
               leading={<Avatar name={o.name} tone={x.level === 'new' ? 'warn' : undefined} />}
-              title={<><button type="button" className="name-link" onClick={() => openProfile(o.email)}>{o.name}</button> {x.level === 'new' && <Tag tone="warn">New</Tag>}{w?.over && <Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}</>}
+              title={<><button type="button" className="name-link" onClick={() => openProfile(o.email)}>{o.name}</button> {x.level === 'new' && <Tag tone="warn">New</Tag>}{w?.over && <Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}{signIns.admin && signIns.users && (signInOf.has(o.email) ? signInTag(signInOf.get(o.email)) : o.active !== false && <button type="button" className="tag-btn" onClick={() => setSettingUp(o)}><KeyRound size={12} aria-hidden="true" /> Set up sign-in</button>)}</>}
               subtitle={`${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${done} sessions completed · ${w ? fmtHrsU(w.hours) : '0 hrs'} this week`}
               trailing={<ExperienceSelect op={o} sessions={sessions} />}
             />
@@ -68,7 +82,8 @@ export function Roster() {
         {!ops.length && <div className="empty-row">{q ? `Nothing matches “${q}”.` : 'No operators yet. Import Active Roster 2 to start.'}</div>}
       </Group>
       <ImportSheet open={importing} onOpenChange={setImporting} />
-      <AddOperatorSheet open={adding} onOpenChange={setAdding} />
+      <AddOperatorSheet open={adding} onOpenChange={setAdding} signIns={signIns} />
+      <SetUpSignInSheet op={settingUp} onClose={() => setSettingUp(null)} signIns={signIns} />
     </div>
   );
 }
@@ -124,25 +139,93 @@ function ImportSheet({ open, onOpenChange }) {
   );
 }
 
-function AddOperatorSheet({ open, onOpenChange }) {
+function AddOperatorSheet({ open, onOpenChange, signIns }) {
   const { data, upsertUsers } = useStore();
-  const [f, setF] = useState({ name: '', email: '', location: LOCATIONS[0]?.id || '', completed: '0' });
+  const blank = () => ({ name: '', email: '', location: LOCATIONS[0]?.id || '', completed: '0' });
+  const [f, setF] = useState(blank);
+  const [login, setLogin] = useState(newSignIn);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setF({ name: '', email: '', location: LOCATIONS[0]?.id || '', completed: '0' }); setNote(''); setErr(''); } }, [open]);
-  const set = (k) => (e) => { setF((x) => ({ ...x, [k]: typeof e === 'string' ? e : e.target.value })); if (k === 'name') setNote(''); };
+  const [made, setMade] = useState(null); // { user, temp } once saved with a sign-in
+  const admin = signIns.admin;
+  useEffect(() => { if (open) { setF(blank()); setLogin(newSignIn()); setNote(''); setErr(''); setMade(null); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (k) => (e) => {
+    const v = typeof e === 'string' ? e : e.target.value;
+    setF((x) => ({ ...x, [k]: v }));
+    // The username follows the email until the admin types their own.
+    if (k === 'email') setLogin((l) => (!l.username || l.username === suggestUsername(f.email) ? { ...l, username: suggestUsername(v) } : l));
+    if (k === 'name') setNote('');
+    setErr('');
+  };
   const save = async () => {
     if (!f.name.trim()) return setErr('Add a full name.');
     if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) return setErr('Add a valid email.');
+    if (admin) { const p = signInProblem(login, signIns.users || []); if (p) return setErr(p.startsWith('Use') || p.startsWith('Don') ? `Temp password: ${p}` : p); }
     const c = claimName(f.name, f.email, data.operators || []);
     if (c.existing) return setErr(`${c.name} already has that email.`);
     if (c.renamed && !note) { setF((x) => ({ ...x, name: c.name })); setErr(''); return setNote(`There's already a ${c.takenBy}, so this operator will show as ${c.name}. Save again to confirm, or change the name.`); }
     setBusy(true);
     try {
       const [o] = await upsertUsers([{ name: c.name, email: c.email, location: f.location, completedSessions: Number(f.completed) || 0, completedAsOf: dayKey(new Date()), roles: ['operator'], active: true }]);
+      if (!admin) { toast.success(`Added ${o.name}`, { description: `${o.id} · an admin gives them a sign-in` }); onOpenChange(false); return; }
+      const user = { username: login.username.trim(), email: o.email, name: o.name, roles: ['operator'], operatorId: o.id };
+      try {
+        await auth.createUser(signIns.token, user, login.temp);
+      } catch (e) {
+        toast.error(`Added ${o.name}, but the sign-in didn’t save`, { description: `${e.message} Use Set up sign-in on their row to try again.` });
+        onOpenChange(false);
+        return;
+      }
+      signIns.load();
       toast.success(`Added ${o.name}`, { description: o.id });
-      onOpenChange(false);
+      setMade({ user, temp: login.temp });
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (made) {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange} title={made.user.name} description="Their sign-in">
+        <TempReveal user={made.user} temp={made.temp} onDone={() => onOpenChange(false)} />
+      </Sheet>
+    );
+  }
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title="Add an operator" description={admin ? 'The operator ID is assigned on save. They sign in with the username and temp password below, then choose their own password.' : 'The operator ID is assigned on save. An admin gives them a sign-in.'} footer={<button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={save}>{busy ? 'Saving…' : admin ? 'Add operator and sign-in' : 'Add operator'}</button>}>
+      <Group footer={!admin ? (err ? <span className="err" role="alert">{err}</span> : note ? <span role="status">{note}</span> : undefined) : undefined}>
+        <label className="field-row"><span>Name</span><input value={f.name} onChange={set('name')} placeholder="Full name" autoComplete="off" /></label>
+        <label className="field-row"><span>Email</span><input value={f.email} onChange={set('email')} type="email" inputMode="email" placeholder="name@centific.com" autoComplete="off" /></label>
+        <label className="field-row"><span>Home lab</span><Select className="sel-field" label="Home lab" value={f.location} onChange={set('location')} options={LOCATIONS.map((l) => ({ value: l.id, label: l.name }))} /></label>
+        <label className="field-row"><span>Sessions done</span><input className="num-input" type="number" min="0" value={f.completed} onChange={set('completed')} /></label>
+      </Group>
+      {admin && (
+        <Group title="Sign-in" footer={err ? <span className="err" role="alert">{err}</span> : note ? <span role="status">{note}</span> : 'A random temp password is filled in; type your own if you like (at least 10 characters).'}>
+          <SignInFields value={login} onChange={(v) => { setLogin(v); setErr(''); }} />
+        </Group>
+      )}
+    </Sheet>
+  );
+}
+
+// For an operator already on the Roster (say, from the Active Roster 2 import) who can't sign in yet.
+function SetUpSignInSheet({ op, onClose, signIns }) {
+  const [login, setLogin] = useState(newSignIn);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [made, setMade] = useState(null);
+  useEffect(() => { if (op) { setLogin(newSignIn(op.email)); setErr(''); setMade(null); } }, [op]);
+  const save = async () => {
+    const p = signInProblem(login, signIns.users || []);
+    if (p) return setErr(p.startsWith('Use') || p.startsWith('Don') ? `Temp password: ${p}` : p);
+    setBusy(true);
+    try {
+      const user = { username: login.username.trim(), email: op.email, name: op.name, roles: ['operator'], operatorId: op.id };
+      await auth.createUser(signIns.token, user, login.temp);
+      signIns.load();
+      setMade({ user, temp: login.temp });
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -150,13 +233,18 @@ function AddOperatorSheet({ open, onOpenChange }) {
     }
   };
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title="Add an operator" description="They sign in with this work email. The operator ID is assigned on save." footer={<button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Add operator'}</button>}>
-      <Group footer={err ? <span className="err" role="alert">{err}</span> : note ? <span role="status">{note}</span> : undefined}>
-        <label className="field-row"><span>Name</span><input value={f.name} onChange={set('name')} placeholder="Full name" autoComplete="off" /></label>
-        <label className="field-row"><span>Email</span><input value={f.email} onChange={set('email')} type="email" inputMode="email" placeholder="name@centific.com" autoComplete="off" /></label>
-        <label className="field-row"><span>Home lab</span><Select className="sel-field" label="Home lab" value={f.location} onChange={set('location')} options={LOCATIONS.map((l) => ({ value: l.id, label: l.name }))} /></label>
-        <label className="field-row"><span>Sessions done</span><input className="num-input" type="number" min="0" value={f.completed} onChange={set('completed')} /></label>
-      </Group>
+    <Sheet
+      open={!!op}
+      onOpenChange={(o) => { if (!o) onClose(); }}
+      title={op ? (made ? op.name : `Set up ${op.name}’s sign-in`) : ''}
+      description={made ? 'Their sign-in' : op ? `${op.id} · ${op.email}` : ''}
+      footer={made ? undefined : <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Make sign-in'}</button>}
+    >
+      {made ? <TempReveal user={made.user} temp={made.temp} onDone={onClose} /> : (
+        <Group footer={err ? <span className="err" role="alert">{err}</span> : 'They sign in with these, then choose their own password.'}>
+          <SignInFields value={login} onChange={(v) => { setLogin(v); setErr(''); }} />
+        </Group>
+      )}
     </Sheet>
   );
 }

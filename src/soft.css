@@ -266,9 +266,35 @@ body { letter-spacing: -0.005em; }
 
 /* Demo sign-in form */
 .login-form { display: flex; flex-direction: column; gap: 4px; }
-.login-form .field-row > span { width: 92px; }
+.login-form .field-row > span { width: 120px; white-space: nowrap; }
+@media (max-width: 400px) { .login-form .field-row > span { width: 108px; font-size: 15px; } }
 .login-eye { flex: none; display: grid; place-items: center; width: 36px; height: 36px; margin-right: -8px; border-radius: 12px; color: var(--op-sub); }
 .login-eye:hover { color: var(--ink); }
 .login-eye:focus-visible { outline: 2px solid var(--op-coral); outline-offset: 2px; }
 .login-error { margin: 4px 4px 0; font-size: 14px; color: var(--op-red-text); }
 .login-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.login-error:empty { display: none; }
+.login-local { margin: 16px 4px 0; font-size: 13px; line-height: 1.5; color: var(--op-sub); }
+
+/* Users: roles and temp passwords */
+.role-pick { display: flex; flex-direction: column; }
+.role-opt { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 16px; text-align: left; }
+.role-opt + .role-opt { border-top: 1px solid var(--line); }
+.role-opt:disabled { opacity: 0.55; cursor: not-allowed; }
+.role-opt:focus-visible { outline: 2px solid var(--op-coral); outline-offset: -2px; border-radius: 12px; }
+.role-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.role-name { font-weight: 600; font-size: 15px; color: var(--ink); }
+.role-note { font-size: 13px; color: var(--op-sub); }
+.user-more { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 8px; }
+.btn-danger-text { color: var(--op-red-text); }
+.user-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+.user-temp { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px; font-weight: 600; letter-spacing: 0.04em; color: var(--ink); user-select: all; }
+.user-temp-user { font-weight: 600; color: var(--ink); }
+.row.is-off { opacity: 0.6; }
+.role-opt[aria-checked="true"] .send-check { background: var(--op-coral); box-shadow: none; color: #fff; }
+.mono-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; letter-spacing: 0.02em; }
+.signin-tag { cursor: pointer; }
+.tag-btn { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; color: var(--op-coral-text, var(--op-coral)); background: var(--op-bg); box-shadow: var(--op-raised-sm, 0 1px 3px rgb(0 0 0 / 0.12)); vertical-align: 1px; }
+.tag-btn:hover { color: var(--ink); }
+.tag-btn:focus-visible { outline: 2px solid var(--op-coral); outline-offset: 2px; }
+.field-row:has(.mono-input) > span { width: 118px; white-space: nowrap; }
