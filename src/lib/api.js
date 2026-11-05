@@ -294,7 +294,15 @@ export const demo = {
   reset() { storage.remove(this.KEY); },
 };
 
-// Demo staff for the sign-in picker. Synthetic people; real staff come from Lotus_Users.
+// Demo-only sign-in accounts (requested by the project owner for the demo). They
+// live in the browser bundle, so they are a demo gate, not security; the live app
+// signs in with Microsoft and the flows check every role.
+export const DEMO_ACCOUNTS = [
+  { username: 'Lotus-operator', password: 'Testing12345', kind: 'operator' },
+  { username: 'Lotus-admin', password: 'Testing12345', kind: 'admin' },
+];
+
+// Demo staff. Synthetic people; real staff come from Lotus_Users. Lotus-admin signs in as the first.
 export const DEMO_STAFF = [
   { email: 'lead@example.com', name: 'Project lead (demo)', roles: ['scheduler', 'approver', 'reporting'] },
   { email: 'scheduler@example.com', name: 'Recruiting scheduler (demo)', roles: ['scheduler'] },

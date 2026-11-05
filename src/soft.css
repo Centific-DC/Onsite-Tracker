@@ -263,3 +263,12 @@ body { letter-spacing: -0.005em; }
 .sel-hint { grid-column: 3; font-size: 12px; font-weight: 400; color: var(--ink-3); }
 @media (prefers-reduced-motion: reduce) { .sel-pop { transition: none; } .sel, .sel-item { transition: none; } }
 @media (pointer: coarse) { .sel-item { min-height: 44px; } }
+
+/* Demo sign-in form */
+.login-form { display: flex; flex-direction: column; gap: 4px; }
+.login-form .field-row > span { width: 92px; }
+.login-eye { flex: none; display: grid; place-items: center; width: 36px; height: 36px; margin-right: -8px; border-radius: 12px; color: var(--op-sub); }
+.login-eye:hover { color: var(--ink); }
+.login-eye:focus-visible { outline: 2px solid var(--op-coral); outline-offset: 2px; }
+.login-error { margin: 4px 4px 0; font-size: 14px; color: var(--op-red-text); }
+.login-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; }

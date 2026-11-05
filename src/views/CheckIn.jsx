@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
-import { Check, ChevronRight, Clock, LogIn, MapPin, Search, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Clock, Eye, EyeOff, LogIn, MapPin, Search, ShieldCheck } from 'lucide-react';
 import { useStore } from '../lib/store.js';
 import { CFG, DEMO, LOCATIONS, locationName, locOf } from '../lib/config.js';
 import { MS_AUTH, hasRole } from '../lib/auth.js';
-import { DEMO_STAFF } from '../lib/api.js';
+import { DEMO_ACCOUNTS, DEMO_STAFF } from '../lib/api.js';
 import { statusOf } from '../lib/hours.js';
 import { myShiftsToday, nextShift } from '../lib/attendance.js';
 import { shiftTimes } from '../lib/schedule.js';
@@ -59,15 +59,71 @@ function SignIn() {
   return <DemoSignIn />;
 }
 
-// Demo stand-in for each person's own sign-in: pick who you are.
+// Demo sign-in: a shared username and password per side (demo accounts only,
+// checked in the browser, so this is a demo gate and not real security), then
+// operators pick who they are. The live app uses each person's Microsoft account.
 function DemoSignIn() {
+  const { signInDemo } = useStore();
+  const [account, setAccount] = useState(null);
+  if (account === 'operator') return <DemoOperatorPick onBack={() => setAccount(null)} />;
+  return (
+    <DemoLogin
+      onSignIn={(kind) => {
+        if (kind === 'admin') { signInDemo(DEMO_STAFF[0]); location.hash = '/admin'; }
+        else setAccount('operator');
+      }}
+    />
+  );
+}
+
+function DemoLogin({ onSignIn }) {
+  const [user, setUser] = useState('');
+  const [pass, setPass] = useState('');
+  const [show, setShow] = useState(false);
+  const [bad, setBad] = useState(false);
+  const submit = (e) => {
+    e.preventDefault();
+    const hit = DEMO_ACCOUNTS.find((a) => a.username.toLowerCase() === user.trim().toLowerCase() && a.password === pass);
+    if (!hit) { setBad(true); return; }
+    onSignIn(hit.kind);
+  };
+  return (
+    <div className="view view-narrow view-enter">
+      <h1 className="large-title">Sign in</h1>
+      <p className="lede">Enter your Lotus username and password. Demo mode: in the live app everyone signs in with their own Microsoft account.</p>
+      <form className="login-form" onSubmit={submit} noValidate>
+        <Group>
+          <label className="field-row">
+            <span>Username</span>
+            <input value={user} onChange={(e) => { setUser(e.target.value); setBad(false); }} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Your username" aria-invalid={bad || undefined} aria-describedby={bad ? 'login-error' : undefined} autoFocus />
+          </label>
+          <label className="field-row">
+            <span>Password</span>
+            <input type={show ? 'text' : 'password'} value={pass} onChange={(e) => { setPass(e.target.value); setBad(false); }} autoComplete="current-password" placeholder="Your password" aria-invalid={bad || undefined} aria-describedby={bad ? 'login-error' : undefined} />
+            <button type="button" className="login-eye" onClick={() => setShow((v) => !v)} aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show}>
+              {show ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+            </button>
+          </label>
+        </Group>
+        {bad && <p id="login-error" className="login-error" role="alert">That username or password isn’t right. Check both and try again.</p>}
+        <div className="dock">
+          <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={!user.trim() || !pass}><LogIn size={18} aria-hidden="true" /> Sign in</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// After the operator sign-in: pick who you are, so you only ever see your own rows.
+function DemoOperatorPick({ onBack }) {
   const { data, signInDemo } = useStore();
   const [q, setQ] = useState('');
   const ops = (data?.operators || []).filter((o) => o.active !== false && `${o.name} ${o.email} ${o.id}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="view view-narrow view-enter">
-      <h1 className="large-title">Sign in</h1>
-      <p className="lede">Demo mode: pick who you are. In the live app everyone signs in with their own Microsoft account.</p>
+      <button type="button" className="link-quiet login-back" onClick={onBack}><ArrowLeft size={16} aria-hidden="true" /> Sign in as someone else</button>
+      <h1 className="large-title">Who are you?</h1>
+      <p className="lede">Pick your name. You’ll only see your own shifts and time.</p>
       <label className="search">
         <Search size={18} aria-hidden="true" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find your name" aria-label="Find your name" />
@@ -77,11 +133,6 @@ function DemoSignIn() {
           <Row key={o.email} className="row-in" style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }} leading={<Avatar name={o.name} />} title={o.name} subtitle={`${o.id} · ${locationName(o.location)}`} trailing={<ChevronRight size={18} />} onClick={() => signInDemo(o)} />
         ))}
         {!ops.length && <div className="empty-row">{q ? `No one called “${q}”.` : 'No operators yet.'}</div>}
-      </Group>
-      <Group title="Staff" footer="Staff accounts open the admin views.">
-        {DEMO_STAFF.map((s) => (
-          <Row key={s.email} title={s.name} subtitle={s.roles.join(', ')} trailing={<ChevronRight size={18} />} onClick={() => { signInDemo(s); location.hash = '/admin'; }} />
-        ))}
       </Group>
     </div>
   );
