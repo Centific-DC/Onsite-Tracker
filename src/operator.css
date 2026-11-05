@@ -1,0 +1,225 @@
+/* ---------- Operator page: soft (neumorphic) style ----------
+   Raised surfaces are lit from the top left; sunken ones are pressed into the
+   page. Everything sits on one cream ground, so depth comes from shadow alone.
+   Scoped to the operator page (.app-checkin / .op); admin keeps the house style. */
+
+.app-checkin {
+  --op-bg: #f1f3f1;
+  --op-ink: #1a1c1a;
+  --op-sub: #7a807a;
+  --op-coral: #e57e5d;
+  --op-coral-text: #c45f3f;
+  --op-green: #61d095;
+  --op-green-text: #2f8f5b;
+  --op-yellow: #fabc60;
+  --op-yellow-text: #a96a0c;
+  --op-red: #e05b5b;
+  --op-red-text: #c43d3d;
+  --op-dark: rgb(185 192 188 / 0.6);
+  --op-light: #ffffff;
+  --op-out-soft: 6px 6px 14px var(--op-dark), -6px -6px 14px var(--op-light);
+  --op-out-hard: 8px 8px 16px var(--op-dark), -8px -8px 16px var(--op-light);
+  --op-out-small: 3px 3px 8px var(--op-dark), -3px -3px 8px var(--op-light);
+  --op-in-deep: inset 6px 6px 12px var(--op-dark), inset -6px -6px 12px var(--op-light);
+  --op-in-shallow: inset 3px 3px 8px var(--op-dark), inset -3px -3px 8px var(--op-light);
+  --op-sans: "Inter", var(--font);
+  --op-serif: "Playfair Display", Georgia, "Times New Roman", serif;
+  --bg: var(--op-bg);
+  --bar-bg: color-mix(in srgb, var(--op-bg) 82%, transparent);
+  background: var(--op-bg);
+  min-height: 100dvh;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .app-checkin {
+    --op-bg: #222523; --op-ink: #ecefec; --op-sub: #9aa19a;
+    --op-coral: #f0906f; --op-coral-text: #f0a184; --op-green: #6fd9a0; --op-green-text: #7fe0ab;
+    --op-yellow: #fbc56f; --op-yellow-text: #f6c470; --op-red: #ec6f6f; --op-red-text: #f28b8b;
+    --op-dark: rgb(0 0 0 / 0.55); --op-light: rgb(255 255 255 / 0.06);
+  }
+}
+:root[data-theme="dark"] .app-checkin {
+  --op-bg: #222523; --op-ink: #ecefec; --op-sub: #9aa19a;
+  --op-coral: #f0906f; --op-coral-text: #f0a184; --op-green: #6fd9a0; --op-green-text: #7fe0ab;
+  --op-yellow: #fbc56f; --op-yellow-text: #f6c470; --op-red: #ec6f6f; --op-red-text: #f28b8b;
+  --op-dark: rgb(0 0 0 / 0.55); --op-light: rgb(255 255 255 / 0.06);
+}
+.app-checkin .topbar { background: var(--bar-bg); }
+
+/* The sweep angle eases between values instead of jumping. */
+@property --sweep { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
+@property --v { syntax: "<number>"; inherits: true; initial-value: 0; }
+
+.op { font-family: var(--op-sans); color: var(--op-ink); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+.op-screen { width: 100%; max-width: 420px; margin: 0 auto; display: flex; flex-direction: column; min-height: inherit; }
+.op-num { font-variant-numeric: lining-nums tabular-nums; }
+/* Playfair defaults to old-style figures; times and hours read better lining. */
+.op-timer, .op-stat-val, .op-big-num, .op-day-hrs, .op-total-num { font-variant-numeric: lining-nums tabular-nums; }
+.op-center { text-align: center; }
+
+/* Type */
+.op-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--op-sub); }
+.op-label.is-coral { color: var(--op-coral-text); }
+.op-label.is-green { color: var(--op-green-text); }
+.op-label.is-red { color: var(--op-red-text); }
+.op-h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.15; margin: 4px 0 0; }
+.op-body { font-size: 15px; line-height: 1.4; color: var(--op-sub); margin: 0; text-wrap: pretty; }
+.op-small { font-size: 12px; line-height: 1.45; color: var(--op-sub); margin: 12px 0 0; text-align: center; text-wrap: pretty; }
+.op-section { margin: 28px 4px 12px; }
+
+/* Surfaces */
+.op-card { background: var(--op-bg); border-radius: 24px; box-shadow: var(--op-out-soft); padding: 22px; }
+.op-well { background: var(--op-bg); border-radius: 18px; box-shadow: var(--op-in-deep); padding: 16px 18px; }
+.op-pill, .op-pill-in { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; background: var(--op-bg); font-weight: 600; white-space: nowrap; }
+.op-pill { box-shadow: var(--op-out-small); padding: 8px 16px; font-size: 13px; }
+.op-pill-in { box-shadow: var(--op-in-shallow); padding: 6px 12px; font-size: 12px; color: var(--op-sub); }
+.op-pill-sm { padding: 4px 10px; font-size: 11px; }
+:is(.op-pill, .op-pill-in).is-coral { color: var(--op-coral-text); }
+:is(.op-pill, .op-pill-in).is-green { color: var(--op-green-text); }
+:is(.op-pill, .op-pill-in).is-yellow { color: var(--op-yellow-text); }
+:is(.op-pill, .op-pill-in).is-red { color: var(--op-red-text); }
+.op-row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* Header */
+.op-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 8px 0 28px; }
+.op-avatar { width: 48px; height: 48px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--op-bg); box-shadow: var(--op-out-small); font-size: 15px; font-weight: 600; color: var(--op-coral-text); }
+
+/* Shift card */
+.op-shift-top { margin-bottom: 18px; }
+.op-details { display: flex; flex-direction: column; gap: 12px; }
+.op-detail { display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--op-sub); }
+.op-detail strong { font-weight: 500; color: var(--op-ink); }
+.op-detail-icon { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--op-bg); box-shadow: var(--op-in-shallow); color: var(--op-ink); }
+
+/* The stage holds the big button and its hint, centred in the free space. */
+.op-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 40px 0 36px; }
+.op-hint { margin: 0; max-width: 300px; text-align: center; font-size: 13px; line-height: 1.45; color: var(--op-sub); text-wrap: pretty; }
+.op-hint.is-warn { color: var(--op-yellow-text); }
+.op-err { margin: 12px 0 0; text-align: center; font-size: 14px; color: var(--op-red-text); }
+
+/* The big round Clock in button. Raised at rest, pressed into the page when tapped. */
+.op-big {
+  position: relative; width: 176px; height: 176px; border-radius: 50%; border: 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: var(--op-bg); color: var(--op-coral-text); font-family: var(--op-sans);
+  box-shadow: var(--op-out-hard);
+  transition: box-shadow 200ms var(--ease-out), scale 160ms var(--ease-out), color 200ms var(--ease-out);
+}
+/* A soft halo behind the button that breathes while clock-in is open. */
+.op-big::before { content: ""; position: absolute; inset: -14px; border-radius: 50%; box-shadow: var(--op-in-shallow); opacity: 0.9; pointer-events: none; }
+.op-big:not(:disabled)::after { content: ""; position: absolute; inset: -14px; border-radius: 50%; box-shadow: 0 0 0 0 color-mix(in srgb, var(--op-coral) 30%, transparent); animation: opHalo 2.4s var(--ease-loop) infinite; pointer-events: none; }
+@keyframes opHalo { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--op-coral) 26%, transparent); } 70%, 100% { box-shadow: 0 0 0 16px color-mix(in srgb, var(--op-coral) 0%, transparent); } }
+.op-big:active:not(:disabled) { box-shadow: var(--op-in-deep); scale: 0.97; }
+@media (hover: hover) and (pointer: fine) { .op-big:hover:not(:disabled) { color: var(--op-coral); } }
+.op-big:disabled { cursor: not-allowed; color: var(--op-sub); box-shadow: var(--op-in-shallow); }
+.op-big[aria-busy="true"] { box-shadow: var(--op-in-deep); color: var(--op-coral-text); cursor: progress; }
+.op-big.is-plain { color: var(--op-ink); }
+.op-big.is-plain:not(:disabled)::after { animation: none; }
+.op-big:focus-visible, .op-dial-plate:focus-visible, .op-btn:focus-visible, .op-link:focus-visible { outline: 2px solid var(--op-coral); outline-offset: 4px; }
+.op-big-label { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.op-big-sub { font-size: 12px; font-weight: 500; color: var(--op-sub); }
+
+/* Clocked-in screen */
+.op-badge { margin: 8px auto 12px; }
+.op-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.op-dot.is-green { background: var(--op-green); }
+.op-dot.is-red { background: var(--op-red); }
+.op-pulse { animation: opPulse 2s var(--ease-out) infinite; }
+.op-dot.is-red.op-pulse { animation-name: opPulseRed; }
+@keyframes opPulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--op-green) 45%, transparent); } 70%, 100% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--op-green) 0%, transparent); } }
+@keyframes opPulseRed { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--op-red) 45%, transparent); } 70%, 100% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--op-red) 0%, transparent); } }
+
+/* The dial: a sunken ring, the sweep, and a raised plate that is the Clock out button. */
+.op-dial { --tone: var(--op-green); position: relative; width: 256px; height: 256px; margin: 32px auto; border-radius: 50%; box-shadow: var(--op-in-deep); display: grid; place-items: center; transition: --sweep 900ms var(--ease-out); }
+.op-dial.is-red { --tone: var(--op-red); }
+/* On arrival the sweep fills from the top to where the shift is. */
+.op-dial { animation: opSweep 1100ms var(--ease-out) both; }
+@keyframes opSweep { from { --sweep: 0%; } }
+.op-dial-sweep { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(var(--tone) 0 var(--sweep), transparent var(--sweep) 100%); transition: --sweep 900ms var(--ease-out); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 24px), #000 calc(100% - 23px)); mask: radial-gradient(farthest-side, transparent calc(100% - 24px), #000 calc(100% - 23px)); }
+.op-dial.is-over .op-dial-sweep { opacity: 0.28; }
+.op-dial-plate {
+  position: relative; z-index: 1; width: 200px; height: 200px; border-radius: 50%; border: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: var(--op-bg); color: var(--op-ink); font-family: var(--op-sans); box-shadow: var(--op-out-soft);
+  transition: box-shadow 200ms var(--ease-out), scale 160ms var(--ease-out);
+}
+.op-dial-plate.is-button { cursor: pointer; }
+.op-dial-plate.is-button:active:not(:disabled) { box-shadow: var(--op-in-shallow); scale: 0.98; }
+.op-dial-plate[aria-busy="true"] { box-shadow: var(--op-in-shallow); cursor: progress; }
+.op-dial.is-over .op-dial-plate { background: color-mix(in srgb, var(--op-red) 5%, var(--op-bg)); }
+.op-timer { font-family: var(--op-serif); font-weight: 500; letter-spacing: -0.02em; font-size: 48px; line-height: 1; margin-bottom: 6px; }
+.op-timer-sec { font-size: 30px; color: var(--op-sub); }
+.op-timer.is-red { color: var(--op-red-text); font-size: 44px; }
+.op-timer.is-red .op-timer-sec { color: inherit; opacity: 0.7; font-size: 24px; }
+.op-plate-action { margin-top: 16px; transition: color 200ms var(--ease-out); }
+
+.op-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px; }
+.op-stat { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 16px; }
+.op-stat-val { font-family: var(--op-serif); font-weight: 500; font-size: 20px; letter-spacing: -0.01em; margin-top: 8px; }
+.op-note { text-align: center; margin-bottom: 18px; }
+.op-note p { margin: 0; font-size: 15px; line-height: 1.45; color: var(--op-ink); text-wrap: pretty; }
+.op-note.is-red { box-shadow: var(--op-out-soft), inset 0 0 0 1px color-mix(in srgb, var(--op-red) 22%, transparent); }
+
+/* Weekly hours bar */
+.op-week .op-row-between { margin-bottom: 12px; }
+.op-bar { position: relative; height: 12px; border-radius: 999px; box-shadow: var(--op-in-shallow); overflow: hidden; }
+.op-bar-fill { position: absolute; inset: 0 auto 0 0; width: calc(var(--v) * 100%); border-radius: 999px; box-shadow: var(--op-out-small); transition: --v 700ms var(--ease-out); }
+.op-bar-fill.is-coral { background: var(--op-coral); }
+.op-bar-fill.is-green { background: var(--op-green); }
+.op-bar-fill.is-red { background: var(--op-red); }
+.op-bar-fill.is-ink { background: var(--op-ink); }
+
+.op-foot { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: auto; padding-top: 24px; }
+.op-link { border: 0; background: none; font: inherit; font-size: 14px; font-weight: 500; color: var(--op-sub); padding: 10px 14px; cursor: pointer; border-radius: 10px; }
+@media (hover: hover) and (pointer: fine) { .op-link:hover { color: var(--op-ink); } }
+.op-btn { width: 100%; padding: 18px; border: 0; border-radius: 20px; background: var(--op-bg); box-shadow: var(--op-out-hard); font-family: var(--op-sans); font-size: 17px; font-weight: 600; color: var(--op-coral-text); cursor: pointer; transition: box-shadow 200ms var(--ease-out), scale 160ms var(--ease-out); }
+.op-btn:active { box-shadow: var(--op-in-shallow); scale: 0.98; }
+
+/* After clocking out */
+.op-done { text-align: center; }
+.op-medal { width: 80px; height: 80px; margin: 24px auto 32px; border-radius: 50%; display: grid; place-items: center; box-shadow: var(--op-out-hard); color: var(--op-green-text); animation: opMedal 520ms var(--spring) both; }
+.op-medal.is-red { color: var(--op-red-text); }
+@keyframes opMedal { from { scale: 0.6; opacity: 0; } to { scale: 1; opacity: 1; } }
+.op-done .op-body { margin: 6px 0 28px; }
+.op-total-well { padding: 36px 20px; margin-bottom: 28px; text-align: center; }
+.op-big-num { font-family: var(--op-serif); font-weight: 500; font-size: 68px; line-height: 1; letter-spacing: -0.02em; margin: 10px 0 8px; }
+.op-big-num span { font-size: 30px; color: var(--op-sub); margin-left: 2px; }
+.op-small-body { font-size: 13px; }
+.op-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: -12px 0 24px; }
+
+/* Timesheet */
+.op-sheet .op-head { margin-top: 0; }
+.op-days { display: flex; flex-direction: column; gap: 14px; }
+.op-day { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-radius: 20px; }
+.op-day.is-off { opacity: 0.55; }
+.op-day-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.op-day-name { font-size: 15px; font-weight: 600; }
+.op-flag { font-size: 12px; color: var(--op-yellow-text); }
+.op-day-right { display: flex; align-items: center; gap: 12px; flex: none; }
+.op-day-hrs { font-family: var(--op-serif); font-weight: 500; font-size: 24px; min-width: 56px; text-align: right; }
+.op-day-hrs span { font-size: 15px; color: var(--op-sub); margin-left: 1px; }
+.op-day-hrs.is-dim { color: var(--op-sub); }
+.op-upcoming-time { font-size: 13px; font-weight: 600; color: var(--op-coral-text); }
+.op-total { margin-top: 24px; }
+.op-total-top { align-items: flex-end; margin-bottom: 14px; }
+.op-total-num { font-family: var(--op-serif); font-weight: 500; font-size: 36px; line-height: 1; }
+.op-total-num span { font-size: 18px; color: var(--op-sub); }
+
+/* Motion: screens settle in, timesheet rows rise in turn. */
+.op-enter { animation: opEnter 320ms var(--ease-out) both; }
+@keyframes opEnter { from { opacity: 0; translate: 0 8px; scale: 0.985; } }
+.op-rise { animation: opRise 360ms var(--ease-out) both; }
+@keyframes opRise { from { opacity: 0; translate: 0 6px; } }
+.op-day.is-off.op-rise { animation-name: opRiseDim; }
+@keyframes opRiseDim { from { opacity: 0; translate: 0 6px; } to { opacity: 0.55; } }
+
+/* Layout around the page */
+.app-checkin .checkin-aside { max-width: 420px; }
+.app-checkin .checkin-primary > .op-screen { min-height: calc(100dvh - 140px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .op-enter, .op-rise, .op-medal, .op-dial { animation: none; }
+  .op-day.is-off.op-rise { opacity: 0.55; }
+  .op-pulse, .op-big::after { animation: none !important; }
+  .op-big, .op-dial-plate, .op-btn, .op-dial, .op-dial-sweep, .op-bar-fill { transition: none; }
+  .op-big:active:not(:disabled), .op-dial-plate.is-button:active:not(:disabled), .op-btn:active { scale: none; }
+}
