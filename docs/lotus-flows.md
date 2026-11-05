@@ -283,6 +283,7 @@ Body `{ "id": "S-…" }`. Delete it, and return `{ "ok": true }` even if it was 
 Body `{ "users": [ { "id"?: "OP-…", "email", "name", "location", "cohort", "completedSessions", "completedAsOf", "training", "experience"?: "experienced" | "new" | "", "roles"?: ["operator"], "active"?: true } ] }`. Up to 500 per call, used by the Active Roster 2 import and when an admin marks an operator Experienced or New.
 
 - Match users by email.
+- **Names:** keep the name as sent (or, if no name is sent, the name on record). Add ` 2`, ` 3`… only when another **active** row with a **different** email already has that exact name (compared lower-cased and trimmed). Check before numbering, never after: Power Automate's *Do until* always runs its body once, so wrap it in a condition or it numbers every name. A user whose own name is unchanged is never renumbered.
 - Change only the fields present in the body. The roster import never sends `experience`, so an admin's mark survives re-imports.
 - A new operator without an `id` gets the next free `OP-0000` number. Find the highest existing number and add one, so numbers are never reused.
 - Ignore `roles`, `username` and every password and token column: roles and sign-ins are changed only through the Auth flow's `user.*` ops, by an admin. A new row gets `Roles` = `operator` and no password (so it can't sign in until an admin gives it one).
