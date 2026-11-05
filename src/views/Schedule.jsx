@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Mail, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS } from '../lib/config.js';
-import { conflicts, isNew as isNewOp, pairingRisks, weeklyLoad } from '../lib/rules.js';
+import { conflicts, isNew as isNewOp, pairingRisks, weeklyLoad, wrongLab } from '../lib/rules.js';
 import { buildSessions } from '../lib/hours.js';
 import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, mondayOf, parseDay, weekLabel, fmtHrsU, shortName } from '../lib/time.js';
 import { useHashQuery, useMedia, useNow } from '../lib/hooks.js';
@@ -79,7 +79,7 @@ export function Schedule() {
   const risks = useMemo(() => pairingRisks(weekSched, data.operators, sessions), [weekSched, data.operators, sessions]);
   const riskIds = new Set(risks.flatMap((x) => x.ids));
   const over = weeklyLoad(schedule, wk0).filter((x) => x.over);
-  const clashes = conflicts(weekSched);
+  const clashes = [...conflicts(weekSched), ...wrongLab(weekSched, data.operators)];
   const watch = new Set([...over.map((x) => x.email), ...clashes.flatMap((c) => c.ids)]);
   const isNew = (email) => isNewOp(ops.get(email), sessions);
 
@@ -102,7 +102,7 @@ export function Schedule() {
   const attention = [
     risks.length && { tone: 'bad', label: 'Pairing risk', text: [...new Map(risks.map((x) => [x.names.join('+'), `${x.names.map(stub).join(' + ')} (${[...new Set(risks.filter((y) => y.names.join('+') === x.names.join('+')).map((y) => wd(y.date)))].join(', ')})`])).values()].join(' · ') },
     over.length && { tone: 'bad', label: `Over ${CFG.weeklyHourCap} hrs`, text: over.map((x) => `${x.name} ${fmtHrsU(x.hours)}`).join(' · ') },
-    clashes.length && { tone: 'warn', label: 'Conflict', text: clashes.map((c) => `${c.name} ${c.kind === 'overlap' ? 'double-booked' : 'at two labs'} ${wd(c.date)}`).join(' · ') },
+    clashes.length && { tone: 'warn', label: 'Conflict', text: clashes.map((c) => `${c.name} ${c.kind === 'overlap' ? 'double-booked' : c.kind === 'wrong_lab' ? 'away from home lab' : 'at two labs'} ${wd(c.date)}`).join(' · ') },
     missing.length && { tone: 'warn', label: 'Missing', text: missing.map((r) => `${stub(r.name)} ${STATUS[r.status].label.toLowerCase()} ${wd(r.date)}`).join(' · ') },
   ].filter(Boolean);
 

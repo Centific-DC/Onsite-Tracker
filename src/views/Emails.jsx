@@ -4,12 +4,14 @@ import { toast } from 'sonner';
 import { Copy, Moon, PencilLine, Sun } from 'lucide-react';
 import { useStore } from '../lib/store.js';
 import { DEMO } from '../lib/config.js';
-import { FIELD_LABEL, isBlockField } from '../lib/email/blocks.js';
+import { FIELD_LABEL, isBlockField, isSecretField } from '../lib/email/blocks.js';
 import { DARK, LIGHT } from '../lib/email/palette.js';
 import { AUDIENCE_LABEL, TEMPLATES, TEMPLATE_FIELDS } from '../lib/email/templates.js';
 import { buildEmail, copyRich, fillFields, fillSubject, sanitize, tintedLogo, toPlainText } from '../lib/email/render.js';
 import { useTemplates } from '../lib/email/useTemplates.js';
 import { noticeStatus, scheduleValues } from '../lib/email/notices.js';
+import { welcomeValues } from '../lib/email/welcome.js';
+import { suggestUsername } from '../components/SignInSetup.jsx';
 import { reviewDays } from '../lib/review.js';
 import { addDays, firstName, mondayOf, weekLabel } from '../lib/time.js';
 import { Segmented, Select } from '../components/ui.jsx';
@@ -72,8 +74,10 @@ export function Emails() {
   const values = useMemo(() => {
     if (meta.audience === 'approver') return samples.approver;
     if (!person) return {};
+    // A sample temp password: the real one is made when an admin adds the operator.
+    if (meta.id === 'operator-welcome') return welcomeValues({ name: person.entry.op.name, location: person.entry.op.location, username: suggestUsername(person.entry.op.email), temp: 'Sample-Temp-48271' });
     return scheduleValues(person.entry, samples.wk1);
-  }, [meta.audience, person, samples]);
+  }, [meta.audience, meta.id, person, samples]);
 
   const subject = fillSubject(content.subject, values);
   const email = useMemo(() => buildEmail(fillFields(content.html, values), mode, logos[mode]), [content.html, values, mode, logos]);
@@ -231,7 +235,7 @@ export function Emails() {
                 </label>
                 <div className="em-subject-add">
                   <span className="em-eyebrow">Add field</span>
-                  <Select className="sel-input" label="Add field to subject" align="start" value="" onChange={addSubjectField} placeholder="Choose…" options={fields.filter((id) => !isBlockField(id)).map((id) => ({ value: id, label: FIELD_LABEL[id] }))} />
+                  <Select className="sel-input" label="Add field to subject" align="start" value="" onChange={addSubjectField} placeholder="Choose…" options={fields.filter((id) => !isBlockField(id) && !isSecretField(id)).map((id) => ({ value: id, label: FIELD_LABEL[id] }))} />
                 </div>
               </div>
 

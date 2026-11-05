@@ -40,7 +40,7 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
 | `OperatorID` | text | `OP-0007` | Operators only. `OP-` + 4 digits, never reused |
 | `Username` | text | `avery.lin` | What they type to sign in. Unique, compared lower-cased. Set by an admin |
 | `Roles` | text | `operator` or `scheduler;approver` | Any of `operator`, `scheduler`, `approver`, `reporting`, `admin`, separated by `;`. Only set through the Auth flow's user ops |
-| `HomeLocation` | text | `RED` | `RED` (Redmond Lab) or `MTV` (Mountain View Lab) |
+| `HomeLocation` | text | `RED` | `RED` (Redmond Lab) or `MTV` (Mountain View Lab). Operators work at their home lab only: Write refuses shifts and clock-ins anywhere else |
 | `Cohort` | text | `Cohort 3` | From Active Roster 2 |
 | `CompletedSessions` | number | `4` | From Active Roster 2 |
 | `CompletedAsOf` | text | `2026-11-05` | Date of the import that set `CompletedSessions` |
@@ -50,6 +50,7 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
 | `PasswordSalt` | text | base64 | Empty = this person has no sign-in yet (e.g. just imported from the roster) |
 | `PasswordHash` | text | base64 | |
 | `MustChangePassword` | yes/no | Yes | Yes after an admin adds or resets them: they must pick their own password |
+| `TempExpires` | text | ISO UTC | Set to now + 7 days by `user.create` and `user.reset`; cleared by `change-password`. A temp password past this time no longer signs in |
 | `FailedCount` | number | `0` | Wrong passwords in a row |
 | `LockedUntil` | text | ISO UTC | Set for 15 minutes after 5 wrong passwords |
 | `Token` | text | 64 hex characters | Current sign-in. Empty = signed out |
@@ -163,7 +164,7 @@ One row per email the app sends from the Schedule tab. The app compares `Snapsho
 | `Email` | text | recipient operator, lower case |
 | `OperatorId` | text | `OP-0007` |
 | `WeekStart` | text | the week's Monday, `2026-11-09` |
-| `Kind` | text | `operator-schedule` or `operator-schedule-update` |
+| `Kind` | text | `operator-schedule`, `operator-schedule-update` or `operator-welcome` |
 | `Subject` | text | the subject sent |
 | `SentAt` | text | `utcNow()` |
 | `By` | text | `callerEmail` |
@@ -176,7 +177,7 @@ One row per template, edited on the app's Emails page. Missing rows mean the app
 
 | Column | Type | Example |
 |---|---|---|
-| `Title` | text | `operator-schedule`, `operator-schedule-update`, `approver-weekly` |
+| `Title` | text | `operator-schedule`, `operator-schedule-update`, `operator-welcome`, `approver-weekly` |
 | `Subject` | text | `Lotus timesheets for {reviewWeek} are ready to approve` |
 | `Html` | multi-line text (plain, not rich) | the editable body, with field chips |
 | `Ready` | multi-line text (plain, not rich) | the whole email (header, body, footer) with `{{field}}` tokens; the Monday flow uses this |
@@ -199,13 +200,13 @@ Make the token with `concat(replace(guid(),'-',''), replace(guid(),'-',''))` (64
 | `op` | Body | Who | What it does |
 |---|---|---|---|
 | `salt` | `{ "username" }` | anyone | Find the user. If found, `Active` = Yes and `PasswordSalt` isn't empty, respond 200 `{ "salt": PasswordSalt }`. Otherwise respond 200 `{ "salt": "THf0dXNVbmtub3duU2FsdA==" }` (a fixed fake one), so the reply never shows who has an account |
-| `signin` | `{ "username", "hash" }` | anyone | Find the user. If missing, `Active` = No, no `PasswordHash`, or `LockedUntil` is after now: 401 `Username or password is wrong, or the account is locked.` If `hash` ≠ `PasswordHash`: add 1 to `FailedCount`; at 5, set `LockedUntil` = now + 15 minutes and `FailedCount` = 0; respond the same 401. Otherwise set `Token`, `TokenExpires` = now + 12 hours, `FailedCount` = 0, `LockedUntil` empty, `LastSignIn` = now, and respond 200 `{ "ok": true, "token", "expiresAt", "user": USER }` |
-| `change-password` | `{ "token", "currentHash", "newSalt", "newHash" }` | signed in (allowed while `MustChangePassword` = Yes) | Token check. If `currentHash` ≠ `PasswordHash`: 401 `Your current password is wrong.` Else set `PasswordSalt` = `newSalt`, `PasswordHash` = `newHash`, `MustChangePassword` = No. 200 `{ "ok": true, "user": USER }` |
+| `signin` | `{ "username", "hash" }` | anyone | Find the user. If missing, `Active` = No, no `PasswordHash`, or `LockedUntil` is after now: 401 `Username or password is wrong, or the account is locked.` If `hash` ≠ `PasswordHash`: add 1 to `FailedCount`; at 5, set `LockedUntil` = now + 15 minutes and `FailedCount` = 0; respond the same 401. If `MustChangePassword` = Yes and `TempExpires` is before now, respond 401 `This temp password has expired. Ask your admin for a new one.` (only after the hash matched, so it never tells a stranger anything). Otherwise set `Token`, `TokenExpires` = now + 12 hours, `FailedCount` = 0, `LockedUntil` empty, `LastSignIn` = now, and respond 200 `{ "ok": true, "token", "expiresAt", "user": USER }` |
+| `change-password` | `{ "token", "currentHash", "newSalt", "newHash" }` | signed in (allowed while `MustChangePassword` = Yes) | Token check. If `currentHash` ≠ `PasswordHash`: 401 `Your current password is wrong.` Else set `PasswordSalt` = `newSalt`, `PasswordHash` = `newHash`, `MustChangePassword` = No, `TempExpires` empty. 200 `{ "ok": true, "user": USER }` |
 | `signout` | `{ "token" }` | anyone | Clear `Token` and `TokenExpires` on the row with that token, if any. Always 200 `{ "ok": true }` |
 | `user.list` | `{ "token" }` | `admin` | 200 `{ "ok": true, "users": [ USER + { "active", "lastSignIn", "lockedUntil" } ] }`, every row that has a `Username` |
-| `user.create` | `{ "token", "user": { "username", "email", "name", "roles": [], "operatorId"? }, "salt", "hash" }` | `admin` | `username` not empty, no spaces; `email` valid; at least one known role, else 400. If another row already has that `Username`: 409 `That username is taken.` If a row with that email exists **and has a `PasswordHash`**: 409 `That person already has a sign-in.` If the row exists without one (e.g. imported from the roster), update it; otherwise create it (a new operator gets the next `OP-` number, as in `users_upsert`). Set `Username`, `Name`, `Roles` (joined with `;`), `PasswordSalt` = `salt`, `PasswordHash` = `hash`, `MustChangePassword` = Yes, `Active` = Yes, `FailedCount` = 0. 200 `{ "ok": true }` |
+| `user.create` | `{ "token", "user": { "username", "email", "name", "roles": [], "operatorId"? }, "salt", "hash" }` | `admin` | `username` not empty, no spaces; `email` valid; at least one known role, else 400. If another row already has that `Username`: 409 `That username is taken.` If a row with that email exists **and has a `PasswordHash`**: 409 `That person already has a sign-in.` If the row exists without one (e.g. imported from the roster), update it; otherwise create it (a new operator gets the next `OP-` number, as in `users_upsert`). Set `Username`, `Name`, `Roles` (joined with `;`), `PasswordSalt` = `salt`, `PasswordHash` = `hash`, `MustChangePassword` = Yes, `TempExpires` = now + 7 days, `Active` = Yes, `FailedCount` = 0. 200 `{ "ok": true }` |
 | `user.update` | `{ "token", "username", "changes": { "name"?, "username"?, "roles"?, "active"? } }` | `admin` | Find the user, else 404. An admin can't change their own `roles` or `active` (400 `You can’t change your own roles or turn off your own sign-in.`). A new `username` must be free (409). `roles` needs at least one known role. `active` = false also clears `Token`. 200 `{ "ok": true }` |
-| `user.reset` | `{ "token", "username", "salt", "hash" }` | `admin` | Find the user, else 404. Set the new salt and hash, `MustChangePassword` = Yes, `FailedCount` = 0, clear `LockedUntil` and `Token`. 200 `{ "ok": true }` |
+| `user.reset` | `{ "token", "username", "salt", "hash" }` | `admin` | Find the user, else 404. Set the new salt and hash, `MustChangePassword` = Yes, `TempExpires` = now + 7 days, `FailedCount` = 0, clear `LockedUntil` and `Token`. 200 `{ "ok": true }` |
 | `bootstrap` | `{ "user": { "username", "email", "name" }, "salt", "hash" }` | anyone, **only while no active row has `admin` in `Roles`** | Otherwise 403 `Lotus already has an admin.` Create the row with `Roles` = `admin;scheduler;approver;reporting`, `MustChangePassword` = No, `Active` = Yes. 200 `{ "ok": true }` |
 | anything else | | | 400 `Unknown request.` |
 
@@ -220,7 +221,7 @@ Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action":
 1. The token check above gives `callerEmail` and the caller's row. Compose `roles` = `split(Roles, ';')`.
 2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` from `Lotus_Settings`.
 3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
-   - **The one exception is partners' names** (user decision, 2026-11-05). Before filtering, for each of the caller's shifts, find the other `Lotus_Shifts` rows with the same `Date`, `Location` and `Station`, a different `Email`, whose time overlaps at least half of the caller's shift (so the half-hour handover between Morning and Afternoon doesn't count; an end at or before the start runs past midnight). Return them as `partners`: `[{ "shiftId": "<the caller's shift id>", "name": "<the partner's Name>" }]`. Send only these two fields: never the partner's email, operator ID, times, punches or hours. Staff callers get `partners: []` (they already have the whole schedule).
+   - **The one exception is partners' names** (user decision, 2026-11-05). Before filtering, for each of the caller's shifts, find the other `Lotus_Shifts` rows with the same `Date`, `Location` and `Station`, a different `Email`, whose time overlaps at least half of the caller's shift (so the half-hour handover between Morning and Afternoon doesn't count; an end at or before the start runs past midnight). Return them as `partners`: `[{ "shiftId": "<the caller's shift id>", "name": "<the partner's Name>" }]`. Send only these two fields: never the partner's email, operator ID, times, punches or hours. A shift with a blank `Station` has no partners. Staff callers get `partners: []` (they already have the whole schedule).
 4. Response 200 (field names are lower camel case, exactly):
 
 ```json
@@ -258,6 +259,7 @@ Body: `{ "type": "in" | "out", "shiftId": "", "location": "", "station": "", "de
 4. If now is earlier than start minus grace, return **409** `{"error":"Clock-in opens at <h:mm AM/PM>", "code":"early", "opensAt":"<ISO>"}`. If now is after the end, return **409** `{"error":"That shift has ended", "code":"over"}`.
 5. `GraceMinutes` = whole minutes from now to the start when now is before the start, else 0.
 6. Without a `shiftId`, it is an unscheduled clock-in. Allow it, with `ShiftID` empty. `location` and `station` must be set.
+   - **Home lab only** (user rule, 2026-11-05: the labs are far apart, so nobody works at both). If the caller's `Lotus_Users` row has a `HomeLocation`, the punch's `location` must equal it, else **403** `{"error":"You can only clock in at <lab name>.","code":"lab"}`. This applies with or without a `shiftId`.
 7. If the caller already has an `IN` today with no `OUT` after it, return **409** `{"error":"You're already clocked in", "code":"open"}`.
 
 **Clock-out (`type` = `out`):** must follow an open `IN` from the caller, else 409 `{"error":"You're not clocked in","code":"not_in"}`. Copy that IN's `ShiftID`, `Location` and `Robot`. A clock-out after the scheduled end is accepted. The app flags the extra time for review, so the flow doesn't. If `flag` = `early`, set `Flag` = `Left early` and `note` must not be empty.
@@ -270,7 +272,7 @@ If `Flag` = `Left early`, send an email from the shared mailbox (the email step 
 
 Body: `{ "shifts": [ { "id"?: "", "date", "operatorId", "email", "name", "location", "station", "template", "start", "end", "note", "source" } ] }`. Up to 200 per call.
 
-For each shift: check that `date` is `yyyy-MM-dd`, `start` and `end` are `HH:mm`, and `email` is in `Lotus_Users`. With an `id`, update that row. Without one, create it with `Title` = `S-` + `guid()`. Respond `{ "ok": true, "shifts": [ …saved shifts, same shape as Read… ] }`. The app has already shown the scheduler any warnings (37 hrs, conflicts, pairing), so don't block on those.
+For each shift: check that `date` is `yyyy-MM-dd`, `start` and `end` are `HH:mm`, and `email` is in `Lotus_Users`. **Home lab only:** if that user's row has a `HomeLocation`, the shift's `location` must equal it, else 400 `{"error":"<name> works at <lab name> only."}` and nothing in the call is saved. With an `id`, update that row. Without one, create it with `Title` = `S-` + `guid()`. Respond `{ "ok": true, "shifts": [ …saved shifts, same shape as Read… ] }`. The app has already shown the scheduler any warnings (37 hrs, conflicts, pairing), so don't block on those.
 
 ### `shift_delete`: role `scheduler`
 
@@ -300,7 +302,7 @@ Body `{ "email", "operatorId", "date", "hours", "computed", "note" }`.
 
 Add a `Lotus_Approvals` row with `Status` `approved` or `reopened`. Respond `{ "ok": true, "approval": { … } }`.
 
-### `email_send`: role `scheduler`
+### `email_send`: role `scheduler` (and `admin` for welcome emails)
 
 The app fills in each email from the templates and sends them ready to go. Body:
 
@@ -318,9 +320,14 @@ Up to 25 messages per call. For each message:
 
 Respond `{ "ok": true, "notices": [ …the new rows, same shape as Read… ] }`. One `Lotus_Audit` row per message (`After` without `Html`).
 
+**Welcome emails** (`"kind": "welcome"`, each message `"kind": "operator-welcome"`): the onboarding email an admin sends right after `user.create`, with the operator's username, **temp password** and an Open Lotus button. The app fills it in from the `operator-welcome` template.
+- Allowed for callers with `admin` (or `scheduler`). Exactly 1 message per call. `to` must be an active `Lotus_Users` operator whose `MustChangePassword` = Yes (a person who has already chosen their own password never gets a temp one by email), else 400.
+- The body holds a password, so: turn on **Secure inputs** for the HTTP trigger and **Secure inputs/outputs** for the send action (Settings › Security), so run history never shows it. Never write `html` anywhere: the `Lotus_Notices` row gets `Kind` = `operator-welcome`, `WeekStart` = today, `Subject`, `Test`, and an empty `Snapshot`; the `Lotus_Audit` row has no `Html` (as for every email).
+- `EmailTestMode` works as for every email: while Yes, it goes to the alias with the test line.
+
 ### `template_save`: role `scheduler`
 
-Body `{ "id", "subject", "html", "ready", "original"? }`. `id` must be one of the three template ids. Upsert `Lotus_Templates` by `Title` = `id`, set `UpdatedAt` and `UpdatedBy`. Respond `{ "template": { "id", "subject", "html", "original", "updatedAt", "updatedBy" } }`.
+Body `{ "id", "subject", "html", "ready", "original"? }`. `id` must be one of the four template ids. Upsert `Lotus_Templates` by `Title` = `id`, set `UpdatedAt` and `UpdatedBy`. Respond `{ "template": { "id", "subject", "html", "original", "updatedAt", "updatedBy" } }`.
 
 ### `client`: role `approver` or `scheduler`
 
@@ -375,6 +382,9 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 14. As a non-admin, call `user.list` or `user.create`: 403. As an admin, `user.create` on an operator imported by `users_upsert` (no password yet) gives that same row a sign-in; a second `user.create` for them gets 409.
 15. After `user.create` or `user.reset`, signing in works but Read answers 403 `Choose your own password first.` until `change-password` succeeds. `user.reset` and `user.update` with `active` = false sign the person out (their old token gets 401).
 16. `signout` clears the token: the same token on Read gets 401. A token older than 12 hours gets 401.
+16a. After `user.create`, set that row's `TempExpires` to yesterday by hand: `signin` with the right temp password gets 401 `This temp password has expired…`. `user.reset` makes it work again.
+16b. As a scheduler, `shift_upsert` an operator whose `HomeLocation` = `MTV` with `location` = `RED`: 400 and nothing saved. As that operator, `punch` in with `location` = `RED`: 403 `code` = `lab`.
+16c. As an admin, `email_send` a welcome to an operator who must change their password: it arrives (at the alias in test mode), the notice row has no HTML, and the run history shows the inputs as secured. For an operator who already changed their password: 400.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:

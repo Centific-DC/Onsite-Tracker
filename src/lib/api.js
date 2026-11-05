@@ -1,4 +1,4 @@
-import { CFG, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationOfRobot } from './config.js';
+import { CFG, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationName, locationOfRobot } from './config.js';
 import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
@@ -188,7 +188,7 @@ let demoActor = 'demo';
 export const setDemoActor = (email) => { demoActor = email || 'demo'; };
 
 export const demo = {
-  KEY: 'lotus-demo-v3',
+  KEY: 'lotus-demo-v4',
   load() {
     let d = storage.get(this.KEY, null);
     if (!d) { d = seed(); storage.set(this.KEY, d); }
@@ -206,6 +206,9 @@ export const demo = {
     const shift = b.shiftId ? d.schedule.find((r) => r.id === b.shiftId) : null;
     // Same checks the Write flow makes, so demo behaves like live.
     if (b.type === 'in') {
+      const me = d.operators.find((o) => o.email === b.email);
+      const at = shift ? locOf(shift) : b.location;
+      if (me?.location && at && at !== me.location) { const e = new Error(`You can only clock in at ${locationName(me.location)}.`); e.code = 'lab'; throw e; }
       const c = clockInCheck(shift, new Date());
       if (!c.allowed) { const e = new Error(c.reason === 'early' ? `Clock-in opens at ${c.window.opensAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'That shift has ended'); e.code = c.reason; throw e; }
       b = { ...b, grace: c.grace };
@@ -226,6 +229,11 @@ export const demo = {
   },
   upsertShifts(shifts) {
     const d = this.load();
+    for (const s of shifts) {
+      const op = d.operators.find((o) => o.email === s.email);
+      const at = s.location || locOf(s);
+      if (op?.location && at && at !== op.location) throw new Error(`${op.name} works at ${locationName(op.location)} only.`);
+    }
     const out = shifts.map((s) => {
       const i = s.id ? d.schedule.findIndex((r) => r.id === s.id) : -1;
       const r = normShift({ ...s, id: s.id || `S-${crypto.randomUUID().slice(0, 8)}`, location: s.location || locOf(s) });
@@ -386,9 +394,9 @@ function seed() {
   const sky = op('Sky Patel');
   punch(at(fri, '12:05'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'in');
   punch(at(fri, '15:10'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'out');
-  // Next week: Morgan picks up extra mornings (over 37 hrs), and Alex is double-booked across labs.
+  // Next week: Morgan picks up extra mornings (over 37 hrs). Nobody works at both
+  // labs: each operator stays at their home lab.
   for (let i = 0; i < 3; i++) book(dayKey(addDays(wk0, 7 + i)), 'Morgan Diaz', R.robots[0], tpl(R, 0), 'Extra cover');
-  book(dayKey(addDays(wk0, 8)), 'Alex Moreno', R.robots[1] || R.robots[0], tpl(R, 1), 'Cover');
 
   punches.sort((x, y) => x.ts.localeCompare(y.ts));
   // Last week Monday to Wednesday approved already; the rest waits for review.

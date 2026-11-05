@@ -10,6 +10,7 @@ import { APP_URL } from '../config.js';
 export const TEMPLATES = [
   { id: 'operator-schedule', audience: 'operator', name: 'Weekly schedule', when: 'Sent from Schedule before the week starts', sentBy: 'app' },
   { id: 'operator-schedule-update', audience: 'operator', name: 'Schedule change', when: 'Sent from Schedule when shifts change after the first email', sentBy: 'app' },
+  { id: 'operator-welcome', audience: 'operator', name: 'Welcome and sign-in', when: 'Sent when an admin adds an operator or sets up their sign-in', sentBy: 'app' },
   { id: 'approver-weekly', audience: 'approver', name: 'Approvals due Monday', when: 'Sent automatically every Monday at 8:00 AM', sentBy: 'flow' },
 ];
 
@@ -56,6 +57,23 @@ const update = [
   sign('Thank you,'),
 ].join('');
 
+const welcome = [
+  h1('Welcome to Project Lotus'),
+  paragraph(`Hi ${strongField('operatorFirstName')},`),
+  paragraph(`Your Lotus sign-in is ready. You'll use Lotus to clock in and out of your shifts at ${strongField('labName')} and to see your schedule and hours.`),
+  detailsCard([
+    ['Username', fieldChip('signInUsername')],
+    ['Temp password', fieldChip('tempPassword')],
+    ['Use it by', fieldChip('tempExpires')],
+  ]),
+  callout('Your first sign-in', [
+    `${strong('Choose your own password')} when Lotus asks. The temp password above works once and stops working after ${strong('7 days')}.`,
+    `${strong('Keep it to yourself.')} Nobody from the team will ever ask you for your password. If it has expired, reply to this email for a new one.`,
+  ]),
+  button('Open Lotus', APP_URL),
+  sign('Welcome aboard,'),
+].join('');
+
 const approver = [
   h1('Timesheets are ready to approve'),
   paragraph(`Hi ${strongField('approverFirstName')},`),
@@ -74,6 +92,7 @@ const approver = [
 export const DEFAULT_CONTENT = {
   'operator-schedule': { subject: 'Your Lotus schedule for {weekRange}', html: schedule, updatedAt: null, updatedBy: null },
   'operator-schedule-update': { subject: 'Updated: your Lotus schedule for {weekRange}', html: update, updatedAt: null, updatedBy: null },
+  'operator-welcome': { subject: 'Welcome to Lotus: your sign-in', html: welcome, updatedAt: null, updatedBy: null },
   'approver-weekly': { subject: 'Lotus timesheets for {reviewWeek} are ready to approve', html: approver, updatedAt: null, updatedBy: null },
 };
 
@@ -81,5 +100,6 @@ export const DEFAULT_CONTENT = {
 export const TEMPLATE_FIELDS = {
   'operator-schedule': ['operatorName', 'operatorFirstName', 'weekRange', 'labName', 'shiftCount', 'scheduledHours', 'shiftTable'],
   'operator-schedule-update': ['operatorName', 'operatorFirstName', 'weekRange', 'labName', 'shiftCount', 'scheduledHours', 'shiftTable', 'changeList'],
+  'operator-welcome': ['operatorName', 'operatorFirstName', 'labName', 'signInUsername', 'tempPassword', 'tempExpires'],
   'approver-weekly': ['approverFirstName', 'reviewWeek', 'openDays'],
 };

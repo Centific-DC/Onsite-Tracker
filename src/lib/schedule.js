@@ -103,7 +103,8 @@ export function unscheduledIns(schedule, punches) {
 // see every shift, so the names come from the schedule itself. Names only, never
 // anyone else's times, hours or clock-ins.
 export function partnersOf(data, shift) {
-  if (!shift?.id) return [];
+  // A shift with no robot set has no partners (the Read flow does the same).
+  if (!shift?.id || !shift.station) return [];
   const { start, end } = shiftTimes(shift);
   const loc = shift.location || '';
   const fromSchedule = (data.schedule || [])

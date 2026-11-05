@@ -26,3 +26,9 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 );
+
+// Installable app (PWA): the service worker caches only the app's own files, never
+// live data. Built site only, so the dev server always serves fresh code.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  addEventListener('load', () => { navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' }).catch(() => {}); });
+}

@@ -21,11 +21,17 @@ export const FIELDS = {
   changeList: { label: 'What changed', block: true },
   reviewWeek: { label: 'Review week' },
   openDays: { label: 'Operator-days to approve' },
+  // The onboarding email. `secret` fields only ever go in the body of the one
+  // email being sent: never in a subject, a saved notice or the audit.
+  signInUsername: { label: 'Username' },
+  tempPassword: { label: 'Temp password', secret: true },
+  tempExpires: { label: 'Temp password expires' },
 };
 export const FIELD_IDS = Object.keys(FIELDS);
 export const FIELD_LABEL = Object.fromEntries(FIELD_IDS.map((id) => [id, FIELDS[id].label]));
 export const isFieldId = (v) => typeof v === 'string' && Object.hasOwn(FIELDS, v);
 export const isBlockField = (id) => Boolean(FIELDS[id]?.block);
+export const isSecretField = (id) => Boolean(FIELDS[id]?.secret);
 
 /** Default styles for bare tags (from the editor's block menu or a paste). */
 export const TAG_STYLE = {

@@ -8,6 +8,7 @@ const KEY = 'lotus-local-users-v1';
 const LOCK_AFTER = 5;
 const LOCK_MS = 15 * 60 * 1000;
 const TOKEN_MS = 12 * 60 * 60 * 1000;
+const TEMP_MS = 7 * 24 * 60 * 60 * 1000; // temp passwords from an admin (match TEMP_DAYS in email/welcome.js)
 /** What "salt" answers for an unknown username, so the reply doesn't reveal who has an account. */
 const FAKE_SALT = 'THf0dXNVbmtub3duU2FsdA==';
 export const AUTH_ROLES = ['operator', 'scheduler', 'approver', 'reporting', 'admin'];
@@ -81,6 +82,8 @@ export function localAuth(req) {
         save(users);
         return refuse(401, wrong);
       }
+      // A temp password stops working TEMP_MS after an admin set it.
+      if (u.mustChangePassword && u.tempExpires && Date.parse(u.tempExpires) < now) return refuse(401, 'This temp password has expired. Ask your admin for a new one.');
       Object.assign(u, { token: newToken(), tokenExpires: new Date(now + TOKEN_MS).toISOString(), failedCount: 0, lockedUntil: null, lastSignIn: new Date(now).toISOString() });
       save(users);
       return reply(200, { ok: true, token: u.token, expiresAt: u.tokenExpires, user: pick(u) });
@@ -89,7 +92,7 @@ export function localAuth(req) {
       const u = caller(req.token);
       if (u.status) return u;
       if (req.currentHash !== u.hash) return refuse(401, 'Your current password is wrong.');
-      Object.assign(u, { salt: req.newSalt, hash: req.newHash, mustChangePassword: false });
+      Object.assign(u, { salt: req.newSalt, hash: req.newHash, mustChangePassword: false, tempExpires: null });
       save(users);
       return reply(200, { ok: true, user: pick(u) });
     }
@@ -115,7 +118,7 @@ export function localAuth(req) {
       users.push({
         username: String(n.username).trim(), email: low(n.email), name: String(n.name || '').trim(), roles, operatorId: n.operatorId || '',
         active: true, mustChangePassword: true, lastSignIn: null, lockedUntil: null,
-        salt: req.salt, hash: req.hash, failedCount: 0, token: null, tokenExpires: null,
+        salt: req.salt, hash: req.hash, failedCount: 0, token: null, tokenExpires: null, tempExpires: new Date(now + TEMP_MS).toISOString(),
       });
       save(users);
       return reply(200, { ok: true });
@@ -147,7 +150,7 @@ export function localAuth(req) {
       if (a.status) return a;
       const u = find(req.username);
       if (!u) return refuse(404, 'No sign-in with that username.');
-      Object.assign(u, { salt: req.salt, hash: req.hash, mustChangePassword: true, failedCount: 0, lockedUntil: null, token: null, tokenExpires: null });
+      Object.assign(u, { salt: req.salt, hash: req.hash, mustChangePassword: true, tempExpires: new Date(now + TEMP_MS).toISOString(), failedCount: 0, lockedUntil: null, token: null, tokenExpires: null });
       save(users);
       return reply(200, { ok: true });
     }

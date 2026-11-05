@@ -1,4 +1,4 @@
-import { FIELD_LABEL, FONT, TAG_STYLE, isBlockField, isFieldId } from './blocks.js';
+import { FIELD_LABEL, FONT, TAG_STYLE, isBlockField, isFieldId, isSecretField } from './blocks.js';
 import { LIGHT, toDark } from './palette.js';
 
 // Turning a template into an email, as in Project Atlas: clean what the editor
@@ -115,6 +115,7 @@ export function fillFields(html, values) {
 export function fillSubject(subject, values) {
   return subject.replace(/\{(\w+)\}/g, (whole, id) => {
     if (!isFieldId(id) || isBlockField(id)) return whole;
+    if (isSecretField(id)) return ''; // a password never goes in a subject line
     return String(values[id] ?? '').trim() || `[${FIELD_LABEL[id]}]`;
   });
 }

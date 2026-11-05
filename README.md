@@ -38,6 +38,12 @@ The flow trigger URLs are secrets: anyone holding one can call the flow. They ne
 
 Leave `authUrl`, `readUrl` and `writeUrl` empty in `public/config.js`; the Render server fills them in with its own addresses. Run it locally with `npm run build && npm start`.
 
+## Install as an app
+
+Lotus is an installable web app (PWA). On a phone, open the site and choose **Add to Home Screen** (Safari) or **Install app** (Chrome). On a desktop, use the install icon in Chrome or Edge's address bar. It opens in its own window with the Centific icon.
+
+`public/sw.js` caches only the app's own files, so the app opens without a connection. Live data (`api/*`, every POST) and `version.json` always come from the network. `config.js` is fetched fresh and kept only as an offline fallback. The worker runs only in the built site, not on the dev server.
+
 ## Design
 
 - [PRODUCT.md](PRODUCT.md): who it's for and the product rules.
