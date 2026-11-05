@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { LOCATIONS, locationById, locationOfRobot } from '../lib/config.js';
 import { buildSessions } from '../lib/hours.js';
-import { checkNewShift, isNew, sharesShift } from '../lib/rules.js';
+import { checkNewShift, homeLabProblem, isNew, sharesShift } from '../lib/rules.js';
 import { fmtDay, fmtTime, mondayOf, parseDay } from '../lib/time.js';
 import { shiftTimes } from '../lib/schedule.js';
 import { Group, Select, Sheet } from './ui.jsx';
@@ -39,7 +39,8 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
   const end = tpl ? tpl.end : f.end;
   const booked = new Set((data.schedule || []).filter((r) => r.date === f.date).map((r) => r.email));
   const ops = (data.operators || []).filter((o) => o.active !== false && (o.roles || ['operator']).includes('operator') && !booked.has(o.email));
-  const choices = [...ops.filter((o) => o.location === f.location), ...ops.filter((o) => o.location !== f.location)];
+  // Only operators whose home lab is this lab (or who have none set yet): nobody works at both labs.
+  const choices = [...ops.filter((o) => o.location === f.location), ...ops.filter((o) => !o.location)];
   const { sessions } = useMemo(() => buildSessions(data.punches), [data.punches]);
   // Who is already on this robot at this time. If they're all new, the next one
   // must be experienced, so experienced operators are listed first.
@@ -51,13 +52,15 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
   const changeLocation = (v) => {
     const NL = locationById(v);
     setWarn(null);
-    setF((x) => ({ ...x, location: NL.id, station: NL.robots[0], template: NL.templates[0]?.id || CUSTOM }));
+    setF((x) => ({ ...x, location: NL.id, station: NL.robots[0], template: NL.templates[0]?.id || CUSTOM, who: homeLabProblem({ email: x.who, location: NL.id }, data.operators) ? '' : x.who }));
   };
 
   const save = async () => {
     const person = (data.operators || []).find((o) => o.email === f.who);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date || '')) return setErr('Pick a date.');
     if (!person) return setErr('Pick an operator. New operators are added on Roster.');
+    const away = homeLabProblem({ email: person.email, location: f.location }, data.operators);
+    if (away) return setErr(away);
     if (!start || !end) return setErr('Add a start and end time.');
     const shift = { date: f.date, operatorId: person.id, name: person.name, email: person.email, location: L.id, station: f.station, template: tpl?.id || '', start, end, note: f.note.trim() };
     setErr('');
@@ -128,7 +131,7 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
             value={f.who || ''}
             onChange={set('who')}
             placeholder="Choose…"
-            options={sorted.map((p) => ({ value: p.email, label: `${p.name}${isNew(p, sessions) ? ' · New' : ''}${p.location !== f.location ? ` (${locationById(p.location)?.name || 'no home lab'})` : ''}` }))}
+            options={sorted.map((p) => ({ value: p.email, label: `${p.name}${isNew(p, sessions) ? ' · New' : ''}${!p.location ? ' (no home lab yet)' : ''}` }))}
           />
         </label>
         {partners.length > 0 && (

@@ -40,6 +40,19 @@ describe('sign-in', () => {
     expect(localAuth({ op: 'user.update', token, username: 'Lotus-admin', changes: { active: false } }).status).toBe(400);
   });
 
+  it('a temp password stops working after 7 days', async () => {
+    const { body: { token } } = await signIn('Lotus-admin', 'Testing12345');
+    localAuth({ op: 'user.create', token, user: { username: 'blair', email: 'blair@example.com', name: 'Blair', roles: ['operator'] }, ...(await saltedHash('Temp-pass-5678')) });
+    expect((await signIn('blair', 'Temp-pass-5678')).status).toBe(200);
+    const real = Date.now;
+    Date.now = () => real() + 8 * 864e5;
+    try {
+      const late = await signIn('blair', 'Temp-pass-5678');
+      expect(late.status).toBe(401);
+      expect(late.body.message || late.body.error).toMatch(/expired/);
+    } finally { Date.now = real; }
+  });
+
   it('wants passwords of at least 10 characters', () => {
     expect(passwordProblem('short', 'avery')).toMatch(/10/);
     expect(passwordProblem('a long enough sentence', 'avery')).toBeNull();

@@ -11,7 +11,7 @@ import { claimName } from '../lib/onboarding.js';
 import { dayKey, mondayOf, fmtHrsU } from '../lib/time.js';
 import { Avatar, Group, Row, Segmented, Select, Sheet, Tag } from '../components/ui.jsx';
 import * as auth from '../lib/auth/api.js';
-import { SignInFields, TempReveal, newSignIn, signInProblem, suggestUsername, useSignIns } from '../components/SignInSetup.jsx';
+import { SignInFields, TempReveal, WelcomeSwitch, newSignIn, signInProblem, suggestUsername, useSignIns, useWelcome } from '../components/SignInSetup.jsx';
 
 // An operator's sign-in, as admins see it on the Roster.
 function signInTag(u) {
@@ -148,9 +148,11 @@ function AddOperatorSheet({ open, onOpenChange, signIns }) {
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const [made, setMade] = useState(null); // { user, temp } once saved with a sign-in
+  const [made, setMade] = useState(null); // { user, temp, emailed } once saved with a sign-in
+  const [mail, setMail] = useState(true);
+  const welcome = useWelcome();
   const admin = signIns.admin;
-  useEffect(() => { if (open) { setF(blank()); setLogin(newSignIn()); setNote(''); setErr(''); setMade(null); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) { setF(blank()); setLogin(newSignIn()); setNote(''); setErr(''); setMade(null); setMail(true); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (k) => (e) => {
     const v = typeof e === 'string' ? e : e.target.value;
     setF((x) => ({ ...x, [k]: v }));
@@ -179,8 +181,10 @@ function AddOperatorSheet({ open, onOpenChange, signIns }) {
         return;
       }
       signIns.load();
+      let emailed = null;
+      if (mail) { try { emailed = await welcome(o, user.username, login.temp); } catch (e) { emailed = e.message || 'unknown error.'; } }
       toast.success(`Added ${o.name}`, { description: o.id });
-      setMade({ user, temp: login.temp });
+      setMade({ user, temp: login.temp, emailed });
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -190,7 +194,7 @@ function AddOperatorSheet({ open, onOpenChange, signIns }) {
   if (made) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange} title={made.user.name} description="Their sign-in">
-        <TempReveal user={made.user} temp={made.temp} onDone={() => onOpenChange(false)} />
+        <TempReveal user={made.user} temp={made.temp} emailed={made.emailed} onDone={() => onOpenChange(false)} />
       </Sheet>
     );
   }
@@ -205,6 +209,7 @@ function AddOperatorSheet({ open, onOpenChange, signIns }) {
       {admin && (
         <Group title="Sign-in" footer={err ? <span className="err" role="alert">{err}</span> : note ? <span role="status">{note}</span> : 'A random temp password is filled in; type your own if you like (at least 10 characters).'}>
           <SignInFields value={login} onChange={(v) => { setLogin(v); setErr(''); }} />
+          <WelcomeSwitch on={mail} onChange={setMail} email={f.email.trim()} />
         </Group>
       )}
     </Sheet>
@@ -217,7 +222,9 @@ function SetUpSignInSheet({ op, onClose, signIns }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState(null);
-  useEffect(() => { if (op) { setLogin(newSignIn(op.email)); setErr(''); setMade(null); } }, [op]);
+  const [mail, setMail] = useState(true);
+  const welcome = useWelcome();
+  useEffect(() => { if (op) { setLogin(newSignIn(op.email)); setErr(''); setMade(null); setMail(true); } }, [op]);
   const save = async () => {
     const p = signInProblem(login, signIns.users || []);
     if (p) return setErr(p.startsWith('Use') || p.startsWith('Don') ? `Temp password: ${p}` : p);
@@ -226,7 +233,9 @@ function SetUpSignInSheet({ op, onClose, signIns }) {
       const user = { username: login.username.trim(), email: op.email, name: op.name, roles: ['operator'], operatorId: op.id };
       await auth.createUser(signIns.token, user, login.temp);
       signIns.load();
-      setMade({ user, temp: login.temp });
+      let emailed = null;
+      if (mail) { try { emailed = await welcome(op, user.username, login.temp); } catch (e) { emailed = e.message || 'unknown error.'; } }
+      setMade({ user, temp: login.temp, emailed });
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -241,9 +250,10 @@ function SetUpSignInSheet({ op, onClose, signIns }) {
       description={made ? 'Their sign-in' : op ? `${op.id} · ${op.email}` : ''}
       footer={made ? undefined : <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Make sign-in'}</button>}
     >
-      {made ? <TempReveal user={made.user} temp={made.temp} onDone={onClose} /> : (
+      {made ? <TempReveal user={made.user} temp={made.temp} emailed={made.emailed} onDone={onClose} /> : (
         <Group footer={err ? <span className="err" role="alert">{err}</span> : 'They sign in with these, then choose their own password.'}>
           <SignInFields value={login} onChange={(v) => { setLogin(v); setErr(''); }} />
+          <WelcomeSwitch on={mail} onChange={setMail} email={op?.email} />
         </Group>
       )}
     </Sheet>

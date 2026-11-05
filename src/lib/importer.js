@@ -151,7 +151,8 @@ export function planScheduleImport(text, operators, schedule) {
       if ((!start || !end) && byLabel) { start = byLabel.start; end = byLabel.end; }
     }
     const station = robot && locationOfRobot(robot) ? robot : LOCATIONS.find((l) => l.id === loc)?.robots[0] || '';
-    const why = !date ? 'No date' : !op ? `Unknown operator ${email || name}` : !start || !end ? 'No start or end time' : !loc ? 'No location' : '';
+    const away = op?.location && loc && loc !== op.location ? `${op.name} works at ${LOCATIONS.find((l) => l.id === op.location)?.name || op.location} only` : '';
+    const why = !date ? 'No date' : !op ? `Unknown operator ${email || name}` : !start || !end ? 'No start or end time' : !loc ? 'No location' : away;
     if (why) { plan.skip.push({ line: i + 2, name: name || email, reason: why }); continue; }
     const template = LOCATIONS.find((l) => l.id === loc)?.templates.find((t) => t.start === start && t.end === end)?.id || '';
     const shift = { date, name: op.name, email: op.email, operatorId: op.id, location: loc, station, start, end, template, note: 'Imported' };

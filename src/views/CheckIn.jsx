@@ -269,12 +269,14 @@ function Person({ person, onDone, laptop }) {
 
       <WeekWell hours={week.recorded} />
       <div className="op-foot">{signOutLink}</div>
-      <OffShiftSheet open={offShift} onOpenChange={setOffShift} busy={busy} onConfirm={(loc, station) => doPunch('in', { location: loc, station })} />
+      <OffShiftSheet open={offShift} onOpenChange={setOffShift} busy={busy} home={(data.operators || []).find((o) => o.email === person.email)?.location || data.me?.location || ''} onConfirm={(loc, station) => doPunch('in', { location: loc, station })} />
     </div>
   );
 }
 
-function OffShiftSheet({ open, onOpenChange, onConfirm, busy }) {
+// Only the operator's home lab: nobody works at both labs.
+function OffShiftSheet({ open, onOpenChange, onConfirm, busy, home }) {
+  const labs = LOCATIONS.filter((l) => !home || l.id === home);
   const [pick, setPick] = useState('');
   useEffect(() => { if (open) setPick(''); }, [open]);
   return (
@@ -282,10 +284,10 @@ function OffShiftSheet({ open, onOpenChange, onConfirm, busy }) {
       open={open}
       onOpenChange={onOpenChange}
       title="Clock in without a shift"
-      description="Pick where you are. Your manager reviews time with no shift before it counts."
+      description={`Pick your robot${home ? ` at ${labs[0]?.name}` : ''}. Your manager reviews time with no shift before it counts.`}
       footer={<button type="button" className="btn btn-primary btn-block" disabled={!pick || busy} onClick={() => { const [l, s] = pick.split('|'); onConfirm(l, s); }}>{busy ? 'Saving…' : 'Clock in'}</button>}
     >
-      {LOCATIONS.map((l) => (
+      {labs.map((l) => (
         <Group key={l.id} title={l.name}>
           <div className="robots" role="radiogroup" aria-label={`${l.name} robot`}>
             {l.robots.map((s) => (

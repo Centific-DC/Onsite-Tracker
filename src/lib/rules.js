@@ -94,6 +94,20 @@ export function conflicts(schedule) {
   return out;
 }
 
+// Each operator works at their home lab only: the labs are far apart, so nobody
+// is booked at the other one (user rule, 2026-11-05). An operator with no home lab
+// set yet can go anywhere until one is set on Roster.
+export function homeLabProblem(shift, operators) {
+  const op = (operators || []).find((o) => o.email === shift.email);
+  if (!op?.location || !locOf(shift) || locOf(shift) === op.location) return '';
+  return `${op.name} works at ${locationById(op.location)?.name || op.location} only. Each operator works at their home lab.`;
+}
+
+/** Booked shifts at a lab other than the operator's home lab. */
+export function wrongLab(schedule, operators) {
+  return (schedule || []).filter((r) => homeLabProblem(r, operators)).map((r) => ({ kind: 'wrong_lab', date: r.date, name: r.name, email: r.email, ids: [r.id] }));
+}
+
 // Warnings for a shift about to be saved, so the scheduler sees them before booking.
 export function checkNewShift(shift, schedule, operators, sessions, wk0) {
   const id = shift.id || '__new__';
