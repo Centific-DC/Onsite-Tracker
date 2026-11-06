@@ -4,6 +4,7 @@ import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
 import { openSpots, samePair } from './schedule.js';
+import { writeFlowName, writeUrlFor } from './routes.js';
 
 export const storage = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -25,7 +26,11 @@ export function errorText(out, status) {
 let onSignedOut = () => {};
 export const whenSignedOut = (fn) => { onSignedOut = fn; };
 
+// Write calls go to the op's one-job flow when its URL is set, else to Write (routes.js).
 async function paPost(url, body) {
+  if (url === WRITE_URL) {
+    return timed(`${writeFlowName(body, CFG)} · ${body.action || 'call'}`, paPostChecked(writeUrlFor(body, CFG, WRITE_URL), body));
+  }
   return timed(`${url === READ_URL ? 'Read' : 'Write'} · ${body.action || 'call'}`, paPostChecked(url, body));
 }
 

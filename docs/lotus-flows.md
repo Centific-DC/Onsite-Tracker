@@ -30,6 +30,18 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
     - Under 3 s: `signin`, `salt`, a one-user `users_upsert`, `user.create`, `user.reset_link`, `reset`, one welcome or reset `email_send`, `punch`, `fill_in`.
     - Under 5 s: Read for an operator; under 10 s: Read `all` for staff; under 15 s: a 20-row `users_upsert` or a 10-message `email_send`.
     - **The app never waits on Write for everyday edits** (the Atlas pattern, 2026-11-05). Shift adds and changes, shift deletes, edits to people already on the roster, flag decisions and the client's successful hours show at once and go through a save queue in the browser, up to 3 calls at a time, retried after 5, 15, 30, 60 and 120 s on no answer, 429, 5xx or 503. So each of these must be safe to receive twice: `shift_delete` of a missing id is 200, `users_upsert` matches by email, `resolve_flag` replaces by key, `client` replaces by week. For new shifts (no `id`) the app checks a fresh Read before resending after a timeout or 502/504, so it doesn't book a shift twice. A 4xx other than 401/408/429 is final, and the app undoes the change on screen. Approvals, clock-ins, fill-ins, new users, imports and emails are not queued: those still wait for the flow's answer.
+    - **One-job flows** (2026-11-06). Each takes the same `text/plain` body and token and answers the same way as Write (or Auth) for its op; only the URL changes. The app picks the flow by op (src/lib/routes.js); a flow whose secret is unset falls back to Write, and the reset ops fall back to Auth. URLs come only from these Actions secrets, filled into the built config.js:
+        | Op | Flow | Actions secret | Config key |
+        |---|---|---|---|
+        | `users_upsert` with 1 user | Save User | `LOTUS_SAVE_USER_URL` | `saveUserUrl` |
+        | `users_upsert` with 2+ users | Save Users | `LOTUS_SAVE_USERS_URL` | `saveUsersUrl` |
+        | `shift_upsert` | Save Shift | `LOTUS_SAVE_SHIFT_URL` | `saveShiftUrl` |
+        | `shift_delete` | Delete Shift | `LOTUS_DELETE_SHIFT_URL` | `deleteShiftUrl` |
+        | `email_send` | Send Email | `LOTUS_SEND_EMAIL_URL` | `sendEmailUrl` |
+        | `change-password`, `user.reset`, `user.reset_link`, `reset` (Auth ops) | Reset Password | `LOTUS_RESET_PASSWORD_URL` | `resetPasswordUrl` |
+        | `fill_in`, `punch` | Fill In (not live yet: stays on Write) | none yet | `fillInUrl` |
+
+        Everything else (`resolve_flag`, `approve_day`, `reopen_day`, `template_save`, `client`) stays on Write, and sign-in, accounts and activate/deactivate stay on Auth. Fill In's test-only `undo_punch` is never called by the app.
     - The app sends a roster import as `users_upsert` calls of at most 5 users, and a schedule import as `shift_upsert` calls of at most 25 shifts, one call after another, so no single call nears the flow's 2-minute limit. Each call must still be idempotent by email (users) or id (shifts).
     - How:
         - *Get items* with a `$filter` and `Top Count` (1 when looking up one row), never a whole list just to find one row.
