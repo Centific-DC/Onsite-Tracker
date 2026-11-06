@@ -46,6 +46,7 @@ function useSamples(data, session, testMode) {
 export function Emails() {
   const data = useStore((s) => s.data);
   const session = useStore((s) => s.session);
+  const background = useStore((s) => s.background);
   const canEdit = !!session?.roles?.includes('scheduler');
   const testMode = data?.emailTestMode !== false;
   const store = useTemplates();
@@ -56,7 +57,6 @@ export function Emails() {
   const [personId, setPersonId] = useState('');
   const [draft, setDraft] = useState(null);
   const [editorKey, setEditorKey] = useState(0);
-  const [busy, setBusy] = useState(false);
   const [logos, setLogos] = useState({ light: null, dark: null });
   const subjectRef = useRef(null);
 
@@ -106,19 +106,22 @@ export function Emails() {
   };
   const onBody = useCallback((html) => setDraft((d) => (d ? { ...d, html } : d)), []);
 
-  const save = async () => {
+  const save = () => {
     if (!draft) return;
     if (!draft.subject.trim()) { toast.error('Add a subject line.'); return; }
-    setBusy(true);
-    try {
-      await store.save(meta.id, draft);
-      setDraft(null);
-      toast.success(`${meta.name} saved`, { description: DEMO ? 'Demo mode: saved in this browser only.' : 'Everyone sending this email now uses the new version.' });
-    } catch (e) {
-      toast.error('Couldn’t save the template', { description: e.message || 'The images may be too large; try smaller ones.' });
-    } finally {
-      setBusy(false);
-    }
+    // The editor closes at once and the template saves in the background. If it
+    // fails, the toast can bring the draft back.
+    const kept = draft;
+    const name = meta.name;
+    setDraft(null);
+    background(`Saving ${name}`, () => store.save(meta.id, kept)).then(
+      () => toast.success(`${name} saved`, { description: DEMO ? 'Demo mode: saved in this browser only.' : 'Everyone sending this email now uses the new version.' }),
+      (e) => toast.error(`${name} didn’t save`, {
+        description: e.message || 'The images may be too large; try smaller ones.',
+        duration: 30000,
+        action: { label: 'Reopen draft', onClick: () => { setDraft(kept); setEditorKey((k) => k + 1); } },
+      }),
+    );
   };
 
   const cancel = () => {
@@ -228,7 +231,7 @@ export function Emails() {
               <div className="em-actions">
                 {store.isEdited(meta.id) && <button type="button" className="em-reset" onClick={reset}>Reset to original</button>}
                 <button type="button" className="btn btn-plain btn-sm" onClick={cancel}>Cancel</button>
-                <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={busy} aria-busy={busy || undefined}>Save template</button>
+                <button type="button" className="btn btn-primary btn-sm" onClick={save}>Save template</button>
               </div>
               <div className="em-subject-edit">
                 <label className="em-subject-field">

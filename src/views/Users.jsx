@@ -43,7 +43,7 @@ function RolePicker({ value, onChange, disabled }) {
 }
 
 export function Users() {
-  const { data, session } = useStore();
+  const { data, session, background } = useStore();
   const token = session?.token;
   const [users, setUsers] = useState(null);
   const [loadError, setLoadError] = useState('');
@@ -103,10 +103,13 @@ export function Users() {
             key="add"
             roster={noSignIn}
             taken={users || []}
-            onSave={async ({ temp, ...form }) => {
-              await auth.createUser(token, form, temp);
+            onSave={({ temp, ...form }) => {
+              // The temp password is chosen here, so it shows at once; the sign-in saves behind it.
               setSheet({ mode: 'temp', user: form, temp });
-              load();
+              background(`Adding ${form.name}’s sign-in`, () => auth.createUser(token, form, temp)).then(
+                () => { toast.success(`${form.name}’s sign-in is ready`); load(); },
+                (e) => toast.error(`${form.name}’s sign-in didn’t save`, { description: `${e.message} The temp password shown won’t work.`, duration: 20000 }),
+              );
             }}
           />
         )}
@@ -116,33 +119,41 @@ export function Users() {
             user={editing}
             self={editing.username === session?.username}
             taken={users || []}
-            onSave={async (form) => {
+            onSave={(form) => {
               const changes = {};
               if (form.name !== editing.name) changes.name = form.name;
               if (form.username !== editing.username) changes.username = form.username;
               if (form.roles.join() !== editing.roles.join()) changes.roles = form.roles;
-              if (Object.keys(changes).length) await auth.updateUser(token, editing.username, changes);
-              toast.success(`${form.name} saved`);
               setSheet(null);
-              load();
+              if (!Object.keys(changes).length) return;
+              const was = editing;
+              background(`Saving ${form.name}`, () => auth.updateUser(token, was.username, changes)).then(
+                () => { toast.success(`${form.name} saved`); load(); },
+                (e) => toast.error(`Changes to ${was.name} didn’t save`, { description: e.message, duration: 20000 }),
+              );
             }}
             onReset={() => setSheet({ mode: 'reset', username: editing.username })}
             onLink={() => { setLinking(editing); setSheet(null); }}
-            onToggle={async () => {
-              await auth.updateUser(token, editing.username, { active: !editing.active });
-              toast.success(editing.active ? `${editing.name} can no longer sign in` : `${editing.name} can sign in again`);
+            onToggle={() => {
+              const was = editing;
               setSheet(null);
-              load();
+              background(was.active ? `Turning off ${was.name}’s sign-in` : `Turning on ${was.name}’s sign-in`, () => auth.updateUser(token, was.username, { active: !was.active })).then(
+                () => { toast.success(was.active ? `${was.name} can no longer sign in` : `${was.name} can sign in again`); load(); },
+                (e) => toast.error(`${was.name}’s sign-in didn’t change`, { description: e.message, duration: 20000 }),
+              );
             }}
           />
         )}
         {sheet?.mode === 'reset' && editing && (
           <ResetForm
             user={editing}
-            onReset={async (temp) => {
-              await auth.resetUser(token, editing.username, temp);
-              setSheet({ mode: 'temp', user: editing, temp });
-              load();
+            onReset={(temp) => {
+              const was = editing;
+              setSheet({ mode: 'temp', user: was, temp });
+              background(`Setting ${was.name}’s temp password`, () => auth.resetUser(token, was.username, temp)).then(
+                () => { toast.success(`${was.name}’s temp password is set`); load(); },
+                (e) => toast.error(`${was.name}’s temp password didn’t save`, { description: `${e.message} Their old password still works.`, duration: 20000 }),
+              );
             }}
           />
         )}

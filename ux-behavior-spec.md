@@ -217,6 +217,7 @@ The filter menu is the reference ("liquid glass"):
 
 **Saving and inline notes**
 - After an edit: an inline "Saved: <value>" note with an **Undo** link, fading in and out in place (180ms, no slide).
+- **Nobody waits on a save** (Lotus, 2026-11-06). Sheets close and the change shows at once; the work runs in the background while people keep navigating. The header sync button shows the four-dot glyph with "Saving N…" (or the one job's own words, like "Approving 37 days · 9 of 37…") and stays clickable. A failure is a toast that says what didn't save and why. Things that only count once the server confirms them (approvals) say "Approving…" on their row until then. Closing the tab mid-save asks first.
 
 ---
 

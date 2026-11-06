@@ -119,27 +119,29 @@ function Person({ person, onDone, laptop }) {
   const early = open && (times ? now < new Date(times.end.getTime() - CFG.earlyGraceMinutes * 6e4) : elapsed < CFG.shiftHours - CFG.earlyGraceMinutes / 60);
   const past = times && now > times.end;
 
-  async function doPunch(type, extra = {}) {
-    setBusy(true);
+  // The punch shows at once and the flow records it in the background with the
+  // server's time. If the flow turns it down, the screen goes back and says why.
+  function doPunch(type, extra = {}) {
     setErr('');
-    try {
-      const p = await punch({ type, name: person.name, email: person.email, operatorId: person.operatorId, device: laptop ? 'laptop' : 'phone', source: laptop ? 'laptop' : 'phone', ...extra });
-      const t = new Date(p.ts);
-      toast.success(type === 'in' ? `Clocked in at ${fmtTime(t)}` : `Clocked out at ${fmtTime(t)}`, {
-        description: type === 'out' && extra.flag ? (DEMO ? 'Demo mode: no email was sent to your manager.' : 'Your manager has been told.') : p.grace ? `${p.grace} min before your shift, logged for review.` : undefined,
+    const who = person.name;
+    const { shown, saved } = punch({ type, name: person.name, email: person.email, operatorId: person.operatorId, device: laptop ? 'laptop' : 'phone', source: laptop ? 'laptop' : 'phone', ...extra });
+    const t = new Date(shown.ts);
+    // On a phone a clock-in goes straight to the running timer; the laptop shows a
+    // confirmation and signs out for the next operator.
+    if (type === 'out' || laptop) onDone({ type, at: t, since, station: shown.station || open?.station, location: shown.location, name: person.name, hours: type === 'out' ? (t - since) / 36e5 : 0, early: !!extra.flag, grace: 0, week: week.recorded + (type === 'out' ? (t - since) / 36e5 : 0), pending: true });
+    setAskReason(false);
+    setReason('');
+    setOffShift(false);
+    saved.then((p) => {
+      const at = new Date(p.ts);
+      toast.success(type === 'in' ? `${laptop ? `${who}: c` : 'C'}locked in at ${fmtTime(at)}` : `${laptop ? `${who}: c` : 'C'}locked out at ${fmtTime(at)}`, {
+        description: type === 'out' && extra.flag ? (DEMO ? 'Demo mode: no email was sent to your manager.' : 'Your manager has been told.') : p.grace ? `${p.grace} min before your shift, logged for review.` : 'Saved.',
       });
-      // On a phone a clock-in goes straight to the running timer; the laptop shows a
-      // confirmation and signs out for the next operator.
-      if (type === 'out' || laptop) onDone({ type, at: t, since, station: p.station, location: p.location, name: person.name, hours: type === 'out' ? (t - since) / 36e5 : 0, early: !!extra.flag, grace: p.grace, week: week.recorded + (type === 'out' ? (t - since) / 36e5 : 0) });
-      setAskReason(false);
-      setReason('');
-      setOffShift(false);
-    } catch (e) {
-      setErr(e.code === 'early' || e.code === 'over' ? e.message : `Didn't save: ${e.message}. Try again, or tell your lead the time.`);
-      toast.error(e.code === 'early' ? 'Too early to clock in' : "That didn't save", { description: e.message });
-    } finally {
-      setBusy(false);
-    }
+    }, (e) => {
+      const why = e.code === 'early' || e.code === 'over' ? e.message : `${e.message}. Try again, or tell your lead the time.`;
+      setErr(`Didn't save: ${why}`);
+      toast.error(e.code === 'early' ? `Too early to clock in${laptop ? `, ${firstName(who)}` : ''}` : `${laptop ? `${who}’s ` : 'Your '}${type === 'in' ? 'clock-in' : 'clock-out'} didn't save`, { description: why, duration: 15000 });
+    });
   }
 
   const signOutLink = <button type="button" className="op-link" onClick={signOut}>{laptop ? `Not ${firstName(person.name)}? Sign out` : 'Sign out'}</button>;
@@ -165,7 +167,7 @@ function Person({ person, onDone, laptop }) {
         ) : (
           <>
             <Pill tone="green" className="op-badge"><span className="op-dot is-green op-pulse" />Clocked in</Pill>
-            <Label className="op-center">On the clock since {fmtTime(since)} · {open.station}{shift && partnersOf(data, shift).length ? ` · with ${andList(partnersOf(data, shift))}` : ''}</Label>
+            <Label className="op-center">{open.pending ? 'Saving your clock-in · ' : ''}On the clock since {fmtTime(since)} · {open.station}{shift && partnersOf(data, shift).length ? ` · with ${andList(partnersOf(data, shift))}` : ''}</Label>
             <Dial value={shift ? elapsedMs / lengthMs : 0} tone="green" onClick={clockOut} busy={busy} label={`Clock out. ${main} on the clock`}>
               <div className="op-timer op-num" aria-live="off">{main}<span className="op-timer-sec">{sec}</span></div>
               <Label>{shift ? `of ${clockParts(lengthMs)[0]} shift` : 'Not on the schedule'}</Label>
@@ -233,10 +235,11 @@ function Person({ person, onDone, laptop }) {
     try {
       const r = await fillIn(spot.shiftId);
       setRobotFor(null);
-      await doPunch('in', { shiftId: r.id, location: locOf(r), station: station || r.station || robotsAt(locOf(r))[0] || '' });
+      doPunch('in', { shiftId: r.id, location: locOf(r), station: station || r.station || robotsAt(locOf(r))[0] || '' });
     } catch (e) {
       setErr(`Didn't save: ${e.message}`);
       toast.error("Couldn't take that spot", { description: e.message });
+    } finally {
       setBusy(false);
     }
   };
@@ -472,6 +475,7 @@ function Done({ done, onNext, laptop }) {
       <span className={clsx('op-medal', done.early && 'is-red')}><Check size={36} strokeWidth={2.5} aria-hidden="true" /></span>
       <h1 className="op-h1 op-center">{out ? 'Shift logged' : 'Clocked in'}</h1>
       <p className="op-body op-center">{fmtLongDay(done.at)} · {locationName(done.location)} · {done.station}</p>
+      {done.pending && <p className="op-body op-small-body op-center" role="status">Saving in the background. Lotus records the exact time as it arrives.</p>}
       {out ? (
         <Well className="op-total-well">
           <Label>Time on the clock</Label>

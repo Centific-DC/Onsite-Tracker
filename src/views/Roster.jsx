@@ -119,41 +119,37 @@ const USER_BATCH = 5;
 const SHIFT_BATCH = 25;
 
 function ImportSheet({ open, onOpenChange }) {
-  const { data, upsertUsers, importShifts } = useStore();
+  const { data, upsertUsers, importShifts, background } = useStore();
   const [kind, setKind] = useState('roster');
   const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(null);
   useEffect(() => { if (open) setText(''); }, [open]);
   const plan = useMemo(() => {
     if (!text.trim()) return null;
     return kind === 'roster' ? planRosterImport(text, data.operators, dayKey(new Date())) : planScheduleImport(text, data.operators, data.schedule);
   }, [text, kind, data.operators, data.schedule]);
   const file = async (e) => { const f = e.target.files?.[0]; if (f) setText(await f.text()); };
-  const save = async () => {
-    // Small batches, one after another: each Write call stays well under the flow's
-    // two-minute limit however long the sheet is, and a failure says how far it got.
+  // The sheet closes at once; the import runs in the background in small batches
+  // (each Write call stays well under the flow's two-minute limit), with the count
+  // in the header, and a toast says how far it got if it stops.
+  const save = () => {
     const rows = kind === 'roster' ? [...plan.add, ...plan.update].map(({ changed, ...o }) => o) : [...plan.add, ...plan.update]; // eslint-disable-line no-unused-vars
     const size = kind === 'roster' ? USER_BATCH : SHIFT_BATCH;
+    const what = kind;
+    const counts = { add: plan.add.length, update: plan.update.length, skip: plan.skip.length };
     let saved = 0;
-    setBusy(true);
-    setDone({ n: 0, of: rows.length });
-    try {
+    background(`Importing ${rows.length} ${what === 'roster' ? 'operators' : 'shifts'}`, async (note) => {
       for (let i = 0; i < rows.length; i += size) {
         const part = rows.slice(i, i + size);
-        if (kind === 'roster') await upsertUsers(part);
+        if (what === 'roster') await upsertUsers(part);
         else await importShifts(part);
         saved += part.length;
-        setDone({ n: saved, of: rows.length });
+        note(`${saved} of ${rows.length}`);
       }
-      toast.success(`Imported ${plan.add.length} new, ${plan.update.length} updated`, { description: plan.skip.length ? `${plan.skip.length} rows skipped` : undefined });
-      onOpenChange(false);
-    } catch (e) {
-      toast.error("Import didn't finish", { description: `${saved} of ${rows.length} saved. ${e.message} Import the same file again to finish: saved rows show as up to date.` });
-    } finally {
-      setBusy(false);
-      setDone(null);
-    }
+    }).then(
+      () => toast.success(`Imported ${counts.add} new, ${counts.update} updated`, { description: counts.skip ? `${counts.skip} rows skipped` : undefined }),
+      (e) => toast.error("Import didn't finish", { description: `${saved} of ${rows.length} saved. ${e.message} Import the same file again to finish: saved rows show as up to date.`, duration: 20000 }),
+    );
+    onOpenChange(false);
   };
   const label = (x) => (kind === 'roster' ? `${x.name} · ${x.email}${x.changed ? ` · ${x.changed.join(', ')}` : ''}` : `${x.date} · ${x.name} · ${locationName(x.location)} ${x.station} · ${x.start}–${x.end}`);
   return (
@@ -162,7 +158,7 @@ function ImportSheet({ open, onOpenChange }) {
       onOpenChange={onOpenChange}
       title="Import from recruiting"
       description="Export the sheet as CSV, then upload or paste it. Columns are matched by their headers. Nothing is saved until you confirm."
-      footer={<button type="button" className="btn btn-primary btn-block" disabled={busy || !plan || plan.add.length + plan.update.length === 0} onClick={save}>{busy ? done ? `Saving… ${done.n} of ${done.of}` : 'Saving…' : plan ? `Import ${plan.add.length + plan.update.length} rows` : 'Import'}</button>}
+      footer={<button type="button" className="btn btn-primary btn-block" disabled={!plan || plan.add.length + plan.update.length === 0} onClick={save}>{plan ? `Import ${plan.add.length + plan.update.length} rows` : 'Import'}</button>}
     >
       <div className="pad">
         <Segmented label="What to import" value={kind} onChange={setKind} options={[{ value: 'roster', label: 'Active Roster 2' }, { value: 'schedule', label: 'Schedule' }]} />
@@ -183,13 +179,12 @@ function ImportSheet({ open, onOpenChange }) {
 }
 
 function AddOperatorSheet({ open, onOpenChange, signIns }) {
-  const { data, upsertUsers } = useStore();
+  const { data, upsertUsers, background } = useStore();
   const blank = () => ({ name: '', email: '', location: LOCATIONS[0]?.id || '', completed: '0' });
   const [f, setF] = useState(blank);
   const [login, setLogin] = useState(newSignIn);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
   const [made, setMade] = useState(null); // { user, temp, emailed } once saved with a sign-in
   const [mail, setMail] = useState(true);
   const welcome = useWelcome();
@@ -210,28 +205,34 @@ function AddOperatorSheet({ open, onOpenChange, signIns }) {
     const c = claimName(f.name, f.email, data.operators || []);
     if (c.existing) return setErr(`${c.name} already has that email.`);
     if (c.renamed && !note) { setF((x) => ({ ...x, name: c.name })); setErr(''); return setNote(`There's already a ${c.takenBy}, so this operator will show as ${c.name}. Save again to confirm, or change the name.`); }
-    setBusy(true);
-    try {
-      const [o] = await upsertUsers([{ name: c.name, email: c.email, location: f.location, completedSessions: Number(f.completed) || 0, completedAsOf: dayKey(new Date()), roles: ['operator'], active: true }]);
-      if (!admin) { toast.success(`Added ${o.name}`, { description: `${o.id} · an admin gives them a sign-in` }); onOpenChange(false); return; }
-      const user = { username: login.username.trim(), email: o.email, name: o.name, roles: ['operator'], operatorId: o.id };
+    // Everything below runs in the background. With a sign-in, the username and temp
+    // password show at once (they're chosen here), and the line under them follows
+    // the save; closing the sheet doesn't stop it, and a toast reports the end.
+    const row = { name: c.name, email: c.email, location: f.location, completedSessions: Number(f.completed) || 0, completedAsOf: dayKey(new Date()), roles: ['operator'], active: true };
+    const user = admin ? { username: login.username.trim(), email: c.email, name: c.name, roles: ['operator'] } : null;
+    const temp = login.temp;
+    const sendMail = admin && mail;
+    const status = (emailed) => setMade((m) => m && { ...m, emailed });
+    background(`Adding ${c.name}`, async () => {
+      const [o] = await upsertUsers([row]);
+      if (!admin) return { o };
       try {
-        await auth.createUser(signIns.token, user, login.temp);
+        await auth.createUser(signIns.token, { ...user, operatorId: o.id }, temp);
       } catch (e) {
-        toast.error(`Added ${o.name}, but the sign-in didn’t save`, { description: `${e.message} Use Set up sign-in on their row to try again.` });
-        onOpenChange(false);
-        return;
+        throw Object.assign(new Error(`Added ${o.name} (${o.id}), but the sign-in didn’t save: ${e.message} Use Set up sign-in on their row to try again.`), { partial: true });
       }
       signIns.load();
-      toast.success(`Added ${o.name}`, { description: o.id });
-      // The sign-in is saved: show it now and let the welcome email finish behind it.
-      setMade({ user, temp: login.temp, emailed: mail ? 'sending' : null });
-      if (mail) welcome(o, user.username, login.temp).then((r) => setMade((m) => m && { ...m, emailed: r }), (e) => setMade((m) => m && { ...m, emailed: e.message || 'unknown error.' }));
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
+      if (!sendMail) { status(null); return { o }; }
+      status('sending');
+      try { const r = await welcome(o, user.username, temp); status(r); return { o, emailed: r }; } catch (e) { status(e.message || 'unknown error.'); return { o, mailError: e.message }; }
+    }).then(
+      ({ o, mailError }) => (mailError
+        ? toast.warning(`Added ${o.name}, but the welcome email didn’t send`, { description: `${mailError} Share their username and temp password yourself.` })
+        : toast.success(`Added ${o.name}`, { description: admin ? `${o.id} · sign-in ready${sendMail ? ' · welcome email sent' : ''}` : `${o.id} · an admin gives them a sign-in` })),
+      (e) => { status({ failed: e.message }); toast.error(e.partial ? 'Sign-in didn’t save' : `${c.name} wasn’t added`, { description: e.message, duration: 20000 }); },
+    );
+    if (admin) setMade({ user, temp, emailed: 'saving' });
+    else onOpenChange(false);
   };
   if (made) {
     return (
@@ -241,7 +242,7 @@ function AddOperatorSheet({ open, onOpenChange, signIns }) {
     );
   }
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title="Add an operator" description={admin ? 'The operator ID is assigned on save. They sign in with the username and temp password below, then choose their own password.' : 'The operator ID is assigned on save. An admin gives them a sign-in.'} footer={<button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={save}>{busy ? 'Saving…' : admin ? 'Add operator and sign-in' : 'Add operator'}</button>}>
+    <Sheet open={open} onOpenChange={onOpenChange} title="Add an operator" description={admin ? 'The operator ID is assigned on save. They sign in with the username and temp password below, then choose their own password.' : 'The operator ID is assigned on save. An admin gives them a sign-in.'} footer={<button type="button" className="btn btn-primary btn-block" onClick={save}>{admin ? 'Add operator and sign-in' : 'Add operator'}</button>}>
       <Group footer={!admin ? (err ? <span className="err" role="alert">{err}</span> : note ? <span role="status">{note}</span> : undefined) : undefined}>
         <label className="field-row"><span>Name</span><input value={f.name} onChange={set('name')} placeholder="Full name" autoComplete="off" /></label>
         <label className="field-row"><span>Email</span><input value={f.email} onChange={set('email')} type="email" inputMode="email" placeholder="name@centific.com" autoComplete="off" /></label>
@@ -260,28 +261,35 @@ function AddOperatorSheet({ open, onOpenChange, signIns }) {
 
 // For an operator already on the Roster (say, from the Active Roster 2 import) who can't sign in yet.
 function SetUpSignInSheet({ op, onClose, signIns }) {
+  const background = useStore((s) => s.background);
   const [login, setLogin] = useState(newSignIn);
   const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
   const [made, setMade] = useState(null);
   const [mail, setMail] = useState(true);
   const welcome = useWelcome();
   useEffect(() => { if (op) { setLogin(newSignIn(op.email)); setErr(''); setMade(null); setMail(true); } }, [op]);
-  const save = async () => {
+  // The username and temp password show at once; the sign-in saves and the welcome
+  // email sends in the background, and the line under them follows along.
+  const save = () => {
     const p = signInProblem(login, signIns.users || []);
     if (p) return setErr(p.startsWith('Use') || p.startsWith('Don') ? `Temp password: ${p}` : p);
-    setBusy(true);
-    try {
-      const user = { username: login.username.trim(), email: op.email, name: op.name, roles: ['operator'], operatorId: op.id };
-      await auth.createUser(signIns.token, user, login.temp);
+    const user = { username: login.username.trim(), email: op.email, name: op.name, roles: ['operator'], operatorId: op.id };
+    const temp = login.temp;
+    const who = op;
+    const status = (emailed) => setMade((m) => m && { ...m, emailed });
+    background(`Setting up ${op.name}’s sign-in`, async () => {
+      await auth.createUser(signIns.token, user, temp);
       signIns.load();
-      setMade({ user, temp: login.temp, emailed: mail ? 'sending' : null });
-      if (mail) welcome(op, user.username, login.temp).then((r) => setMade((m) => m && { ...m, emailed: r }), (e) => setMade((m) => m && { ...m, emailed: e.message || 'unknown error.' }));
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
+      if (!mail) { status(null); return null; }
+      status('sending');
+      try { const r = await welcome(who, user.username, temp); status(r); return null; } catch (e) { status(e.message || 'unknown error.'); return e.message; }
+    }).then(
+      (mailError) => (mailError
+        ? toast.warning(`${who.name}’s sign-in is ready, but the welcome email didn’t send`, { description: `${mailError} Share their username and temp password yourself.` })
+        : toast.success(`${who.name}’s sign-in is ready`)),
+      (e) => { status({ failed: e.message }); toast.error(`${who.name}’s sign-in didn’t save`, { description: e.message, duration: 20000 }); },
+    );
+    setMade({ user, temp, emailed: 'saving' });
   };
   return (
     <Sheet
@@ -289,7 +297,7 @@ function SetUpSignInSheet({ op, onClose, signIns }) {
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={op ? (made ? op.name : `Set up ${op.name}’s sign-in`) : ''}
       description={made ? 'Their sign-in' : op ? `${op.id} · ${op.email}` : ''}
-      footer={made ? undefined : <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Make sign-in'}</button>}
+      footer={made ? undefined : <button type="button" className="btn btn-primary btn-block" onClick={save}>Make sign-in</button>}
     >
       {made ? <TempReveal user={made.user} temp={made.temp} emailed={made.emailed} onDone={onClose} /> : (
         <Group footer={err ? <span className="err" role="alert">{err}</span> : 'They sign in with these, then choose their own password.'}>

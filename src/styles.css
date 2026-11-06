@@ -255,6 +255,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .dots i:nth-child(3) { animation-delay: 0.9s; }
 .sync.is-busy .sync-glyph { opacity: 0; scale: 0.6; }
 .sync.is-busy .dots { opacity: 1; scale: 1; }
+/* Saving in the background: the dots run, but the button still works (Refresh). */
+.sync.is-saving .sync-glyph { opacity: 0; scale: 0.6; }
+.sync.is-saving .dots { opacity: 1; scale: 1; }
+.sync-text { min-width: 0; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 767px) { .sync-compact .sr-only-sm { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } }
 .status-line { display: inline-block; animation: statusLine 240ms var(--ease-out) both; }
 

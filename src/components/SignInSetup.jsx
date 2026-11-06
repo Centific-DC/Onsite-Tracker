@@ -89,6 +89,7 @@ export function useWelcome() {
 }
 
 const EMAILED = {
+  saving: (n) => `Saving ${n}’s sign-in… You can close this; it keeps going, and a message says when it’s done.`,
   sending: (n, e) => `Sending the welcome email to ${e}… You can close this; it keeps going.`,
   sent: (n, e) => `Emailed to ${e} with their username, temp password and a button to open Lotus. ${n} chooses their own password at the first sign-in.`,
   test: () => 'Test mode is on, so the welcome email went to project_lotus@centific.com, not to them. Share these yourself until test mode is off.',
@@ -108,7 +109,9 @@ export function TempReveal({ user, temp, onDone, emailed }) {
         <Row title="Username" trailing={<span className="user-temp-user">{user.username}</span>} />
         <Row title="Temp password" trailing={<output className="user-temp" aria-label="Temp password">{temp}</output>} />
       </Group>
-      {emailed && EMAILED[emailed] ? (
+      {emailed?.failed ? (
+        <p className="login-local err" role="alert">This sign-in didn’t save, so the password above won’t work: {emailed.failed}</p>
+      ) : emailed && EMAILED[emailed] ? (
         <p className="login-local"><Mail size={13} aria-hidden="true" /> {EMAILED[emailed](firstName(user.name), user.email)}</p>
       ) : emailed ? (
         <p className="login-local err" role="alert">The welcome email didn’t send: {emailed} Share these yourself.</p>
@@ -143,15 +146,27 @@ export function ResetLinkSheet({ user, op, onClose }) {
   const [state, setState] = useState(null); // null | 'sending' | { result, link? } | { error }
   useEffect(() => { if (user) setState(null); }, [user?.username]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const background = useStore((s) => s.background);
   const send = async () => {
+    // Live, the sheet closes at once and the link is made and emailed in the
+    // background; a toast says when it's sent. The demo shows its link right here.
+    if (!DEMO) {
+      const who = user;
+      const mode = testMode;
+      background(`Emailing ${who.name || who.username} a reset link`, async () => {
+        const { code, expiresAt } = await auth.startReset(token, who.username);
+        await sendEmails({ kind: 'password-reset', weekStart: dayKey(new Date()), messages: [resetMessage({ user: who, op, code, expiresAt, templates })] });
+      }).then(
+        () => toast.success(`Reset link sent to ${who.name || who.username}`, { description: RESET_SENT[mode ? 'test' : 'sent'](who) }),
+        (e) => toast.error(`The reset link for ${who.name || who.username} didn’t send`, { description: e.message, duration: 20000 }),
+      );
+      onClose();
+      return;
+    }
     setState('sending');
     try {
-      const { code, expiresAt } = await auth.startReset(token, user.username);
-      // The demo never emails: it shows a link to this same page (its sign-ins live in
-      // this browser), so the reset page can be tried.
-      if (DEMO) return setState({ result: 'demo', link: resetLinkFor(user.username, code, `${location.origin}${location.pathname}`) });
-      await sendEmails({ kind: 'password-reset', weekStart: dayKey(new Date()), messages: [resetMessage({ user, op, code, expiresAt, templates })] });
-      setState({ result: testMode ? 'test' : 'sent' });
+      const { code } = await auth.startReset(token, user.username);
+      setState({ result: 'demo', link: resetLinkFor(user.username, code, `${location.origin}${location.pathname}`) });
     } catch (e) {
       setState({ error: e.message || 'That didn’t work.' });
     }
