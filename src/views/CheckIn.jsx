@@ -105,7 +105,6 @@ function Person({ person, onDone, laptop }) {
   const [askReason, setAskReason] = useState(false);
   const [reason, setReason] = useState('');
   const [err, setErr] = useState('');
-  const [offShift, setOffShift] = useState(false);
   // A shift with no robot set asks which robot at clock-in, so hours merge per robot.
   const [robotFor, setRobotFor] = useState(null); // { shift } or { spot }
   const home = (data.operators || []).find((o) => o.email === person.email)?.location || data.me?.location || '';
@@ -131,7 +130,6 @@ function Person({ person, onDone, laptop }) {
     if (type === 'out' || laptop) onDone({ type, at: t, since, station: shown.station || open?.station, location: shown.location, name: person.name, hours: type === 'out' ? (t - since) / 36e5 : 0, early: !!extra.flag, grace: 0, week: week.recorded + (type === 'out' ? (t - since) / 36e5 : 0), pending: true });
     setAskReason(false);
     setReason('');
-    setOffShift(false);
     saved.then((p) => {
       const at = new Date(p.ts);
       toast.success(type === 'in' ? `${laptop ? `${who}: c` : 'C'}locked in at ${fmtTime(at)}` : `${laptop ? `${who}: c` : 'C'}locked out at ${fmtTime(at)}`, {
@@ -301,14 +299,16 @@ function Person({ person, onDone, laptop }) {
             <span className="op-big-sub op-num">{canClock ? `${shiftLabel(next)} shift` : `Opens ${fmtTime(w.opensAt)}`}</span>
           </BigButton>
         ) : (
-          <BigButton tone="plain" onClick={() => setOffShift(true)} busy={busy} label="Clock in without a shift">
+          // No shift, nothing to clock into (user rule, 2026-11-06). The flows refuse it
+          // too. An open spot above books a shift first.
+          <BigButton tone="plain" disabled label={card ? 'No shift to clock into now' : 'No shift to clock into today'}>
             <LogIn size={30} strokeWidth={2} aria-hidden="true" />
             <span className="op-big-label">Clock in</span>
-            <span className="op-big-sub">No shift</span>
+            <span className="op-big-sub">{card ? 'No shift now' : 'No shift today'}</span>
           </BigButton>
         )}
         {note && <p className={clsx('op-hint', next && w.state !== 'early' && 'is-warn')} role="status">{note}</p>}
-        {!note && <p className="op-hint">The time comes from the server, not your phone.</p>}
+        {!note && <p className="op-hint">{next ? 'The time comes from the server, not your phone.' : spots.length ? 'You can clock in by taking an open spot above.' : 'You can clock in once you’re booked on a shift. Ask your scheduler.'}</p>}
         {err && <p className="op-err" role="alert">{err}</p>}
       </div>
 
@@ -323,37 +323,7 @@ function Person({ person, onDone, laptop }) {
         description={robotFor?.spot ? 'Pick the robot you’re working on. You’ll see your partner’s name once you’re in.' : `Your shift isn't tied to a robot. Pick the one you're on${partnersOf(data, robotFor?.shift).length ? ` with ${andList(partnersOf(data, robotFor.shift))}` : ''}.`}
         onConfirm={(station) => (robotFor.spot ? takeSpot(robotFor.spot, station) : doPunch('in', { shiftId: robotFor.shift.id, location: locOf(robotFor.shift), station }).then(() => setRobotFor(null)))}
       />
-      <OffShiftSheet open={offShift} onOpenChange={setOffShift} busy={busy} home={(data.operators || []).find((o) => o.email === person.email)?.location || data.me?.location || ''} onConfirm={(loc, station) => doPunch('in', { location: loc, station })} />
     </div>
-  );
-}
-
-// Only the operator's home lab: nobody works at both labs.
-function OffShiftSheet({ open, onOpenChange, onConfirm, busy, home }) {
-  const labs = LOCATIONS.filter((l) => !home || l.id === home);
-  const [pick, setPick] = useState('');
-  useEffect(() => { if (open) setPick(''); }, [open]);
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={onOpenChange}
-      title="Clock in without a shift"
-      description={`Pick your robot${home ? ` at ${labs[0]?.name}` : ''}. Your manager reviews time with no shift before it counts.`}
-      footer={<button type="button" className="btn btn-primary btn-block" disabled={!pick || busy} onClick={() => { const [l, s] = pick.split('|'); onConfirm(l, s); }}>{busy ? 'Saving…' : 'Clock in'}</button>}
-    >
-      {labs.map((l) => (
-        <Group key={l.id} title={l.name}>
-          <div className="robots" role="radiogroup" aria-label={`${l.name} robot`}>
-            {l.robots.map((s) => (
-              <button key={s} type="button" role="radio" aria-checked={pick === `${l.id}|${s}`} className={clsx('robot', pick === `${l.id}|${s}` && 'is-on')} onClick={() => setPick(`${l.id}|${s}`)}>
-                <span className="robot-name">{s}</span>
-                {pick === `${l.id}|${s}` && <span className="robot-check"><Check size={14} strokeWidth={3} /></span>}
-              </button>
-            ))}
-          </div>
-        </Group>
-      ))}
-    </Sheet>
   );
 }
 

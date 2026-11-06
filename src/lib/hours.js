@@ -24,7 +24,7 @@ export function buildSessions(punches, now = new Date()) {
         if (cur) issues.push(noout(cur));
         cur = p;
       } else if (cur) {
-        const s = make(cur, new Date(p.ts), { early: p.flag === 'early', note: p.note, live: false });
+        const s = make(cur, new Date(p.ts), { early: p.flag === 'early', auto: p.flag === 'auto', note: p.note, live: false });
         sessions.push(s);
         if (s.early) issues.push({ kind: 'early', at: s.end, name: s.name, email: s.email, station: s.station, hours: s.hours, note: s.note });
         cur = null;

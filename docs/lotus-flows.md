@@ -114,10 +114,10 @@ The first admin is created by the Auth flow's `bootstrap` op (below). After that
 | `InOut` | text | `IN` or `OUT` |
 | `Location` | text | `RED` |
 | `Robot` | text | `Robot 2` |
-| `ShiftID` | text | the shift it belongs to, or empty when unscheduled |
+| `ShiftID` | text | the shift it belongs to (empty only on rows from before 2026-11-06, when clocking in without a shift was allowed) |
 | `GraceMinutes` | number | minutes before the scheduled start, computed by the flow |
-| `Device` | text | `laptop` or `phone`, as reported by the app |
-| `Flag` | text | `Left early` or empty |
+| `Device` | text | `laptop` or `phone`, as reported by the app; `system` for an auto clock-out |
+| `Flag` | text | `Left early`, `Auto clock-out` (section 7) or empty |
 | `Note` | text | the operator's reason for leaving early |
 | `DeviceTime` | text | the device clock, for audits only |
 
@@ -269,7 +269,7 @@ Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action":
 
 `snapshot` is `json(Snapshot)`. Leave `Ready` out of `templates`; the app doesn't need it.
 
-`type` is `toLower(InOut)`, and `flag` is `early` when `Flag` is not empty.
+`type` is `toLower(InOut)`. `flag` is `auto` when `Flag` is `Auto clock-out`, `early` when it is `Left early`, else empty. (The app also reads the raw `Flag` text, so either form works.)
 
 ## 4. Flow: **Lotus Write**
 
@@ -285,7 +285,7 @@ Body: `{ "type": "in" | "out", "shiftId": "", "location": "", "station": "", "de
 3. Get the grace window: 10 minutes. Keep it in one Compose named `graceMinutes` so it can be changed.
 4. If now is earlier than start minus grace, return **409** `{"error":"Clock-in opens at <h:mm AM/PM>", "code":"early", "opensAt":"<ISO>"}`. If now is after the end, return **409** `{"error":"That shift has ended", "code":"over"}`.
 5. `GraceMinutes` = whole minutes from now to the start when now is before the start, else 0.
-6. Without a `shiftId`, it is an unscheduled clock-in. Allow it, with `ShiftID` empty. `location` and `station` must be set.
+6. **Without a `shiftId`, refuse it** (user rule, 2026-11-06: operators can only clock in to a shift booked for them). Return **403** `{"error":"You have no shift to clock into.","code":"no_shift"}` and add no row. An operator covering a no-show uses `fill_in` first, which books the shift. `location` and `station` must still be set.
    - A shift with an empty `Robot`: the app asks the operator which robot at clock-in and sends it as `station`. Save it on the punch (`Robot`), so hours worked still merge per robot. `station` must be one of the lab's robots.
    - **Home lab only** (user rule, 2026-11-05: the labs are far apart, so nobody works at both). If the caller's `Lotus_Users` row has a `HomeLocation`, the punch's `location` must equal it, else **403** `{"error":"You can only clock in at <lab name>.","code":"lab"}`. This applies with or without a `shiftId`.
 7. If the caller already has an `IN` today with no `OUT` after it, return **409** `{"error":"You're already clocked in", "code":"open"}`.
@@ -413,7 +413,24 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 3. Get the `approver-weekly` row from `Lotus_Templates`. If it is missing, send the alias a plain email "The Lotus approval reminder template is missing. Open the Emails page in Lotus once to create it." and stop.
 4. For each active `Lotus_Users` row with `approver` in `Roles`: take `Ready` and `Subject`, replace `{{approverFirstName}}` / `{approverFirstName}` (first word of `Name`), `{{reviewWeek}}` / `{reviewWeek}` and `{{openDays}}` / `{openDays}`, and send it.
 
-## 7. Tests to run before handing over
+## 7. Flow: **Lotus Auto Clock-out** (scheduled)
+
+User rule, 2026-11-06: an operator who forgets to clock out is clocked out by the system 15 minutes after their shift's scheduled end, and the punch is labelled `Auto clock-out` so approvers can use it in performance reviews. The approver still reviews the day; the app flags it as "Auto clock-out".
+
+- **Trigger:** recurrence, every 15 minutes. Concurrency 1, so two runs never overlap.
+- No email, no app call: it only adds rows.
+
+1. Get `Lotus_Punches` with `InOut` = `IN` from today and yesterday (site-local `Date`), indexed filter, newest first.
+2. For each `Email`, take the latest punch overall. If it is an `IN` with a non-empty `ShiftID`, get that shift. Skip it if the shift is missing.
+3. Compute the shift's end as a site-local time on its `Date` (an end at or before the start runs past midnight), then in UTC. If `utcNow()` is at least end + 15 minutes, add one `Lotus_Punches` row:
+    - `InOut` = `OUT`, `Timestamp` = **the scheduled end** (in UTC), `Date` = the shift's `Date`.
+    - Copy `Email`, `Name`, `OperatorID`, `ShiftID`, `Location` and `Robot` from the `IN`.
+    - `Device` = `system`, `Flag` = `Auto clock-out`, `Note` empty, `GraceMinutes` 0, `DeviceTime` empty.
+4. Add a `Lotus_Audit` row: actor `system`, action `auto_clockout`, the punch ID.
+5. **Safe to run twice:** step 2 re-reads the latest punch first, so a person already clocked out (by hand or by an earlier run) is skipped. A clock-out by hand during the 15 minutes wins.
+6. An `IN` with an empty `ShiftID` (rows from before this rule) is left alone: the approver sees "No clock-out" as before.
+
+## 8. Tests to run before handing over
 
 1. Call **Lotus Read** with no token, and with a made-up token. Both get 401 `Please sign in again.`
 2. Call **Lotus Read** with an operator's token (from `signin`). You get only that operator's rows, and `operators` holds only them.
@@ -439,6 +456,8 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 16e. Open spots: A doesn't clock in. 15 minutes after the start, Read as C (same home lab, no shift now) lists A's shift in `openSpots` with no name. `fill_in` as C creates C's shift (`Replaces` = A, same `Pair`); a second `fill_in` by D gets 409 `taken`. Read as an operator at the other lab: no spot.
 16f. Password reset: as an admin, `user.reset_link` for an operator, then `email_send` kind `password-reset`: it arrives (at the alias in test mode) and the notice row has no HTML. Their old password still signs in. `reset` with the right `codeHash` sets the new password, signs them out (old token gets 401) and the old password no longer works. The same link again: 400. A wrong `codeHash` five times locks the account for 15 minutes.
 16g. Set `ResetExpires` to yesterday by hand: `reset` gets 400. `email_send` kind `password-reset` for someone with no `ResetHash`: 400, no email. `user.reset_link` as a scheduler without `admin`: 403.
+16i. No shift: as an operator with no shift today, `punch` `in` with no `shiftId` (through Punch and through Write): 403 `no_shift`, no row added.
+16j. Auto clock-out: clock A in on a shift that ends in a few minutes and don't clock out. 15 to 30 minutes after the end, `Lotus_Punches` has one `OUT` for A with `Timestamp` = the scheduled end, `Device` = `system`, `Flag` = `Auto clock-out`, and Read returns `flag` = `auto`. Let the flow run again: still one `OUT`. Clock B in and out by hand before end + 15: no auto row for B.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:

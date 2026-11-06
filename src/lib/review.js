@@ -16,6 +16,9 @@ export const FLAG = {
   left_early: { label: 'Left early', tone: 'bad', time: false },
   outside_shift: { label: 'Outside shift', tone: 'warn', time: true },
   no_clockout: { label: 'No clock-out', tone: 'warn', time: true },
+  // The Auto Clock-out flow closed the shift 15 minutes after its end: the operator
+  // forgot. Kept for performance reviews; the approver checks the end is right.
+  auto_clockout: { label: 'Auto clock-out', tone: 'warn', time: false },
   no_clockin: { label: 'No clock-in', tone: 'warn', time: false },
   unscheduled: { label: 'Not on the schedule', tone: 'warn', time: true },
 };
@@ -84,7 +87,8 @@ export function reviewDays(data, from, to, now = new Date()) {
       if ((st - r.start) / 6e4 >= LATE_AFTER_MIN && s === d.sessions.find((x) => shiftOf(x) === r)) flag('late', `Clocked in ${Math.round((st - r.start) / 6e4)} min after the start`, { ref: r.id });
       // A few minutes to walk out aren't worth a review; they're still not counted.
       if (after * 60 >= (CFG.outsideToleranceMinutes ?? 5)) flag('outside_shift', `${Math.round(after * 60)} min after the scheduled end`, { ref: +s.start, minutes: Math.round(after * 60) });
-      if (!s.live && (s.early || (r.end - en) / 6e4 > CFG.earlyGraceMinutes)) flag('left_early', `Left ${Math.round((r.end - en) / 6e4)} min before the end${s.note ? ` · “${s.note}”` : ''}`, { ref: +s.start });
+      if (s.auto) flag('auto_clockout', 'Didn’t clock out. The system closed the shift', { ref: +s.start });
+      if (!s.live && !s.auto && (s.early || (r.end - en) / 6e4 > CFG.earlyGraceMinutes)) flag('left_early', `Left ${Math.round((r.end - en) / 6e4)} min before the end${s.note ? ` · “${s.note}”` : ''}`, { ref: +s.start });
     }
     for (const i of d.noouts) {
       const r = d.shifts.find((x) => x.id === i.shiftId) || d.shifts.find((x) => +i.at < +x.end) || null;

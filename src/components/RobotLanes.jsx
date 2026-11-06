@@ -122,6 +122,7 @@ export function RobotLanes({ day, sessions, planned = [], stations, now, pairSiz
         <div className="lane-tip" data-below={tip.below || undefined} style={{ left: tip.left, top: tip.top }} role="tooltip">
           <strong>{tip.s.name}</strong>
           <span>{fmtTime(tip.s.start)} – {tip.s.live ? 'now' : fmtTime(tip.s.end)} · {fmtHrsU(tip.s.hours)}</span>
+          {tip.s.auto && <span className="tip-early">Auto clock-out</span>}
           {tip.s.early && <span className="tip-early">Left early{tip.s.note ? `: ${tip.s.note}` : ''}</span>}
         </div>
       )}

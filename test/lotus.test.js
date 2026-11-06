@@ -7,7 +7,7 @@ import { buildSessions, delivered } from '../src/lib/hours.js';
 import { APPROVED_COLUMNS, approvedRows, reviewDays } from '../src/lib/review.js';
 import { checkNewShift, conflicts, pairingRisks, weeklyLoad } from '../src/lib/rules.js';
 import { planRosterImport, planScheduleImport } from '../src/lib/importer.js';
-import { demo, setDemoActor } from '../src/lib/api.js';
+import { demo, punchFlag, setDemoActor } from '../src/lib/api.js';
 import { parseDay } from '../src/lib/time.js';
 
 const DAY = '2026-11-02'; // a Monday
@@ -39,6 +39,24 @@ describe('configuration', () => {
 
 describe('operator clock-in', () => {
   const s = shift(avery, '07:00', '12:30');
+
+  it('1b. has nothing to clock into without a shift (user rule, 2026-11-06)', () => {
+    expect(clockInCheck(null, at('09:00'))).toMatchObject({ allowed: false, reason: 'no_shift' });
+  });
+
+  it('1c. a shift the system closed 15 minutes after its end shows as Auto clock-out, not Left early', () => {
+    expect(punchFlag('Auto clock-out')).toBe('auto');
+    expect(punchFlag('Left early')).toBe('early');
+    expect(punchFlag('')).toBe('');
+    const d = data({ schedule: [s], punches: [punch(avery, 'in', at('07:00'), s), punch(avery, 'out', at('12:30'), s, { flag: 'auto', source: 'system' })] });
+    const day = dayOf(d, avery);
+    expect(day.flags.map((f) => f.code)).toEqual(['auto_clockout']);
+    expect(day.flags[0].label).toBe('Auto clock-out');
+    // The approver still looks at it before the day is approved.
+    expect(day.status).toBe('needs_review');
+    expect(day.computed).toBeCloseTo(5.5);
+    expect(buildSessions(d.punches, AFTER).sessions[0]).toMatchObject({ auto: true, early: false });
+  });
 
   it('2. is blocked 20 minutes before a 7:00 shift with a 10-minute grace', () => {
     const c = clockInCheck(s, at('06:40'));
