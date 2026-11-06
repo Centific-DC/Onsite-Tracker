@@ -36,6 +36,10 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
         - Give *Apply to each* concurrency (10 to 20) wherever the items don't depend on each other.
         - Independent steps go in parallel branches.
         - Respond as soon as the result is known, and put audit rows and notification emails that the answer doesn't depend on after the Response.
+        - Look rows up with `$top=1` on indexed columns (`Title`, `Token`, `Email`, `Username`).
+        - Use *Compose* instead of variables wherever a value is set once.
+        - Hot-path actions (the token check, lookups, the write itself): retry policy *Fixed interval*, count 1, interval `PT5S`, so a throttled call doesn't sit in exponential back-off.
+- **Secrets:** never put trigger URLs, tokens, salts or passwords in chat, flow names, flow descriptions or run logs. Turn on **Secure inputs/outputs** for any action that sees one.
 - **Pagination:** turn on pagination (threshold 5000) on every *Get items*, so lists over 100 rows aren't cut off.
 - **Columns:** text is *Single line of text* unless marked otherwise. The list's built-in `Title` column holds the key shown in each table. Don't rename internal column names after creating them.
 
@@ -201,7 +205,7 @@ One row per template, edited on the app's Emails page. Missing rows mean the app
 
 ### `Lotus_Settings`
 
-One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
+One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**) and `SendFrom` (text: the mailbox every Lotus email is sent from, below). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
 
 ## 2. Flow: **Lotus Auth**
 
@@ -349,10 +353,15 @@ Up to 25 messages per call. For each message:
 
 1. `to` must be an active row in `Lotus_Users` with the `operator` role, else 400 `{"error":"<to> isn't a Lotus operator"}` and nothing is sent. This keeps the flow from emailing anyone outside the project.
 2. `html` must be under 200 KB.
-3. Send with **Send an email from a shared mailbox (V2)**, mailbox `project_lotus@centific.com`, *Is HTML* = Yes, *Reply To* = `project_lotus@centific.com`. While `EmailTestMode` is Yes, send to `project_lotus@centific.com` instead, with a first line `Test mode · intended for <to>` above the HTML.
+3. Send it, *Is HTML* = Yes, *Reply To* = `project_lotus@centific.com`. While `EmailTestMode` is Yes, send to `project_lotus@centific.com` instead, with a first line `Test mode · intended for <to>` above the HTML.
 4. Add a `Lotus_Notices` row (`Test` = `EmailTestMode`, `Snapshot` = `string(snapshot)`).
 
-Respond `{ "ok": true, "notices": [ …the new rows, same shape as Read… ] }`. One `Lotus_Audit` row per message (`After` without `Html`).
+**Sending mailbox** (decided 2026-11-05): `project_lotus@centific.com` is a mail group, not a mailbox, so nothing can be sent *from* it. For now every Lotus email goes out with **Send an email (V2)** from the flow connection owner's own mailbox (David's). `Lotus_Settings.SendFrom` holds which mailbox is used; when a shared mailbox with *Send As* rights exists, switch the action to **Send an email from a shared mailbox (V2)** with that address and update `SendFrom`. The app doesn't change.
+
+**When to respond:**
+- **Schedule emails** (`"kind": "schedule"`): validate every message (steps 1 and 2) first, then respond **202** `{ "ok": true }` with no `notices`, then send (*Apply to each* concurrency 20), then add the `Lotus_Notices` rows and one `Lotus_Audit` row per message (`After` without `Html`). The app shows the emails as sent at once and reloads a minute later to pick up the real notice rows.
+- **Welcome and password reset emails** (below): validate, send, then respond 200 `{ "ok": true, "notices": [] }` right after the send, so the admin knows it went. Add the `Lotus_Notices` and `Lotus_Audit` rows after the Response.
+- All email goes through the same Write URL (`action` = `email_send`), on a short path that branches off right after the token check. A separate Lotus Email flow (with its own trigger URL) is a later option, only once David approves it.
 
 **Welcome emails** (`"kind": "welcome"`, each message `"kind": "operator-welcome"`): the onboarding email an admin sends right after `user.create`, with the operator's username, **temp password** and an Open Lotus button. The app fills it in from the `operator-welcome` template.
 - Allowed for callers with `admin` (or `scheduler`). Exactly 1 message per call. `to` must be an active `Lotus_Users` operator whose `MustChangePassword` = Yes (a person who has already chosen their own password never gets a temp one by email), else 400.

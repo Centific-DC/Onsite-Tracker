@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import { api, demo, setDemoActor, storage } from './api.js';
+import { api, demo, normNotice, setDemoActor, storage } from './api.js';
+
+let noticeTimer;
 import { AUTH_URL, DEMO, setDemo } from './config.js';
 import * as auth from './auth/api.js';
 import { getAuth, setAuth } from './auth/session.js';
@@ -218,7 +220,21 @@ export const useStore = create((set, get) => ({
   },
 
   async sendEmails(body) {
-    const notices = await api.sendEmails(body);
+    let notices = await api.sendEmails(body);
+    // Schedule emails: the flow answers 202 { ok: true } before it sends (docs/lotus-flows.md),
+    // so there are no notice rows yet. Show them as sent now and let a reload a minute later
+    // swap in the flow's own rows.
+    if (!notices.length && body.kind === 'schedule' && body.messages?.length) {
+      const sentAt = new Date().toISOString();
+      const test = get().data?.emailTestMode !== false;
+      notices = body.messages.map((m) => ({
+        ...normNotice({ email: m.to, operatorId: m.operatorId, weekStart: body.weekStart, kind: m.kind, subject: m.subject, sentAt, test, snapshot: m.snapshot }),
+        id: `pending-${crypto.randomUUID().slice(0, 8)}`,
+        pending: true,
+      }));
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => get().sync(), 60 * 1000);
+    }
     set((s) => ({ data: { ...s.data, notices: [...(s.data.notices || []), ...notices] } }));
     return notices;
   },
