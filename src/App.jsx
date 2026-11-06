@@ -59,7 +59,7 @@ const LEGACY = { today: 'admin/today', schedule: 'admin/schedule', hours: 'admin
 
 export default function App() {
   const route = useRoute();
-  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching, demo } = useStore();
+  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching, demo, jobs } = useStore();
   const [settings, setSettings] = useState(false);
   const systemDark = useMedia('(prefers-color-scheme: dark)');
   const phone = useMedia('(max-width: 767px)');
@@ -174,8 +174,11 @@ export default function App() {
     const t = setTimeout(() => setSlow(true), 5000);
     return () => clearTimeout(t);
   }, [data, syncing]);
-  const status = DEMO
-    ? 'Demo data'
+  // Unsent changes come first: the header says so until the save queue is empty.
+  const stuck = jobs.filter((j) => j.state === 'stuck').length;
+  const status = stuck ? `${stuck} not saved`
+    : jobs.length ? `Saving ${jobs.length}…`
+    : DEMO ? 'Demo data'
     : syncing && !data ? 'Loading…'
       : error ? 'Refresh failed'
         : loadedAt ? `Updated ${fmtTime(loadedAt)}` : '';
@@ -197,7 +200,7 @@ export default function App() {
     <>
       {compact && canSearch && <button type="button" className="icon-btn" aria-label="Search" data-tour="search" onClick={() => setSearching(true)}><Search size={18} /></button>}
       {signedIn && <button type="button" className="icon-btn" aria-label="Tour of this page" title="Tour of this page" data-tour="help" onClick={replayTour}><CircleHelp size={18} /></button>}
-      <SyncButton syncing={syncing} onClick={manualSync} status={status} error={error} compact={compact} />
+      <SyncButton syncing={syncing} onClick={stuck ? () => useStore.getState().retryJobs() : manualSync} status={status} error={error || (stuck ? `${stuck} change${stuck === 1 ? '' : 's'} didn’t reach Lotus after several tries. They’re kept in this browser. Click to try again.` : '')} saving={jobs.length > 0} compact={compact} />
       <button type="button" className="icon-btn" aria-label="Settings" data-tour="settings" onClick={() => setSettings(true)}><Settings size={18} /></button>
     </>
   );
@@ -303,14 +306,14 @@ export default function App() {
   );
 }
 
-function SyncButton({ syncing, onClick, status, error, compact }) {
+function SyncButton({ syncing, onClick, status, error, saving, compact }) {
   return (
     <button
       type="button"
       className={clsx('sync', syncing && 'is-busy', error && 'is-bad', compact && 'sync-compact')}
       onClick={onClick}
       aria-busy={syncing}
-      title={error || 'Refresh now'}
+      title={error || (saving ? 'Your changes are on screen and saving to Lotus in the background.' : 'Refresh now')}
     >
       <span className="sync-icon" aria-hidden="true">
         <RefreshCw size={16} className="sync-glyph" />

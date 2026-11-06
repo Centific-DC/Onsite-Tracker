@@ -8,10 +8,9 @@ import { Group, Segmented, Select, Sheet } from './ui.jsx';
 // Fix an operator's details after import: name, home lab, cohort, training and
 // sessions done, or take them off the roster. The email is the key, so it stays.
 export function EditOperatorSheet({ op, onClose }) {
-  const { data, upsertUsers } = useStore();
+  const { data, updateUsers } = useStore();
   const [f, setF] = useState(null);
   const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (op) setF({ name: op.name, location: op.location || '', cohort: op.cohort || '', training: op.training || '', completed: String(op.completedSessions ?? 0), active: op.active === false ? 'no' : 'yes' });
     setErr('');
@@ -20,7 +19,7 @@ export function EditOperatorSheet({ op, onClose }) {
   const others = (data.operators || []).filter((o) => o.email !== op.email);
   const plain = strayNumber({ ...op, name: f.name }, data.operators || []);
   const set = (k) => (e) => { setF((x) => ({ ...x, [k]: typeof e === 'string' ? e : e.target.value })); setErr(''); };
-  const save = async () => {
+  const save = () => {
     const name = f.name.trim().replace(/\s+/g, ' ');
     if (!name) return setErr('Add a full name.');
     if (name.toLowerCase() !== op.name.toLowerCase()) {
@@ -35,17 +34,9 @@ export function EditOperatorSheet({ op, onClose }) {
     const changed = Object.fromEntries(Object.entries(next).filter(([k, v]) => String(v) !== String(prev[k])));
     if (!Object.keys(changed).length) return onClose();
     if ('completedSessions' in changed) changed.completedAsOf = new Date().toISOString().slice(0, 10);
-    setBusy(true);
-    try {
-      const [o] = await upsertUsers([{ email: op.email, ...changed }]);
-      if (o && 'name' in changed && o.name !== name) toast.warning(`Saved, but the name came back as ${o.name}`, { description: 'The server added the number. That needs a backend fix.' });
-      else toast.success(`Saved ${o?.name || name}`);
-      onClose();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
+    updateUsers([{ email: op.email, ...changed }], `Changes to ${name}`);
+    toast.success(`Saved ${name}`);
+    onClose();
   };
   return (
     <Sheet
@@ -53,7 +44,7 @@ export function EditOperatorSheet({ op, onClose }) {
       onOpenChange={(v) => !v && onClose()}
       title={`Edit ${op.name}`}
       description={`${op.id} · ${op.email}. The operator ID and email can't change.`}
-      footer={<button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button>}
+      footer={<button type="button" className="btn btn-primary btn-block" onClick={save}>Save changes</button>}
     >
       <Group footer={err ? <span className="err" role="alert">{err}</span> : plain ? <span role="status">Looks like a number was added by mistake. <button type="button" className="link" onClick={() => setF((x) => ({ ...x, name: plain }))}>Use “{plain}”</button></span> : undefined}>
         <label className="field-row"><span>Name</span><input value={f.name} onChange={set('name')} placeholder="Full name" autoComplete="off" /></label>

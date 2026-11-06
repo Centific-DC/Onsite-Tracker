@@ -86,16 +86,16 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
       const w = checkNewShift(shift, [...schedule.filter((r) => !linked.some((x) => x.id === r.id)), ...linked], data.operators, sessions, mondayOf(parseDay(f.date)));
       if (w.length) return setWarn(w);
     }
-    // The shift shows on the schedule at once and the sheet closes; the toast follows
-    // the save, which can take a while on Power Automate. A failed save takes it off again.
+    // The shift shows on the schedule at once and the sheet closes. The save queue sends
+    // it in the background; the header shows "Saving…" until it lands.
     const t = shiftTimes(shift);
     const where = `${fmtDay(parseDay(f.date))} · ${L.name} · ${fmtTime(t.start)}–${fmtTime(t.end)}`;
-    const saving = upsertShifts([...linked, { ...shift, note: [shift.note, ...(warn || []).map((x) => (x.code === 'pairing' ? 'Pairing risk acknowledged' : x.code === 'over_cap' ? 'Over weekly limit acknowledged' : 'Conflict acknowledged'))].filter(Boolean).join(' · ') }], { optimistic: true });
-    toast.promise(saving, {
-      loading: backfill ? `Saving ${person.name} as ${backfill}’s replacement…` : `Saving ${person.name}’s shift…`,
-      success: { message: backfill ? `${person.name} is replacing ${backfill}` : `Shift added for ${person.name}`, description: where },
-      error: (e) => ({ message: `${person.name}’s shift didn’t save`, description: `${where}. ${e.message} It’s off the schedule again; add it once more.` }),
-    });
+    try {
+      upsertShifts([...linked, { ...shift, note: [shift.note, ...(warn || []).map((x) => (x.code === 'pairing' ? 'Pairing risk acknowledged' : x.code === 'over_cap' ? 'Over weekly limit acknowledged' : 'Conflict acknowledged'))].filter(Boolean).join(' · ') }], `${person.name}’s shift (${where})`);
+    } catch (e) {
+      return setWarn(null) || toast.error(e.message);
+    }
+    toast.success(backfill ? `${person.name} is replacing ${backfill}` : `Shift added for ${person.name}`, { description: where });
     onOpenChange(false);
   };
 

@@ -119,7 +119,7 @@ const USER_BATCH = 5;
 const SHIFT_BATCH = 25;
 
 function ImportSheet({ open, onOpenChange }) {
-  const { data, upsertUsers, upsertShifts } = useStore();
+  const { data, upsertUsers, importShifts } = useStore();
   const [kind, setKind] = useState('roster');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -142,7 +142,7 @@ function ImportSheet({ open, onOpenChange }) {
       for (let i = 0; i < rows.length; i += size) {
         const part = rows.slice(i, i + size);
         if (kind === 'roster') await upsertUsers(part);
-        else await upsertShifts(part);
+        else await importShifts(part);
         saved += part.length;
         setDone({ n: saved, of: rows.length });
       }
