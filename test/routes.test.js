@@ -9,7 +9,7 @@ const ALL = {
   saveUsersUrl: 'https://flows.test/save-users',
   saveShiftUrl: 'https://flows.test/save-shift',
   deleteShiftUrl: 'https://flows.test/delete-shift',
-  fillInUrl: 'https://flows.test/fill-in',
+  punchUrl: 'https://flows.test/punch',
   sendEmailUrl: 'https://flows.test/send-email',
   resetPasswordUrl: 'https://flows.test/reset-password',
 };
@@ -20,21 +20,22 @@ describe('which flow each save goes to', () => {
     expect(writeUrlFor({ action: 'users_upsert', users: [{ email: 'a@x.com' }, { email: 'b@x.com' }] }, ALL, WRITE)).toBe(ALL.saveUsersUrl);
     expect(writeUrlFor({ action: 'shift_upsert', shifts: [{}] }, ALL, WRITE)).toBe(ALL.saveShiftUrl);
     expect(writeUrlFor({ action: 'shift_delete', id: 'S-1' }, ALL, WRITE)).toBe(ALL.deleteShiftUrl);
-    expect(writeUrlFor({ action: 'fill_in', shiftId: 'S-1' }, ALL, WRITE)).toBe(ALL.fillInUrl);
-    expect(writeUrlFor({ action: 'punch', type: 'in' }, ALL, WRITE)).toBe(ALL.fillInUrl);
+    expect(writeUrlFor({ action: 'punch', type: 'in' }, ALL, WRITE)).toBe(ALL.punchUrl);
+    expect(writeUrlFor({ action: 'punch', type: 'out' }, ALL, WRITE)).toBe(ALL.punchUrl);
     expect(writeUrlFor({ action: 'email_send', kind: 'schedule' }, ALL, WRITE)).toBe(ALL.sendEmailUrl);
   });
 
   it('keeps the other Write ops on Write', () => {
-    for (const action of ['resolve_flag', 'approve_day', 'reopen_day', 'template_save', 'client', 'something_new']) {
+    for (const action of ['fill_in', 'undo_punch', 'resolve_flag', 'approve_day', 'reopen_day', 'template_save', 'client', 'something_new']) {
       expect(writeUrlFor({ action }, ALL, WRITE)).toBe(WRITE);
     }
   });
 
   it('falls back to Write for an op whose flow has no URL', () => {
-    const some = { ...ALL, saveShiftUrl: '', fillInUrl: '   ' };
+    const some = { ...ALL, saveShiftUrl: '', punchUrl: '   ' };
     expect(writeUrlFor({ action: 'shift_upsert', shifts: [] }, some, WRITE)).toBe(WRITE);
-    expect(writeUrlFor({ action: 'punch' }, some, WRITE)).toBe(WRITE);
+    expect(writeUrlFor({ action: 'punch', type: 'in' }, some, WRITE)).toBe(WRITE);
+    expect(writeUrlFor({ action: 'punch', type: 'out' }, {}, WRITE)).toBe(WRITE);
     expect(writeUrlFor({ action: 'shift_delete' }, some, WRITE)).toBe(ALL.deleteShiftUrl);
     expect(writeUrlFor({ action: 'users_upsert', users: [{}] }, {}, WRITE)).toBe(WRITE);
     expect(writeUrlFor({ action: 'users_upsert', users: [{}, {}] }, { saveUserUrl: ALL.saveUserUrl }, WRITE)).toBe(WRITE);
@@ -47,7 +48,7 @@ describe('which flow each save goes to', () => {
   });
 
   it('names the flow for the speed list, never the address', () => {
-    expect(writeFlowName({ action: 'punch' }, ALL)).toBe('Fill In');
+    expect(writeFlowName({ action: 'punch' }, ALL)).toBe('Punch');
     expect(writeFlowName({ action: 'punch' }, {}, WRITE)).toBe('Write');
     expect(writeFlowName({ action: 'approve_day' }, ALL)).toBe('Write');
   });

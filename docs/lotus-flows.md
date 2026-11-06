@@ -37,11 +37,11 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
         | `users_upsert` with 2+ users | Save Users | `LOTUS_SAVE_USERS_URL` | `saveUsersUrl` |
         | `shift_upsert` | Save Shift | `LOTUS_SAVE_SHIFT_URL` | `saveShiftUrl` |
         | `shift_delete` | Delete Shift | `LOTUS_DELETE_SHIFT_URL` | `deleteShiftUrl` |
+        | `punch` (clock in and out) | Punch | `LOTUS_PUNCH_URL` | `punchUrl` |
         | `email_send` | Send Email | `LOTUS_SEND_EMAIL_URL` | `sendEmailUrl` |
         | `change-password`, `user.reset`, `user.reset_link`, `reset` (Auth ops) | Reset Password | `LOTUS_RESET_PASSWORD_URL` | `resetPasswordUrl` |
-        | `fill_in`, `punch` | Fill In (not live yet: stays on Write) | none yet | `fillInUrl` |
 
-        Everything else (`resolve_flag`, `approve_day`, `reopen_day`, `template_save`, `client`) stays on Write, and sign-in, accounts and activate/deactivate stay on Auth. Fill In's test-only `undo_punch` is never called by the app.
+        Everything else (`fill_in`, `resolve_flag`, `approve_day`, `reopen_day`, `template_save`, `client`) stays on Write, and sign-in, accounts and activate/deactivate stay on Auth. The test-only `undo_punch` is never called by the app.
     - The app sends a roster import as `users_upsert` calls of at most 5 users, and a schedule import as `shift_upsert` calls of at most 25 shifts, one call after another, so no single call nears the flow's 2-minute limit. Each call must still be idempotent by email (users) or id (shifts).
     - How:
         - *Get items* with a `$filter` and `Top Count` (1 when looking up one row), never a whole list just to find one row.

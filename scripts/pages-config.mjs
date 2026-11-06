@@ -19,13 +19,14 @@ const https = (name) => {
   return '';
 };
 
-// One-job flows: secret name -> config key. Fill In has no secret yet, so fill_in and
-// punch stay on Write.
+// One-job flows: secret name -> config key. Fill In has no flow yet, so fill_in stays
+// on Write.
 const SPLIT = {
   LOTUS_SAVE_USER_URL: 'saveUserUrl',
   LOTUS_SAVE_USERS_URL: 'saveUsersUrl',
   LOTUS_SAVE_SHIFT_URL: 'saveShiftUrl',
   LOTUS_DELETE_SHIFT_URL: 'deleteShiftUrl',
+  LOTUS_PUNCH_URL: 'punchUrl',
   LOTUS_SEND_EMAIL_URL: 'sendEmailUrl',
   LOTUS_RESET_PASSWORD_URL: 'resetPasswordUrl',
 };
