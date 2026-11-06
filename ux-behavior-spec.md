@@ -230,6 +230,16 @@ The filter menu is the reference ("liquid glass"):
 - The same message shown again later gets its full 6 seconds.
 - Every notification can be dismissed by hand.
 
+### 8a. "A new version of Lotus is ready"
+
+The one notice that doesn't auto-close. When a newer build is live (version.json, checked every 5 minutes and when the tab comes back), it shows a **10-second countdown** and then refreshes the page to the new build.
+
+- **Refresh now** refreshes at once. **Not now** closes it for that version; Settings keeps a "Refresh to update" row.
+- The countdown **holds** while the pointer is over the notice or focus is inside it.
+- It **waits** (and starts the full 10 seconds again once quiet) while anything is being sent (a save, approval, email, import or clock-in), while a sheet, dialog or tour is open, or while someone is typing in a field (a focused, empty field like the sign-in box doesn't count). The text says why: "once your changes are saved" or "when you're done here". Queued edits that are only waiting are kept in the browser and survive the refresh, so they don't hold it.
+- A tab in the background refreshes as soon as it's quiet, so it's on the new build when the person comes back.
+- Screen readers hear it once; the ticking seconds aren't announced. Reduced motion: no enter or exit movement.
+
 ---
 
 ## 9. Reduced motion
