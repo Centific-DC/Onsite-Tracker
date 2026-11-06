@@ -32,13 +32,12 @@ export function messageFor(entry, wk0, templates, mode = 'light', logo = LOGO_UR
 
 export function SendSchedules({ open, onOpenChange, wk0, entries, testMode }) {
   const sendEmails = useStore((s) => s.sendEmails);
+  const background = useStore((s) => s.background);
   const templates = useTemplates();
   const [scope, setScope] = useState('todo');
   const [picked, setPicked] = useState(() => new Set());
   const [more, setMore] = useState({});
   const [preview, setPreview] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(null); // { done, total } while sending
   const [logo, setLogo] = useState(null);
   useEffect(() => { tintedLogo(logoPng, LIGHT.logo).then(setLogo); }, []);
 
@@ -61,36 +60,33 @@ export function SendSchedules({ open, onOpenChange, wk0, entries, testMode }) {
   const toggle = (email) => setPicked((p) => { const n = new Set(p); if (n.has(email)) n.delete(email); else n.add(email); return n; });
   const chosen = entries.filter((e) => picked.has(e.op.email));
 
-  const send = async () => {
+  // The sheet closes at once and the emails go out in the background; the header
+  // shows the count, and a toast says when they're on their way or what went wrong.
+  const send = () => {
     if (!chosen.length) return;
-    setBusy(true);
+    const messages = chosen.map((e) => ({ to: e.op.email, operatorId: e.op.id, name: e.op.name, snapshot: snapshotOf(e.shifts), ...messageFor(e, wk0, templates) }));
+    const n = messages.length;
     let done = 0;
-    try {
-      const messages = chosen.map((e) => ({ to: e.op.email, operatorId: e.op.id, name: e.op.name, snapshot: snapshotOf(e.shifts), ...messageFor(e, wk0, templates) }));
+    background(`Sending ${n} schedule ${n === 1 ? 'email' : 'emails'}`, async (note) => {
       // Small batches, three at a time: each call is one flow run, and runs go in parallel.
       const batches = [];
       for (let i = 0; i < messages.length; i += 10) batches.push(messages.slice(i, i + 10));
-      setProgress({ done, total: messages.length });
       const run = async () => {
         while (batches.length) {
           const b = batches.shift();
           await sendEmails({ kind: 'schedule', weekStart: dayKey(wk0), messages: b });
           done += b.length;
-          setProgress({ done, total: messages.length });
+          note(`${done} of ${n}`);
         }
       };
       await Promise.all([run(), run(), run()]);
-      const n = messages.length;
-      toast.success(`${n} schedule ${n === 1 ? 'email' : 'emails'} ${DEMO ? 'marked as sent' : 'on their way'}`, {
+    }).then(
+      () => toast.success(`${n} schedule ${n === 1 ? 'email' : 'emails'} ${DEMO ? 'marked as sent' : 'on their way'}`, {
         description: DEMO ? 'Demo mode: no email leaves this browser.' : testMode ? 'Test mode: they went to project_lotus@centific.com.' : `Week of ${weekLabel(wk0)}.`,
-      });
-      onOpenChange(false);
-    } catch (e) {
-      toast.error('Couldn’t send the emails', { description: `${done ? `${done} sent before this: ` : ''}${e.message}` });
-    } finally {
-      setBusy(false);
-      setProgress(null);
-    }
+      }),
+      (e) => toast.error('Couldn’t send all the schedule emails', { description: `${done ? `${done} of ${n} sent. ` : ''}${e.message} Open Email schedules again: the ones already sent show as sent.` }),
+    );
+    onOpenChange(false);
   };
 
   const shownGroups = groups.filter((g) => g.rows.length && (scope === 'all' || g.id !== 'current'));
@@ -120,8 +116,8 @@ export function SendSchedules({ open, onOpenChange, wk0, entries, testMode }) {
             One email per operator, listing only their own shifts.
             {DEMO ? ' Demo mode: nothing is sent.' : testMode ? ' Test mode is on, so every email goes to project_lotus@centific.com until the team switches it off.' : ''}
           </p>
-          <button type="button" className="btn btn-primary" disabled={!chosen.length || busy} aria-busy={busy || undefined} onClick={send}>
-            {busy ? (progress?.total > 10 ? `Sending… ${progress.done} of ${progress.total}` : 'Sending…') : `Send ${chosen.length} ${chosen.length === 1 ? 'email' : 'emails'}`}
+          <button type="button" className="btn btn-primary" disabled={!chosen.length} onClick={send}>
+            {`Send ${chosen.length} ${chosen.length === 1 ? 'email' : 'emails'}`}
           </button>
         </div>
       )}

@@ -14,6 +14,8 @@ vi.mock('../src/lib/api.js', async (orig) => {
       removeShift: (id) => call('shift_delete', id, () => undefined),
       upsertUsers: (users) => call('users_upsert', users, (b) => b),
       all: () => Promise.resolve({ schedule: [] }),
+      approveDay: (a, status) => call('approve_day', a, (b) => ({ ...b, status, by: 'lead@x.com', at: 'now' })),
+      punch: (body) => call('punch', body, (b) => ({ ...b, id: `P-${b.type}`, ts: '2026-11-09T15:00:00Z' })),
     },
   };
 });
@@ -88,5 +90,51 @@ describe('store save queue', () => {
     expect(useStore.getState().jobs).toHaveLength(0);
     expect(useStore.getState().data.schedule).toHaveLength(0);
     expect(flow.calls).toHaveLength(0);
+  });
+
+  it('an approval counts only once the flow confirms it, and the day says so meanwhile', async () => {
+    let finish;
+    flow.answer = (op, b) => new Promise((r) => { finish = () => r({ ...b, status: 'approved' }); });
+    useStore.setState({ base: { ...useStore.getState().base, approvals: [] }, data: { ...useStore.getState().data, approvals: [] } });
+    const done = useStore.getState().approveDay({ email: 'a@x.com', name: 'A', date: '2026-11-09', hours: 5, computed: 5, note: '' });
+    expect(useStore.getState().approving['a@x.com|2026-11-09']).toBe('approved');
+    expect(useStore.getState().data.approvals).toHaveLength(0);
+    expect(useStore.getState().tasks).toHaveLength(1);
+    await tick();
+    finish();
+    await done;
+    expect(useStore.getState().data.approvals).toHaveLength(1);
+    expect(useStore.getState().approving).toEqual({});
+    await tick();
+    expect(useStore.getState().tasks).toHaveLength(0);
+  });
+
+  it('a clock-in shows at once, and a clock-out right after waits for it', async () => {
+    const order = [];
+    let finishIn;
+    flow.answer = (op, b) => { order.push(b.type); return b.type === 'in' ? new Promise((r) => { finishIn = () => r({ ...b, id: 'P-in', ts: '2026-11-09T15:00:05Z' }); }) : Promise.resolve({ ...b, id: 'P-out', ts: '2026-11-09T20:00:00Z' }); };
+    useStore.setState({ base: { ...useStore.getState().base, punches: [] }, data: { ...useStore.getState().data, punches: [] } });
+    const a = useStore.getState().punch({ type: 'in', email: 'a@x.com', name: 'A', station: 'Robot 1' });
+    expect(useStore.getState().data.punches).toHaveLength(1);
+    expect(useStore.getState().data.punches[0].pending).toBe(true);
+    const b = useStore.getState().punch({ type: 'out', email: 'a@x.com', name: 'A' });
+    await tick();
+    expect(order).toEqual(['in']);
+    finishIn();
+    await a.saved;
+    await b.saved;
+    await tick();
+    expect(order).toEqual(['in', 'out']);
+    // The server's times replace the tap times.
+    expect(useStore.getState().data.punches.map((p) => p.ts)).toEqual(['2026-11-09T15:00:05Z', '2026-11-09T20:00:00Z']);
+  });
+
+  it('a refused clock-in leaves the screen as it was', async () => {
+    flow.answer = () => Promise.reject(Object.assign(new Error('Clock-in opens at 6:50 AM'), { status: 409, code: 'early' }));
+    useStore.setState({ base: { ...useStore.getState().base, punches: [] }, data: { ...useStore.getState().data, punches: [] } });
+    const { saved } = useStore.getState().punch({ type: 'in', email: 'a@x.com', name: 'A' });
+    await expect(saved).rejects.toThrow('Clock-in opens');
+    await tick();
+    expect(useStore.getState().data.punches).toHaveLength(0);
   });
 });

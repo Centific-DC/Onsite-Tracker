@@ -58,7 +58,7 @@ async function paPostRaw(url, body) {
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ ...body, token: getToken() }),
+      body: JSON.stringify({ token: getToken(), ...body }),
       signal: ctrl.signal,
       cache: 'no-store',
     });
@@ -185,9 +185,11 @@ export const api = {
     if (DEMO) return demo.load();
     return normAll(await paPost(READ_URL, { action: 'all', from: dayKey(addDays(new Date(), -60)) }));
   },
-  async punch(body) {
+  // `token`: the sign-in it was made under, so it still goes if the lab laptop has
+  // signed out for the next person since.
+  async punch(body, token) {
     if (DEMO) return demo.punch(body);
-    const out = await paPost(WRITE_URL, { action: 'punch', ...body, deviceTs: new Date().toISOString() });
+    const out = await paPost(WRITE_URL, { action: 'punch', ...body, deviceTs: new Date().toISOString(), ...(token ? { token } : {}) });
     return normPunch(out.punch);
   },
   async clientHours(week, hours) {

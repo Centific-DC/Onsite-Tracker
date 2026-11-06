@@ -59,7 +59,7 @@ const LEGACY = { today: 'admin/today', schedule: 'admin/schedule', hours: 'admin
 
 export default function App() {
   const route = useRoute();
-  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching, demo, jobs } = useStore();
+  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching, demo, jobs, tasks } = useStore();
   const [settings, setSettings] = useState(false);
   const systemDark = useMedia('(prefers-color-scheme: dark)');
   const phone = useMedia('(max-width: 767px)');
@@ -79,6 +79,15 @@ export default function App() {
     if (!PREVIEW || authStage !== 'signedOut') return;
     useStore.getState().signIn('Lotus-operator', DEMO_PASSWORD).catch((e) => toast.error('Preview didn’t start', { description: e.message }));
   }, [authStage]);
+  // Closing the tab while something is saving in this tab would stop it: ask first.
+  // (Queued edits survive a reload; approvals, emails and imports in flight don't.)
+  useEffect(() => {
+    const busy = tasks.length > 0 || jobs.some((j) => j.state === 'sending');
+    if (!busy) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    addEventListener('beforeunload', warn);
+    return () => removeEventListener('beforeunload', warn);
+  }, [tasks.length, jobs]);
   // A sign-in lasts 12 hours, then it's back to the sign-in screen without a reload.
   useEffect(() => {
     if (!session?.expiresAt) return undefined;
@@ -175,9 +184,13 @@ export default function App() {
     return () => clearTimeout(t);
   }, [data, syncing]);
   // Unsent changes come first: the header says so until the save queue is empty.
+  // Background work (store.background) counts too; one task on its own shows its own words.
   const stuck = jobs.filter((j) => j.state === 'stuck').length;
+  const working = jobs.length - stuck + tasks.length;
+  const one = !jobs.length && tasks.length === 1 ? tasks[0] : null;
   const status = stuck ? `${stuck} not saved`
-    : jobs.length ? `Saving ${jobs.length}…`
+    : one ? `${one.label}${one.note ? ` · ${one.note}` : ''}…`
+    : working ? `Saving ${working}…`
     : DEMO ? 'Demo data'
     : syncing && !data ? 'Loading…'
       : error ? 'Refresh failed'
@@ -200,7 +213,7 @@ export default function App() {
     <>
       {compact && canSearch && <button type="button" className="icon-btn" aria-label="Search" data-tour="search" onClick={() => setSearching(true)}><Search size={18} /></button>}
       {signedIn && <button type="button" className="icon-btn" aria-label="Tour of this page" title="Tour of this page" data-tour="help" onClick={replayTour}><CircleHelp size={18} /></button>}
-      <SyncButton syncing={syncing} onClick={stuck ? () => useStore.getState().retryJobs() : manualSync} status={status} error={error || (stuck ? `${stuck} change${stuck === 1 ? '' : 's'} didn’t reach Lotus after several tries. They’re kept in this browser. Click to try again.` : '')} saving={jobs.length > 0} compact={compact} />
+      <SyncButton syncing={syncing} onClick={stuck ? () => useStore.getState().retryJobs() : manualSync} status={status} error={error || (stuck ? `${stuck} change${stuck === 1 ? '' : 's'} didn’t reach Lotus after several tries. They’re kept in this browser. Click to try again.` : '')} saving={working > 0} compact={compact} />
       <button type="button" className="icon-btn" aria-label="Settings" data-tour="settings" onClick={() => setSettings(true)}><Settings size={18} /></button>
     </>
   );
@@ -310,10 +323,10 @@ function SyncButton({ syncing, onClick, status, error, saving, compact }) {
   return (
     <button
       type="button"
-      className={clsx('sync', syncing && 'is-busy', error && 'is-bad', compact && 'sync-compact')}
+      className={clsx('sync', syncing && 'is-busy', !syncing && saving && !error && 'is-saving', error && 'is-bad', compact && 'sync-compact')}
       onClick={onClick}
       aria-busy={syncing}
-      title={error || (saving ? 'Your changes are on screen and saving to Lotus in the background.' : 'Refresh now')}
+      title={error || (saving ? `${status}. Your changes are on screen and saving to Lotus in the background; you can keep working.` : 'Refresh now')}
     >
       <span className="sync-icon" aria-hidden="true">
         <RefreshCw size={16} className="sync-glyph" />

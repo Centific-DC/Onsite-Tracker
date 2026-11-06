@@ -19,13 +19,12 @@ export const DAY_STATUS = {
 // suggested hours. Managers resolve each flag with a reason, then approve the day.
 // Only approved hours reach the reporting export.
 export function Review() {
-  const { data, approveDay } = useStore();
+  const { data, approveMany, approving } = useStore();
   const now = useNow(60000);
   // Monday's review covers last week, so that's where it opens.
   const [wk0, setWk0] = useState(() => addDays(mondayOf(new Date()), -7));
   const [show, setShow] = useState('todo');
   const [open, setOpen] = useState(null);
-  const [busy, setBusy] = useState(false);
   // A link from search (?day=…&op=…) opens that week, and that operator's day.
   const hq = useHashQuery();
   useEffect(() => {
@@ -41,30 +40,17 @@ export function Review() {
   const count = (st) => days.filter((d) => d.status === st).length;
   const shown = days.filter((d) => (show === 'todo' ? d.status === 'needs_review' || d.status === 'ready' : show === 'all' ? true : d.status === show));
   const byDay = [...new Set(shown.map((d) => d.day))].map((k) => [k, shown.filter((d) => d.day === k)]);
-  const ready = days.filter((d) => d.status === 'ready');
+  const ready = days.filter((d) => d.status === 'ready' && !approving[d.key]);
   const current = open ? days.find((d) => d.key === open) : null;
 
-  const approveReady = async () => {
-    setBusy(true);
-    try {
-      // Three at a time: each one is its own flow run, and one after another a week
-      // of days took minutes. Approvals only show once the flow confirms each one.
-      const queue = [...ready];
-      const errors = [];
-      const worker = async () => {
-        while (queue.length) {
-          const d = queue.shift();
-          try { await approveDay({ email: d.email, operatorId: d.operatorId, date: d.day, hours: d.computed, computed: d.computed, note: '' }); } catch (e) { errors.push(e); }
-        }
-      };
-      await Promise.all([worker(), worker(), worker()]);
-      if (errors.length) throw new Error(`${ready.length - errors.length} of ${ready.length} approved. ${errors[0].message}`);
-      toast.success(`Approved ${ready.length} ${ready.length === 1 ? 'day' : 'days'}`, { description: `${fmtHrsU(ready.reduce((a, d) => a + d.computed, 0))}, as suggested` });
-    } catch (e) {
-      toast.error("Couldn't approve them all", { description: e.message });
-    } finally {
-      setBusy(false);
-    }
+  // Runs in the background: each day says "Approving…" until the flow confirms it.
+  const approveReady = () => {
+    const list = ready.map((d) => ({ email: d.email, name: d.name, operatorId: d.operatorId, date: d.day, hours: d.computed, computed: d.computed, note: '' }));
+    const total = fmtHrsU(ready.reduce((a, d) => a + d.computed, 0));
+    approveMany(list).then(
+      () => toast.success(`Approved ${list.length} ${list.length === 1 ? 'day' : 'days'}`, { description: `${total}, as suggested` }),
+      (e) => toast.error("Couldn't approve them all", { description: e.message }),
+    );
   };
 
   // Each week's timesheets are due the Monday after it ends (the proposed cycle:
@@ -102,8 +88,8 @@ export function Review() {
           ]}
         />
         {ready.length > 0 && (
-          <button type="button" className="btn btn-primary btn-sm" data-tour="review-approve-all" disabled={busy} aria-busy={busy} onClick={approveReady}>
-            {busy ? 'Approving…' : `Approve ${ready.length} ready`}
+          <button type="button" className="btn btn-primary btn-sm" data-tour="review-approve-all" onClick={approveReady}>
+            {`Approve ${ready.length} ready`}
           </button>
         )}
       </div>
@@ -116,7 +102,7 @@ export function Review() {
               key={d.key}
               onClick={() => setOpen(d.key)}
               leading={<Avatar name={d.name} tone={DAY_STATUS[d.status].tone} />}
-              title={<>{d.name} <Tag tone={DAY_STATUS[d.status].tone}>{DAY_STATUS[d.status].label}</Tag>{d.flags.filter((f) => !f.info).map((f) => <Tag key={f.key} tone={f.resolution ? 'muted' : f.tone}>{f.label}{f.resolution ? ' ✓' : ''}</Tag>)}</>}
+              title={<>{d.name} {approving[d.key] ? <Tag tone="muted">{approving[d.key] === 'approved' ? 'Approving…' : 'Reopening…'}</Tag> : <Tag tone={DAY_STATUS[d.status].tone}>{DAY_STATUS[d.status].label}</Tag>}{d.flags.filter((f) => !f.info).map((f) => <Tag key={f.key} tone={f.resolution ? 'muted' : f.tone}>{f.label}{f.resolution ? ' ✓' : ''}</Tag>)}</>}
               subtitle={`${d.operatorId || 'No ID'} · ${d.locationName || 'No lab'} · ${fmtHrsU(d.scheduled)} scheduled · ${fmtHrsU(d.recorded)} recorded`}
               trailing={<span className="mono-num">{d.approved != null ? fmtHrsU(d.approved) : fmtHrsU(d.computed)}</span>}
             />
@@ -124,7 +110,7 @@ export function Review() {
         </Group>
       ))}
 
-      <DaySheet day={current} onClose={() => setOpen(null)} />
+      <DaySheet day={current} pending={current && approving[current.key]} onClose={() => setOpen(null)} />
     </div>
   );
 }
@@ -134,11 +120,10 @@ const OUTCOMES = {
   info: [{ value: 'noted', label: 'Noted' }],
 };
 
-function DaySheet({ day, onClose }) {
+function DaySheet({ day, pending, onClose }) {
   const { data, approveDay } = useStore();
   const [hours, setHours] = useState('');
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   useEffect(() => { if (day) { setHours(String(Math.round((day.approved ?? day.computed) * 100) / 100)); setNote(''); setErr(''); } }, [day?.key, day?.computed, day?.approved]); // eslint-disable-line react-hooks/exhaustive-deps
   const sessions = useMemo(() => (day ? buildSessions(data.punches.filter((p) => p.email === day.email)).sessions.filter((s) => s.day === day.day) : []), [data.punches, day]);
@@ -148,20 +133,19 @@ function DaySheet({ day, onClose }) {
   const h = Number(hours);
   const adjusted = Number.isFinite(h) && Math.abs(h - day.computed) > 0.005;
 
-  const act = async (status) => {
+  // The sheet closes at once; the day says "Approving…" until the flow confirms it.
+  const act = (status) => {
     setErr('');
     if (status === 'approved' && (!Number.isFinite(h) || h < 0)) return setErr('Enter the hours to approve.');
     if ((status !== 'approved' || adjusted) && !note.trim()) return setErr(status === 'approved' ? 'Say why the hours differ from the suggestion.' : 'Say why you are reopening this day.');
-    setBusy(true);
-    try {
-      await approveDay({ email: day.email, operatorId: day.operatorId, date: day.day, hours: status === 'approved' ? h : day.approved ?? 0, computed: day.computed, note: note.trim() }, status);
-      toast.success(status === 'approved' ? `Approved ${fmtHrsU(h)} for ${day.name}` : `Reopened ${day.name}'s ${fmtDay(parseDay(day.day))}`);
-      setNote('');
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
+    const who = day.name;
+    const when = fmtDay(parseDay(day.day));
+    approveDay({ email: day.email, name: who, operatorId: day.operatorId, date: day.day, hours: status === 'approved' ? h : day.approved ?? 0, computed: day.computed, note: note.trim() }, status).then(
+      () => toast.success(status === 'approved' ? `Approved ${fmtHrsU(h)} for ${who}` : `Reopened ${who}'s ${when}`),
+      (e) => toast.error(status === 'approved' ? `${who}'s ${when} isn't approved` : `${who}'s ${when} didn't reopen`, { description: e.message }),
+    );
+    setNote('');
+    onClose();
   };
 
   return (
@@ -171,9 +155,9 @@ function DaySheet({ day, onClose }) {
       title={day.name}
       description={`${fmtLongDay(parseDay(day.day))} · ${day.locationName || 'No lab'} · ${day.operatorId || 'No operator ID'}`}
       footer={day.approval ? (
-        <button type="button" className="btn btn-plain btn-block" disabled={busy} onClick={() => act('reopened')}>{busy ? 'Saving…' : 'Reopen to correct'}</button>
+        <button type="button" className="btn btn-plain btn-block" disabled={!!pending} onClick={() => act('reopened')}>{pending ? 'Saving…' : 'Reopen to correct'}</button>
       ) : (
-        <button type="button" className="btn btn-primary btn-block" disabled={busy || blocked} onClick={() => act('approved')}>{busy ? 'Saving…' : blocked ? `Resolve ${day.openFlags} ${day.openFlags === 1 ? 'flag' : 'flags'} first` : `Approve ${Number.isFinite(h) ? fmtHrsU(h) : ''}`}</button>
+        <button type="button" className="btn btn-primary btn-block" disabled={!!pending || blocked} onClick={() => act('approved')}>{pending ? 'Approving…' : blocked ? `Resolve ${day.openFlags} ${day.openFlags === 1 ? 'flag' : 'flags'} first` : `Approve ${Number.isFinite(h) ? fmtHrsU(h) : ''}`}</button>
       )}
     >
       <Group>

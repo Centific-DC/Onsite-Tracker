@@ -8,6 +8,7 @@ import { KINDS, MAX_TRIES, afterFail, isTemp, overlay, ready, refused } from './
 
 let noticeTimer;
 let pumpTimer;
+const punchChain = new Map();
 
 const cached = storage.get('onsite-cache', null);
 const ADMIN_KEY = 'lotus-has-admin';
@@ -175,10 +176,45 @@ export const useStore = create((set, get) => ({
     if (token) await auth.signOut(token).catch(() => {});
   },
 
-  async punch(body) {
-    const p = await api.punch(body);
-    get().commit((d) => (d ? { ...d, punches: [...d.punches, p] } : d));
-    return p;
+  // A clock-in or out shows at once (marked pending, at the tap time) and the flow
+  // records it with the server's time; that time replaces the tap time when it lands.
+  // The sign-in is captured now, so the lab laptop can sign out for the next person.
+  punch(body) {
+    const tmp = { id: `tmp-${crypto.randomUUID().slice(0, 8)}`, ts: new Date().toISOString(), type: body.type, email: body.email, name: body.name, operatorId: body.operatorId, shiftId: body.shiftId || '', station: body.station || '', location: body.location || '', source: body.source, flag: body.flag ? 'Left early' : '', note: body.note || '', grace: 0, pending: true };
+    get().commit((d) => (d ? { ...d, punches: [...d.punches, tmp] } : d));
+    const token = getAuth()?.token;
+    // One person's punches go in order: a clock-out never overtakes its clock-in.
+    const prev = punchChain.get(body.email) || Promise.resolve();
+    const run = get().background(body.type === 'in' ? `${body.name}’s clock-in` : `${body.name}’s clock-out`, () => prev.catch(() => {}).then(() => api.punch(body, token)));
+    punchChain.set(body.email, run.catch(() => {}));
+    run.then(
+      (p) => get().commit((d) => (d ? { ...d, punches: d.punches.filter((x) => x.id !== tmp.id).concat(p) } : d)),
+      () => get().commit((d) => (d ? { ...d, punches: d.punches.filter((x) => x.id !== tmp.id) } : d)),
+    );
+    return { shown: tmp, saved: run };
+  },
+
+  // ---- Background work that can't be queued for later (it needs the flow's answer,
+  // like an approval or a new operator's ID) but still shouldn't hold anyone up.
+  // The sheet closes, the header counts it under "Saving", and a toast says if it
+  // failed. It lives in this tab: closing the tab mid-run asks first (App.jsx).
+  tasks: [],
+  // Days being approved or reopened right now, by `${email}|${date}`.
+  approving: {},
+  background(label, fn) {
+    const id = crypto.randomUUID();
+    set((s) => ({ tasks: [...s.tasks, { id, label, note: '' }] }));
+    const note = (text) => set((s) => ({ tasks: s.tasks.map((t) => (t.id === id ? { ...t, note: text } : t)) }));
+    // Busy (429/503) means the flow didn't take it: try again after a pause.
+    const attempt = async (n) => {
+      try { return await fn(note); } catch (e) {
+        if (n < 3 && [429, 503].includes(e.status)) { await new Promise((r) => setTimeout(r, n * 5000)); return attempt(n + 1); }
+        throw e;
+      }
+    };
+    const run = attempt(1);
+    run.catch(() => {}).finally(() => set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) })));
+    return run;
   },
 
   // A server-confirmed change: into `base`, and the screen keeps the queue on top.
@@ -336,11 +372,41 @@ export const useStore = create((set, get) => ({
     get().enqueue('flag', { ...r, by: get().session?.email || '' }, 'The flag decision');
   },
 
-  // Approvals are never queued: the approved export holds only what the flow confirmed.
-  async approveDay(a, status = 'approved') {
-    const rec = await api.approveDay(a, status);
-    get().commit((d) => ({ ...d, approvals: [...(d.approvals || []), rec], ...(DEMO ? { audit: demo.load().audit } : {}) }));
-    return rec;
+  // Approvals run in the background but only count once the flow confirms them: the
+  // day shows "Approving…" until then, and the approved export holds only confirmed rows.
+  async approveOne(a, status = 'approved') {
+    const k = `${a.email}|${a.date}`;
+    set((s) => ({ approving: { ...s.approving, [k]: status } }));
+    try {
+      const { name, ...body } = a; // eslint-disable-line no-unused-vars
+      const rec = await api.approveDay(body, status);
+      get().commit((d) => ({ ...d, approvals: [...(d.approvals || []), rec], ...(DEMO ? { audit: demo.load().audit } : {}) }));
+      return rec;
+    } finally {
+      set((s) => { const x = { ...s.approving }; delete x[k]; return { approving: x }; });
+    }
+  },
+  approveDay(a, status = 'approved') {
+    return get().background(`${status === 'approved' ? 'Approving' : 'Reopening'} ${a.name || a.email}`, () => get().approveOne(a, status));
+  },
+  // Approve all: three at a time, each day marked until its own answer comes back.
+  approveMany(list) {
+    list.forEach((a) => set((s) => ({ approving: { ...s.approving, [`${a.email}|${a.date}`]: 'approved' } })));
+    return get().background(`Approving ${list.length} days`, async (note) => {
+      const queue = [...list];
+      const errors = [];
+      let n = 0;
+      const worker = async () => {
+        while (queue.length) {
+          const a = queue.shift();
+          try { await get().approveOne(a); } catch (e) { errors.push(e); }
+          n += 1;
+          note(`${n} of ${list.length}`);
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+      if (errors.length) throw new Error(`${list.length - errors.length} of ${list.length} approved. ${errors[0].message}`);
+    });
   },
 
   async sendEmails(body) {
