@@ -81,7 +81,7 @@ export function SendSchedules({ open, onOpenChange, wk0, entries, testMode }) {
       };
       await Promise.all([run(), run(), run()]);
       const n = messages.length;
-      toast.success(`${n} schedule ${n === 1 ? 'email' : 'emails'} ${DEMO ? 'marked as sent' : 'sent'}`, {
+      toast.success(`${n} schedule ${n === 1 ? 'email' : 'emails'} ${DEMO ? 'marked as sent' : 'on their way'}`, {
         description: DEMO ? 'Demo mode: no email leaves this browser.' : testMode ? 'Test mode: they went to project_lotus@centific.com.' : `Week of ${weekLabel(wk0)}.`,
       });
       onOpenChange(false);

@@ -1,8 +1,13 @@
 import { create } from 'zustand';
-import { api, demo, setDemoActor, storage } from './api.js';
+import { toast } from 'sonner';
+import { api, demo, normNotice, setDemoActor, storage, whenSignedOut } from './api.js';
 import { AUTH_URL, DEMO, setDemo } from './config.js';
 import * as auth from './auth/api.js';
 import { getAuth, setAuth } from './auth/session.js';
+import { KINDS, MAX_TRIES, afterFail, isTemp, overlay, ready, refused } from './outbox.js';
+
+let noticeTimer;
+let pumpTimer;
 
 const cached = storage.get('onsite-cache', null);
 const ADMIN_KEY = 'lotus-has-admin';
@@ -17,8 +22,47 @@ const stageOf = (s) => (!s ? 'signedOut' : s.mustChange ? 'mustChange' : s.demoP
 const savedSession = sessionOf(getAuth());
 setDemoActor(savedSession?.email);
 
+// The save queue (lib/outbox.js) lives in this browser until it's sent, so a
+// reload or a dropped connection loses nothing. Only live data is queued here; it
+// belongs to whoever queued it and only goes out under their sign-in.
+const OUTBOX = 'lotus-outbox-v1';
+const loadJobs = (email) => {
+  if (DEMO || !email) return [];
+  const o = storage.get(OUTBOX, null);
+  if (!o || o.owner !== email) return [];
+  // A try that was under way when the page closed may have saved.
+  return (o.jobs || []).map((j) => (j.state === 'sending' ? { ...j, state: 'waiting', unsure: true, nextAt: 0 } : j));
+};
+const keepJobs = (email, jobs) => {
+  if (DEMO || !email) return;
+  if (jobs.length) storage.set(OUTBOX, { owner: email, jobs });
+  else storage.remove(OUTBOX);
+};
+
+// How each kind of job is sent. New shifts' tmp- ids stay in this browser.
+const strip = ({ pending, ...r }) => r;
+const SEND = {
+  shifts: (b) => api.upsertShifts(b.shifts.map((r) => { const { id, ...rest } = strip(r); return isTemp(id) ? rest : { id, ...rest }; })),
+  shiftDelete: (b) => api.removeShift(b.id),
+  users: (b) => api.upsertUsers(b.users.map(strip)),
+  flag: ({ key, outcome, reason, endTime }) => api.resolveFlag({ key, outcome, reason, endTime }),
+  client: (b) => api.clientHours(b.week, b.hours),
+};
+// Kept a few minutes after they land, so a Read that started before they did
+// doesn't briefly undo them.
+let recent = [];
+const RECENT_MS = 3 * 60 * 1000;
+const reSettle = (base) => {
+  recent = recent.filter((r) => Date.now() - r.at < RECENT_MS);
+  return recent.reduce((d, r) => KINDS[r.job.kind].settle(d, r.job.body, r.result), base);
+};
+
 export const useStore = create((set, get) => ({
-  data: cached?.data || null,
+  // `base` is the last server copy plus what the server confirmed since; `data`
+  // (what every view reads) is `base` with the unsent changes in `jobs` on top.
+  base: cached?.data || null,
+  jobs: loadJobs(savedSession?.email),
+  data: overlay(cached?.data || null, loadJobs(savedSession?.email)),
   loadedAt: cached?.at ? new Date(cached.at) : null,
   syncing: false,
   error: '',
@@ -51,6 +95,7 @@ export const useStore = create((set, get) => ({
   async sync({ manual = false } = {}) {
     if (get().syncing) return;
     if (!['signedIn', 'pick'].includes(get().authStage)) return;
+    get().pump();
     set({ syncing: true, ...(manual ? { error: '' } : {}) });
     const wasDemo = DEMO;
     try {
@@ -59,7 +104,8 @@ export const useStore = create((set, get) => ({
       if (DEMO !== wasDemo) return;
       const at = new Date();
       if (!DEMO) storage.set('onsite-cache', { data, at: at.toISOString() });
-      const patch = { data, loadedAt: at, error: '' };
+      const base = reSettle(data);
+      const patch = { base, data: overlay(base, get().jobs), loadedAt: at, error: '' };
       if (data.me?.email && get().session && !get().session.demoPicker) patch.session = { ...get().session, ...data.me, roles: data.me.roles || get().session.roles };
       set(patch);
     } catch (e) {
@@ -78,7 +124,7 @@ export const useStore = create((set, get) => ({
   async switchDemo(on) {
     if (setDemo(on) !== !!on) return;
     const cache = !on ? storage.get('onsite-cache', null) : null;
-    set({ demo: !!on, data: cache?.data || null, loadedAt: cache?.at ? new Date(cache.at) : null, error: '' });
+    set({ demo: !!on, base: cache?.data || null, data: overlay(cache?.data || null, get().jobs), loadedAt: cache?.at ? new Date(cache.at) : null, error: '' });
     await get().sync({ manual: true });
   },
 
@@ -86,8 +132,10 @@ export const useStore = create((set, get) => ({
     setAuth(a);
     const session = sessionOf(a);
     setDemoActor(session?.email);
-    set({ session, authStage: stageOf(session) });
+    const jobs = loadJobs(session?.email);
+    set((s) => ({ session, authStage: stageOf(session), jobs, data: overlay(s.base, jobs) }));
     if (session) markAdmin();
+    if (jobs.length) setTimeout(() => get().pump(), 0);
     if (session?.roles.includes('operator') && !session.demoPicker) get().setMe({ name: session.name, email: session.email, station: '' });
   },
   async signIn(username, password) {
@@ -113,89 +161,213 @@ export const useStore = create((set, get) => ({
     get().keepAuth({ ...a, user: { ...a.user, email: o.email, name: o.name, operatorId: o.id, picked: true } });
     get().setMe({ name: o.name, email: o.email, station: '' });
   },
-  async signOut() {
-    const token = getAuth()?.token;
+  // everywhere: false only for the lab laptop's sign-out after each clock-in, so
+  // the operator's phone stays signed in.
+  async signOut({ everywhere = true } = {}) {
+    const token = everywhere ? getAuth()?.token : null;
     storage.remove('onsite-cache');
     setAuth(null);
     setDemoActor('');
-    set({ session: null, authStage: 'signedOut', ...(DEMO ? {} : { data: null, loadedAt: null }) });
+    // Unsent changes stay saved in this browser for this person's next sign-in.
+    clearTimeout(pumpTimer);
+    set({ session: null, authStage: 'signedOut', jobs: [], ...(DEMO ? { data: get().base } : { base: null, data: null, loadedAt: null }) });
     // The flow clears its copy too; if it can't be reached the token still runs out.
     if (token) await auth.signOut(token).catch(() => {});
   },
 
   async punch(body) {
     const p = await api.punch(body);
-    set((s) => ({ data: s.data ? { ...s.data, punches: [...s.data.punches, p] } : s.data }));
+    get().commit((d) => (d ? { ...d, punches: [...d.punches, p] } : d));
     return p;
   },
 
-  async setClientHours(week, hours) {
-    await api.clientHours(week, hours);
-    set((s) => ({
-      data: { ...s.data, client: s.data.client.filter((c) => c.week !== week).concat(hours == null ? [] : [{ week, hours }]) },
-    }));
+  // A server-confirmed change: into `base`, and the screen keeps the queue on top.
+  commit(fn) {
+    set((s) => {
+      const base = fn(s.base ?? s.data);
+      return { base, data: overlay(base, s.jobs) };
+    });
   },
 
-  async upsertShifts(shifts) {
-    const saved = await api.upsertShifts(shifts);
+  // ---- The save queue (lib/outbox.js) ----
+  setJobs(fn) {
     set((s) => {
-      const ids = new Set(saved.map((r) => r.id));
-      return { data: { ...s.data, schedule: (s.data.schedule || []).filter((r) => !ids.has(r.id)).concat(saved) } };
+      const jobs = fn(s.jobs);
+      keepJobs(s.session?.email, jobs);
+      return { jobs, data: overlay(s.base, jobs) };
     });
+  },
+  // Queue a change: it shows at once and goes to the flow in the background.
+  enqueue(kind, body, label) {
+    const job = { id: crypto.randomUUID(), kind, body, label, tries: 0, state: 'waiting', nextAt: 0, at: new Date().toISOString() };
+    get().setJobs((jobs) => [...jobs, job]);
+    get().pump();
+    return job.id;
+  },
+  pump() {
+    clearTimeout(pumpTimer);
+    if (get().authStage !== 'signedIn') return;
+    const now = Date.now();
+    for (const j of ready(get().jobs, now)) get().send(j);
+    const next = get().jobs.filter((j) => j.state === 'waiting' && j.nextAt > now).map((j) => j.nextAt);
+    if (next.length) pumpTimer = setTimeout(() => get().pump(), Math.max(500, Math.min(...next) - now));
+  },
+  async send(job) {
+    const owner = get().session?.email;
+    const patchJob = (fn) => get().setJobs((jobs) => jobs.map((j) => (j.id === job.id ? fn(j) : j)));
+    patchJob((j) => ({ ...j, state: 'sending' }));
+    let { body } = job;
+    try {
+      let result = [];
+      // An earlier try may have saved new shifts: look for them before sending again.
+      if (job.unsure && KINDS[job.kind].found) {
+        const f = KINDS[job.kind].found(await api.all(), body);
+        result = f.saved;
+        body = f.rest;
+      }
+      if (body) {
+        const out = await SEND[job.kind](body);
+        result = Array.isArray(out) ? [...result, ...out] : (out ?? result);
+      }
+      if (get().session?.email !== owner) return;
+      recent.push({ job, result, at: Date.now() });
+      set((s) => {
+        const jobs = s.jobs.filter((j) => j.id !== job.id);
+        keepJobs(owner, jobs);
+        const base = s.base ? KINDS[job.kind].settle(s.base, job.body, result) : s.base;
+        return { jobs, base, data: overlay(base, jobs) };
+      });
+    } catch (e) {
+      if (get().session?.email !== owner) return;
+      if (e.status === 401) { patchJob((j) => ({ ...j, state: 'waiting', nextAt: 0 })); return; }
+      if (refused(e)) {
+        get().setJobs((jobs) => jobs.filter((j) => j.id !== job.id));
+        toast.error(`${job.label} didn’t save`, { description: `${e.message} It’s been put back the way it was.` });
+        return;
+      }
+      const next = afterFail(get().jobs.find((j) => j.id === job.id) || job, e, Date.now());
+      patchJob(() => next);
+      if (next.state === 'stuck') {
+        toast.error(`${job.label} hasn’t saved yet`, {
+          description: `Tried ${MAX_TRIES} times: ${next.error} It’s kept in this browser.`,
+          action: { label: 'Try again', onClick: () => get().retryJobs() },
+        });
+      }
+    } finally {
+      get().pump();
+    }
+  },
+  retryJobs() {
+    get().setJobs((jobs) => jobs.map((j) => (j.state === 'stuck' ? { ...j, state: 'waiting', tries: 0, nextAt: 0 } : j)));
+    get().pump();
+  },
+  discardStuck() {
+    get().setJobs((jobs) => jobs.filter((j) => j.state !== 'stuck'));
+  },
+
+  setClientHours(week, hours) {
+    get().enqueue('client', { week, hours }, `Successful hours for the week of ${week}`);
+  },
+
+  // Shifts show on the schedule at once (new ones under a tmp- id) and save in the
+  // background. A change to a shift that's still waiting to go joins that job.
+  upsertShifts(shifts, label = 'The shift') {
+    const rows = shifts.map((r) => strip(r.id ? r : { ...r, id: `tmp-${crypto.randomUUID().slice(0, 8)}` }));
+    const temps = rows.filter((r) => isTemp(r.id));
+    const waiting = get().jobs.filter((j) => j.kind === 'shifts' && j.state === 'waiting');
+    if (temps.some((r) => get().jobs.some((j) => j.kind === 'shifts' && j.state !== 'waiting' && j.body.shifts.some((x) => x.id === r.id)))) {
+      throw new Error('That shift is still saving. Try again in a moment.');
+    }
+    // Rows for tmp shifts already queued go into their own job instead.
+    const joined = new Set();
+    get().setJobs((jobs) => jobs.map((j) => {
+      if (!waiting.includes(j)) return j;
+      const mine = temps.filter((r) => j.body.shifts.some((x) => x.id === r.id));
+      if (!mine.length) return j;
+      mine.forEach((r) => joined.add(r.id));
+      return { ...j, body: { shifts: j.body.shifts.map((x) => mine.find((r) => r.id === x.id) || x) } };
+    }));
+    const rest = rows.filter((r) => !joined.has(r.id));
+    if (rest.length) get().enqueue('shifts', { shifts: rest }, label);
+    return rows;
+  },
+  // The roster and schedule import: sent now, in batches, with progress (Roster.jsx).
+  async importShifts(shifts) {
+    const saved = await api.upsertShifts(shifts);
+    get().commit((d) => KINDS.shifts.settle(d, { shifts }, saved));
     return saved;
   },
   // An operator fills an open spot: booked into that pair, then clocked in by the caller.
   async fillIn(shiftId) {
     const r = await api.fillIn(shiftId);
-    set((s) => ({ data: { ...s.data, schedule: (s.data.schedule || []).filter((x) => x.id !== r.id).concat(r), openSpots: (s.data.openSpots || []).filter((x) => x.shiftId !== shiftId) } }));
+    get().commit((d) => ({ ...d, schedule: (d.schedule || []).filter((x) => x.id !== r.id).concat(r), openSpots: (d.openSpots || []).filter((x) => x.shiftId !== shiftId) }));
     // The flow gave the whole pair the pair id; a reload brings the partner's name.
     get().sync().catch(() => {});
     return r;
   },
-  addShift(shift) { return get().upsertShifts([shift]).then((r) => r[0]); },
 
-  async removeShift(id) {
-    const before = get().data;
-    // Optimistic: the row leaves at once; it comes back if the write fails.
-    set((s) => ({ data: { ...s.data, schedule: (s.data.schedule || []).filter((r) => r.id !== id) } }));
-    try { await api.removeShift(id); } catch (e) { set({ data: before }); throw e; }
+  removeShift(id, label = 'Removing the shift') {
+    if (isTemp(id)) {
+      // Not sent yet: just take it out of its job.
+      const job = get().jobs.find((j) => j.kind === 'shifts' && j.body.shifts.some((x) => x.id === id));
+      if (job && job.state !== 'waiting') throw new Error('That shift is still saving. Try again in a moment.');
+      get().setJobs((jobs) => jobs.flatMap((j) => {
+        if (j.id !== job?.id) return [j];
+        const left = j.body.shifts.filter((x) => x.id !== id);
+        return left.length ? [{ ...j, body: { shifts: left } }] : [];
+      }));
+      return;
+    }
+    get().enqueue('shiftDelete', { id }, label);
   },
 
+  // Changes to people already on the roster: shown at once, saved in the background.
+  updateUsers(users, label) {
+    get().enqueue('users', { users }, label);
+  },
+  // New people and the roster import: sent now, because the flow assigns operator IDs.
   async upsertUsers(users) {
     const saved = await api.upsertUsers(users);
-    set((s) => {
-      const by = new Map((s.data.operators || []).map((o) => [o.email, o]));
-      for (const o of saved) by.set(o.email, o);
-      return { data: { ...s.data, operators: [...by.values()] } };
-    });
+    get().commit((d) => KINDS.users.settle(d, { users }, saved));
     return saved;
   },
 
-  async resolveFlag(r) {
-    const res = await api.resolveFlag(r);
-    set((s) => ({ data: { ...s.data, resolutions: (s.data.resolutions || []).filter((x) => x.key !== r.key).concat(res) } }));
-    return res;
+  resolveFlag(r) {
+    get().enqueue('flag', { ...r, by: get().session?.email || '' }, 'The flag decision');
   },
 
+  // Approvals are never queued: the approved export holds only what the flow confirmed.
   async approveDay(a, status = 'approved') {
     const rec = await api.approveDay(a, status);
-    set((s) => ({ data: { ...s.data, approvals: [...(s.data.approvals || []), rec] } }));
-    if (DEMO) set((s) => ({ data: { ...s.data, audit: demo.load().audit } }));
+    get().commit((d) => ({ ...d, approvals: [...(d.approvals || []), rec], ...(DEMO ? { audit: demo.load().audit } : {}) }));
     return rec;
   },
 
   async sendEmails(body) {
-    const notices = await api.sendEmails(body);
-    set((s) => ({ data: { ...s.data, notices: [...(s.data.notices || []), ...notices] } }));
+    let notices = await api.sendEmails(body);
+    // Schedule emails: the flow answers 202 { ok: true } before it sends (docs/lotus-flows.md),
+    // so there are no notice rows yet. Show them as sent now and let a reload a minute later
+    // swap in the flow's own rows.
+    if (!notices.length && body.kind === 'schedule' && body.messages?.length) {
+      const sentAt = new Date().toISOString();
+      const test = get().data?.emailTestMode !== false;
+      notices = body.messages.map((m) => ({
+        ...normNotice({ email: m.to, operatorId: m.operatorId, weekStart: body.weekStart, kind: m.kind, subject: m.subject, sentAt, test, snapshot: m.snapshot }),
+        id: `pending-${crypto.randomUUID().slice(0, 8)}`,
+        pending: true,
+      }));
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => get().sync(), 60 * 1000);
+    }
+    get().commit((d) => ({ ...d, notices: [...(d.notices || []), ...notices] }));
     return notices;
   },
 
   async saveTemplate(t) {
     const rec = await api.saveTemplate(t);
-    set((s) => ({ data: { ...s.data, templates: (s.data.templates || []).filter((x) => x.id !== t.id).concat([rec]) } }));
+    get().commit((d) => ({ ...d, templates: (d.templates || []).filter((x) => x.id !== t.id).concat([rec]) }));
     return rec;
   },
-
   setMe(me) { storage.set('onsite-me', me); set({ me }); },
   forgetMe() { storage.remove('onsite-me'); set({ me: null }); },
   setDevice(device) { storage.set('onsite-device', device); set({ device }); },
@@ -207,3 +379,11 @@ export const useStore = create((set, get) => ({
   setTheme(theme) { storage.set('onsite-theme', theme); set({ theme }); },
   resetDemo() { demo.reset(); get().sync(); },
 }));
+
+// A flow refused the sign-in twice: go back to the sign-in screen and say why,
+// rather than leaving a screen that can't load.
+whenSignedOut(() => {
+  if (!useStore.getState().session) return;
+  useStore.getState().signOut({ everywhere: false });
+  toast('Signed out', { description: 'Your sign-in ended, maybe because this username signed in on another device. Sign in again to carry on.' });
+});

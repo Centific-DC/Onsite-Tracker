@@ -50,6 +50,7 @@ const ADMIN_NAV = [
   // The Lotus Auth flow checks the admin role too.
   { id: 'admin/users', label: 'Users', icon: KeyRound, view: UsersView, roles: ['admin'], phone: false, hidden: true },
 ];
+const REFRESH_MS = 5 * 60 * 1000;
 const CHECKIN = { id: 'checkin', label: 'Clock in', icon: Clock, view: CheckIn };
 // A password reset link (#/reset?u=…&c=…) opens this, signed in or not.
 const RESET = { id: 'reset', label: 'Reset password', icon: KeyRound, view: ResetPassword };
@@ -58,7 +59,7 @@ const LEGACY = { today: 'admin/today', schedule: 'admin/schedule', hours: 'admin
 
 export default function App() {
   const route = useRoute();
-  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching, demo } = useStore();
+  const { sync, init, theme, data, syncing, error, loadedAt, session, authStage, signOut, setSearching, demo, jobs } = useStore();
   const [settings, setSettings] = useState(false);
   const systemDark = useMedia('(prefers-color-scheme: dark)');
   const phone = useMedia('(max-width: 767px)');
@@ -89,8 +90,14 @@ export default function App() {
   useEffect(() => {
     if (authStage !== 'signedIn' && authStage !== 'pick') return undefined;
     sync();
-    const id = setInterval(() => { if (!document.hidden) sync(); }, 60000);
-    const onVis = () => { if (!document.hidden) sync(); };
+    // Every load runs the Read flow, and every flow run spends Power Automate's
+    // shared request allowance (the same one Lotus saves and other teams' flows
+    // use; when it runs short, every flow slows down). So refresh every 5 minutes
+    // while the page is in view, and on coming back to it only if the data is
+    // over a minute old. Saves update the screen themselves, and Refresh is there.
+    const stale = (ms) => { const at = useStore.getState().loadedAt; return !at || Date.now() - at.getTime() > ms; };
+    const id = setInterval(() => { if (!document.hidden) sync(); }, REFRESH_MS);
+    const onVis = () => { if (!document.hidden && stale(60000)) sync(); };
     document.addEventListener('visibilitychange', onVis);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
   }, [sync, authStage, session?.email]);
@@ -167,8 +174,11 @@ export default function App() {
     const t = setTimeout(() => setSlow(true), 5000);
     return () => clearTimeout(t);
   }, [data, syncing]);
-  const status = DEMO
-    ? 'Demo data'
+  // Unsent changes come first: the header says so until the save queue is empty.
+  const stuck = jobs.filter((j) => j.state === 'stuck').length;
+  const status = stuck ? `${stuck} not saved`
+    : jobs.length ? `Saving ${jobs.length}…`
+    : DEMO ? 'Demo data'
     : syncing && !data ? 'Loading…'
       : error ? 'Refresh failed'
         : loadedAt ? `Updated ${fmtTime(loadedAt)}` : '';
@@ -190,7 +200,7 @@ export default function App() {
     <>
       {compact && canSearch && <button type="button" className="icon-btn" aria-label="Search" data-tour="search" onClick={() => setSearching(true)}><Search size={18} /></button>}
       {signedIn && <button type="button" className="icon-btn" aria-label="Tour of this page" title="Tour of this page" data-tour="help" onClick={replayTour}><CircleHelp size={18} /></button>}
-      <SyncButton syncing={syncing} onClick={manualSync} status={status} error={error} compact={compact} />
+      <SyncButton syncing={syncing} onClick={stuck ? () => useStore.getState().retryJobs() : manualSync} status={status} error={error || (stuck ? `${stuck} change${stuck === 1 ? '' : 's'} didn’t reach Lotus after several tries. They’re kept in this browser. Click to try again.` : '')} saving={jobs.length > 0} compact={compact} />
       <button type="button" className="icon-btn" aria-label="Settings" data-tour="settings" onClick={() => setSettings(true)}><Settings size={18} /></button>
     </>
   );
@@ -296,14 +306,14 @@ export default function App() {
   );
 }
 
-function SyncButton({ syncing, onClick, status, error, compact }) {
+function SyncButton({ syncing, onClick, status, error, saving, compact }) {
   return (
     <button
       type="button"
       className={clsx('sync', syncing && 'is-busy', error && 'is-bad', compact && 'sync-compact')}
       onClick={onClick}
       aria-busy={syncing}
-      title={error || 'Refresh now'}
+      title={error || (saving ? 'Your changes are on screen and saving to Lotus in the background.' : 'Refresh now')}
     >
       <span className="sync-icon" aria-hidden="true">
         <RefreshCw size={16} className="sync-glyph" />

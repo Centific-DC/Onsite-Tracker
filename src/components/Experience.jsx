@@ -6,17 +6,13 @@ import { Select } from './ui.jsx';
 // Lets an admin mark an operator Experienced or New, or leave it to completed
 // sessions. Every pair needs at least one experienced operator.
 export function ExperienceSelect({ op, sessions, className = 'sel-pill' }) {
-  const { upsertUsers } = useStore();
+  const { updateUsers } = useStore();
   const x = experience(op, sessions);
-  const save = async (v) => {
-    try {
-      // Only the email and the mark: the flow changes just the fields it's sent.
-      await upsertUsers([{ email: op.email, experience: v }]);
-      const now = experience({ ...op, experience: v }, sessions);
-      toast(`${op.name}: ${now.level === 'new' ? 'New' : 'Experienced'}`, { description: v ? 'Set by you. Re-importing the roster keeps it.' : `Decided by completed sessions (${x.done}).` });
-    } catch (err) {
-      toast.error("Couldn't save", { description: err.message });
-    }
+  const save = (v) => {
+    // Only the email and the mark: the flow changes just the fields it's sent.
+    updateUsers([{ email: op.email, experience: v }], `${op.name}’s experience`);
+    const now = experience({ ...op, experience: v }, sessions);
+    toast(`${op.name}: ${now.level === 'new' ? 'New' : 'Experienced'}`, { description: v ? 'Set by you. Re-importing the roster keeps it.' : `Decided by completed sessions (${x.done}).` });
   };
   return (
     <Select
