@@ -24,6 +24,16 @@ describe('sign-in', () => {
     expect(localAuth({ op: 'salt', username: 'nobody' }).body.salt).toBeTruthy();
   });
 
+  it('a second sign-in keeps the first device signed in; sign-out ends both', async () => {
+    const a = (await signIn('Lotus-admin', 'Testing12345')).body.token;
+    const b = (await signIn('Lotus-admin', 'Testing12345')).body.token;
+    expect(b).toBe(a);
+    expect(localAuth({ op: 'user.list', token: a }).status).toBe(200);
+    localAuth({ op: 'signout', token: a });
+    expect(localAuth({ op: 'user.list', token: b }).status).toBe(401);
+    expect((await signIn('Lotus-admin', 'Testing12345')).body.token).not.toBe(a);
+  });
+
   it('locks the account after five wrong passwords', async () => {
     for (let i = 0; i < 5; i++) await signIn('Lotus-admin', 'wrong-password');
     expect((await signIn('Lotus-admin', 'Testing12345')).status).toBe(401);

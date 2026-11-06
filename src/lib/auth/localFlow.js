@@ -85,7 +85,7 @@ export function localAuth(req) {
       }
       // A temp password stops working TEMP_MS after an admin set it.
       if (u.mustChangePassword && u.tempExpires && Date.parse(u.tempExpires) < now) return refuse(401, 'This temp password has expired. Ask your admin for a new one.');
-      Object.assign(u, { token: newToken(), tokenExpires: new Date(now + TOKEN_MS).toISOString(), failedCount: 0, lockedUntil: null, lastSignIn: new Date(now).toISOString() });
+      Object.assign(u, { token: u.token && u.tokenExpires && Date.parse(u.tokenExpires) > now ? u.token : newToken(), tokenExpires: new Date(now + TOKEN_MS).toISOString(), failedCount: 0, lockedUntil: null, lastSignIn: new Date(now).toISOString() });
       save(users);
       return reply(200, { ok: true, token: u.token, expiresAt: u.tokenExpires, user: pick(u) });
     }

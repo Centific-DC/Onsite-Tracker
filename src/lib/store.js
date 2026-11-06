@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { api, demo, normNotice, setDemoActor, storage } from './api.js';
+import { toast } from 'sonner';
+import { api, demo, normNotice, setDemoActor, storage, whenSignedOut } from './api.js';
 
 let noticeTimer;
 import { AUTH_URL, DEMO, setDemo } from './config.js';
@@ -115,8 +116,10 @@ export const useStore = create((set, get) => ({
     get().keepAuth({ ...a, user: { ...a.user, email: o.email, name: o.name, operatorId: o.id, picked: true } });
     get().setMe({ name: o.name, email: o.email, station: '' });
   },
-  async signOut() {
-    const token = getAuth()?.token;
+  // everywhere: false only for the lab laptop's sign-out after each clock-in, so
+  // the operator's phone stays signed in.
+  async signOut({ everywhere = true } = {}) {
+    const token = everywhere ? getAuth()?.token : null;
     storage.remove('onsite-cache');
     setAuth(null);
     setDemoActor('');
@@ -256,3 +259,11 @@ export const useStore = create((set, get) => ({
   setTheme(theme) { storage.set('onsite-theme', theme); set({ theme }); },
   resetDemo() { demo.reset(); get().sync(); },
 }));
+
+// A flow refused the sign-in twice: go back to the sign-in screen and say why,
+// rather than leaving a screen that can't load.
+whenSignedOut(() => {
+  if (!useStore.getState().session) return;
+  useStore.getState().signOut({ everywhere: false });
+  toast('Signed out', { description: 'Your sign-in ended, maybe because this username signed in on another device. Sign in again to carry on.' });
+});

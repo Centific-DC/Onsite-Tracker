@@ -21,8 +21,31 @@ export function errorText(out, status) {
   return `The flow answered ${status}.`;
 }
 
+// Called when a flow still refuses the sign-in after one retry; the store signs out.
+let onSignedOut = () => {};
+export const whenSignedOut = (fn) => { onSignedOut = fn; };
+
 async function paPost(url, body) {
-  return timed(`${url === READ_URL ? 'Read' : 'Write'} · ${body.action || 'call'}`, paPostRaw(url, body));
+  return timed(`${url === READ_URL ? 'Read' : 'Write'} · ${body.action || 'call'}`, paPostChecked(url, body));
+}
+
+// A 401 can be a busy moment rather than a real sign-out (the token lookup itself
+// was throttled), so ask once more after a pause. The flow refuses before it
+// writes anything, so a second try never saves twice. Still 401: the sign-in has
+// really ended (most often a sign-in with the same username somewhere else).
+async function paPostChecked(url, body) {
+  try {
+    return await paPostRaw(url, body);
+  } catch (e) {
+    if (e.status !== 401 || !getToken()) throw e;
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      return await paPostRaw(url, body);
+    } catch (e2) {
+      if (e2.status === 401 && getToken()) onSignedOut(e2);
+      throw e2;
+    }
+  }
 }
 
 async function paPostRaw(url, body) {

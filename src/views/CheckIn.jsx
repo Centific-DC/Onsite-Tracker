@@ -24,7 +24,7 @@ export function CheckIn() {
 
   useEffect(() => {
     if (!done || !laptop) return undefined;
-    const id = setTimeout(() => { setDone(null); signOut(); }, 6000);
+    const id = setTimeout(() => { setDone(null); signOut({ everywhere: false }); }, 6000);
     return () => clearTimeout(id);
   }, [done, laptop, signOut]);
 
@@ -34,7 +34,7 @@ export function CheckIn() {
 
   const person = { name: session.name, email: session.email, operatorId: session.operatorId };
   const primary = done
-    ? <Done done={done} onNext={() => { setDone(null); if (laptop) signOut(); }} laptop={laptop} />
+    ? <Done done={done} onNext={() => { setDone(null); if (laptop) signOut({ everywhere: false }); }} laptop={laptop} />
     : <Person person={person} onDone={setDone} laptop={laptop} />;
   return (
     <div className="checkin-layout">
