@@ -1,5 +1,5 @@
 import { timed } from './timing.js';
-import { CFG, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationName, locationOfRobot } from './config.js';
+import { CFG, CORRECTIONS_URL, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationName, locationOfRobot } from './config.js';
 import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
@@ -27,7 +27,7 @@ let onSignedOut = () => {};
 export const whenSignedOut = (fn) => { onSignedOut = fn; };
 
 async function paPost(url, body) {
-  return timed(`${url === READ_URL ? 'Read' : 'Write'} · ${body.action || 'call'}`, paPostChecked(url, body));
+  return timed(`${url === READ_URL ? 'Read' : url === CORRECTIONS_URL && url !== WRITE_URL ? 'Corrections' : 'Write'} · ${body.action || 'call'}`, paPostChecked(url, body));
 }
 
 // A 401 can be a busy moment rather than a real sign-out (the token lookup itself
@@ -249,19 +249,19 @@ export const api = {
   // log a request that came by email (`source: 'email'`, with when it arrived).
   async requestCorrection(r) {
     if (DEMO) return demo.requestCorrection(r);
-    return normCorrection((await paPost(WRITE_URL, { action: 'correction_request', ...r })).correction || {});
+    return normCorrection((await paPost(CORRECTIONS_URL, { action: 'correction_request', ...r })).correction || {});
   },
   // Admins only: approve with the real times, or decline. A counted approval adds
   // the warning or strike rows and emails the operator.
   async resolveCorrection(r) {
     if (DEMO) return demo.resolveCorrection(r);
-    const out = await paPost(WRITE_URL, { action: 'correction_resolve', ...r });
+    const out = await paPost(CORRECTIONS_URL, { action: 'correction_resolve', ...r });
     return { correction: normCorrection(out.correction || {}), strikes: (out.strikes || []).map(normStrike) };
   },
   // Admins only: cancel a warning or strike, with a reason. It stays in the history.
   async voidStrike(id, reason) {
     if (DEMO) return demo.voidStrike(id, reason);
-    return normStrike((await paPost(WRITE_URL, { action: 'strike_void', id, reason })).strike || {});
+    return normStrike((await paPost(CORRECTIONS_URL, { action: 'strike_void', id, reason })).strike || {});
   },
   async approveDay(a, status) {
     if (DEMO) return demo.approveDay(a, status);

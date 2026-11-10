@@ -172,7 +172,7 @@ Each counted miss is one row. The app works out the step from the rows: the 1st 
 | `Date` | text | the day of the miss |
 | `Reason` | text | `missed_in`, `missed_out`, `missed_both` or `late_report` |
 | `Ref` | text | the correction `Title`, or the flag key for a missed clock-out found in review |
-| `At` | text | `utcNow()` |
+| `StrikeAt` | text | `utcNow()`; returned as `at` (SharePoint doesn't allow a column named `At`) |
 | `By` | text | `callerEmail` |
 | `Emailed` | yes/no | the strike email was sent |
 | `Voided` | yes/no | an admin cancelled it |
@@ -391,6 +391,10 @@ Body `{ "email", "operatorId", "date", "hours", "computed", "note" }`.
 
 Add a `Lotus_Approvals` row with `Status` `approved` or `reopened`. Respond `{ "ok": true, "approval": { … } }`.
 
+### Flow: **Lotus Corrections** (`correction_request`, `correction_resolve`, `strike_void`)
+
+These three actions live in their own flow, **Lotus Corrections**, because Lotus Write is near Power Automate's 500-step limit (decided 2026-11-10). Same trigger as Write (**Anyone**), same body shape `{ "action", "token", ...fields }`, the same token check first, the same 403 for the wrong role, and a `Lotus_Audit` row per write. Its URL goes in the Actions secret **`LOTUS_CORRECTIONS_URL`**; the app sends these three actions there (and to Write while that secret is unset). Write keeps the `resolve_flag` strike and the admin-only checks; the strike email both flows send is described below.
+
 ### `correction_request`: role `operator`, or `admin` for an emailed request
 
 Body `{ "shiftId", "missed": "in" | "out" | "both", "message", "source"?: "email", "email"?, "requestedAt"? }`.
@@ -518,9 +522,9 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 16a. After `user.create`, set that row's `TempExpires` to yesterday by hand: `signin` with the right temp password gets 401 `This temp password has expired…`. `user.reset` makes it work again.
 16b. As a scheduler, `shift_upsert` an operator whose `HomeLocation` = `MTV` with `location` = `RED`: 400 and nothing saved. As that operator, `punch` in with `location` = `RED`: 403 `code` = `lab`.
 16c. As an admin, `email_send` a welcome to an operator who must change their password: it arrives (at the alias in test mode), the notice row has no HTML, and the run history shows the inputs as secured. For an operator who already changed their password: 400.
-16e. Missed clock-ins: as an operator, `correction_request` someone else's shift: 403. Your own: it saves `open`, and the admins get the email with you in CC. A second request for the same shift: 409.
-16f. As an approver (not admin), `approve_day` with `hours` ≠ `computed`, `resolve_flag` with an `endTime`, `correction_resolve` or `strike_void`: 403 each. As an admin they work and add audit rows.
-16g. `correction_resolve` approved with `counts` = true on a request sent 2 days after the shift: two `Lotus_Strikes` rows (the miss and `late_report`), and the operator gets the emails. Read as that operator: they see their own `strikes` and `corrections` only.
+16l. Missed clock-ins: as an operator, `correction_request` someone else's shift: 403. Your own: it saves `open`, and the admins get the email with you in CC. A second request for the same shift: 409.
+16m. As an approver (not admin), `approve_day` with `hours` ≠ `computed`, `resolve_flag` with an `endTime`, `correction_resolve` or `strike_void`: 403 each. As an admin they work and add audit rows.
+16n. `correction_resolve` approved with `counts` = true on a request sent 2 days after the shift: two `Lotus_Strikes` rows (the miss and `late_report`), and the operator gets the emails. Read as that operator: they see their own `strikes` and `corrections` only.
 16d. Pairs: book A and B on the same night with the same `Pair` and empty `Robot`. Read as A: `partners` names B. Book C with `Replaces` = A's shift and the same `Pair`: Read as B names only C.
 16e. Open spots: A doesn't clock in. 15 minutes after the start, Read as C (same home lab, no shift now) lists A's shift in `openSpots` with no name. `fill_in` as C creates C's shift (`Replaces` = A, same `Pair`); a second `fill_in` by D gets 409 `taken`. Read as an operator at the other lab: no spot.
 16f. Password reset: as an admin, `user.reset_link` for an operator, then `email_send` kind `password-reset`: it arrives (at the alias in test mode) and the notice row has no HTML. Their old password still signs in. `reset` with the right `codeHash` sets the new password, signs them out (old token gets 401) and the old password no longer works. The same link again: 400. A wrong `codeHash` five times locks the account for 15 minutes.
