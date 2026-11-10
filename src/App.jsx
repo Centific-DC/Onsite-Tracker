@@ -41,7 +41,7 @@ const ADMIN_NAV = [
   { id: 'admin/today', label: 'Today', icon: Users, view: Today, roles: ['scheduler', 'approver'] },
   { id: 'admin/schedule', label: 'Schedule', icon: CalendarDays, view: Schedule, roles: ['scheduler', 'approver'] },
   { id: 'admin/roster', label: 'Roster', icon: IdCard, view: Roster, roles: ['scheduler'] },
-  { id: 'admin/review', label: 'Review', icon: ClipboardCheck, view: Review, roles: ['approver'] },
+  { id: 'admin/review', label: 'Review', icon: ClipboardCheck, view: Review, roles: ['approver', 'admin'] },
   { id: 'admin/hours', label: 'Hours', icon: ChartColumn, view: Hours, roles: ['scheduler', 'approver'] },
   { id: 'admin/records', label: 'Records', icon: List, view: Records, roles: ['scheduler', 'approver'] },
   { id: 'admin/reports', label: 'Reports', icon: FileSpreadsheet, view: Reports, roles: ['approver', 'reporting'] },

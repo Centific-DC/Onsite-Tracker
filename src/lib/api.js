@@ -3,7 +3,8 @@ import { CFG, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationName, locatio
 import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
-import { openSpots, samePair } from './schedule.js';
+import { openSpots, samePair, shiftTimes } from './schedule.js';
+import { normCorrection, normStrike, reasonsFor } from './strikes.js';
 
 export const storage = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -152,6 +153,10 @@ const normAll = (d) => ({
   partners: (d.partners || []).map((p) => ({ shiftId: String(p.shiftId ?? p.ShiftId ?? ''), name: String(p.name ?? p.Name ?? '').trim() })).filter((p) => p.shiftId && p.name),
   resolutions: d.resolutions || [],
   approvals: (d.approvals || []).map((a) => ({ ...a, hours: Number(a.hours) || 0, computed: Number(a.computed) || 0 })),
+  // Missed clock-in or out requests and the warnings and strikes they led to. An
+  // operator's Read holds only their own.
+  corrections: (d.corrections || []).map(normCorrection).filter((c) => c.id && c.email),
+  strikes: (d.strikes || []).map(normStrike).filter((x) => x.id && x.email),
   audit: d.audit || [],
   // Schedule emails already sent (staff only), the email templates, and whether
   // emails still go to the project alias only (test mode).
@@ -239,6 +244,25 @@ export const api = {
     if (DEMO) return demo.saveTemplate(t);
     return (await paPost(WRITE_URL, { action: 'template_save', ...t })).template;
   },
+  // An operator says they forgot to clock in or out (`missed`: in | out | both) on one
+  // of their shifts. The flow emails the admins and copies the operator. Admins also
+  // log a request that came by email (`source: 'email'`, with when it arrived).
+  async requestCorrection(r) {
+    if (DEMO) return demo.requestCorrection(r);
+    return normCorrection((await paPost(WRITE_URL, { action: 'correction_request', ...r })).correction || {});
+  },
+  // Admins only: approve with the real times, or decline. A counted approval adds
+  // the warning or strike rows and emails the operator.
+  async resolveCorrection(r) {
+    if (DEMO) return demo.resolveCorrection(r);
+    const out = await paPost(WRITE_URL, { action: 'correction_resolve', ...r });
+    return { correction: normCorrection(out.correction || {}), strikes: (out.strikes || []).map(normStrike) };
+  },
+  // Admins only: cancel a warning or strike, with a reason. It stays in the history.
+  async voidStrike(id, reason) {
+    if (DEMO) return demo.voidStrike(id, reason);
+    return normStrike((await paPost(WRITE_URL, { action: 'strike_void', id, reason })).strike || {});
+  },
   async approveDay(a, status) {
     if (DEMO) return demo.approveDay(a, status);
     const out = await paPost(WRITE_URL, { action: status === 'approved' ? 'approve_day' : 'reopen_day', ...a });
@@ -251,11 +275,11 @@ let demoActor = 'demo';
 export const setDemoActor = (email) => { demoActor = email || 'demo'; };
 
 export const demo = {
-  KEY: 'lotus-demo-v4',
+  KEY: 'lotus-demo-v5',
   load() {
     let d = storage.get(this.KEY, null);
     if (!d) { d = seed(); storage.set(this.KEY, d); }
-    for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit', 'notices', 'templates']) d[k] ||= [];
+    for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit', 'notices', 'templates', 'corrections', 'strikes']) d[k] ||= [];
     d.robotNames ||= {};
     // Demo mode never sends email, so it behaves like test mode.
     d.emailTestMode = true;
@@ -356,8 +380,62 @@ export const demo = {
     const res = { key: r.key, outcome: r.outcome, reason: r.reason.trim(), endTime: r.endTime || '', by: demoActor, at: new Date().toISOString() };
     const before = d.resolutions.find((x) => x.key === r.key) || null;
     d.resolutions = d.resolutions.filter((x) => x.key !== r.key).concat(res);
+    // A forgotten clock-out counts as a miss, once per operator and day, as the flow does.
+    const [email, date, code] = r.key.split('|');
+    if (code === 'no_clockout' && !before) this.addStrike(d, { email, date, reason: 'missed_out', ref: r.key });
     this.save(d, 'resolve_flag', r.key, before, res);
     return res;
+  },
+  addStrike(d, { email, date, reason, ref }) {
+    if (d.strikes.some((x) => x.email === email && x.date === date && x.reason === reason && !x.voided)) return null;
+    const o = d.operators.find((x) => x.email === email);
+    const st = normStrike({ id: `K-${crypto.randomUUID().slice(0, 8)}`, email, name: o?.name || email, operatorId: o?.id || '', date, reason, ref, at: new Date().toISOString(), by: demoActor });
+    d.strikes.push(st);
+    d.audit.push({ id: crypto.randomUUID(), at: st.at, by: demoActor, action: 'strike_add', target: st.id, before: null, after: st });
+    return st;
+  },
+  requestCorrection(r) {
+    if (!String(r.message || '').trim()) throw new Error('Say what happened.');
+    const d = this.load();
+    const shift = d.schedule.find((x) => x.id === r.shiftId);
+    const email = r.source === 'email' ? r.email : demoActor;
+    if (!shift || shift.email !== email) throw new Error('That shift isn’t yours.');
+    if (shiftTimes(shift).start > new Date()) throw new Error('That shift hasn’t started yet.');
+    if (d.corrections.some((c) => c.shiftId === r.shiftId && c.status !== 'declined')) throw new Error('There’s already a request for that shift.');
+    const c = normCorrection({ id: `C-${crypto.randomUUID().slice(0, 8)}`, email, name: shift.name, operatorId: shift.operatorId, date: shift.date, shiftId: shift.id, missed: r.missed, message: r.message.trim(), source: r.source === 'email' ? 'email' : 'app', requestedAt: r.source === 'email' && r.requestedAt ? r.requestedAt : new Date().toISOString(), status: 'open' });
+    d.corrections.push(c);
+    this.save(d, 'correction_request', c.id, null, c);
+    return c;
+  },
+  resolveCorrection(r) {
+    const d = this.load();
+    const i = d.corrections.findIndex((c) => c.id === r.id);
+    if (i < 0) throw new Error('That request is gone.');
+    const before = d.corrections[i];
+    if (before.status !== 'open') throw new Error('That request was already handled.');
+    if (!String(r.note || '').trim()) throw new Error('Add a note.');
+    if (r.status === 'approved' && !(r.timeIn && r.timeOut && new Date(r.timeOut) > new Date(r.timeIn))) throw new Error('The clock-out has to be after the clock-in.');
+    if (r.status === 'approved' && r.counts === false && !String(r.noCountReason || '').trim()) throw new Error('Say why it doesn’t count.');
+    const c = normCorrection({ ...before, status: r.status, timeIn: r.status === 'approved' ? r.timeIn : '', timeOut: r.status === 'approved' ? r.timeOut : '', partnerConfirmed: !!r.partnerConfirmed, note: r.note.trim(), counts: r.status === 'approved' && r.counts !== false, noCountReason: r.counts === false ? String(r.noCountReason || '').trim() : '', resolvedBy: demoActor, resolvedAt: new Date().toISOString() });
+    d.corrections[i] = c;
+    const strikes = [];
+    if (c.status === 'approved' && c.counts) {
+      const shift = d.schedule.find((x) => x.id === c.shiftId);
+      for (const reason of reasonsFor(c, shift)) { const st = this.addStrike(d, { email: c.email, date: c.date, reason, ref: c.id }); if (st) strikes.push(st); }
+    }
+    this.save(d, 'correction_resolve', c.id, before, c);
+    return { correction: c, strikes };
+  },
+  voidStrike(id, reason) {
+    if (!String(reason || '').trim()) throw new Error('Say why you’re cancelling it.');
+    const d = this.load();
+    const i = d.strikes.findIndex((x) => x.id === id);
+    if (i < 0) throw new Error('That strike is gone.');
+    const before = d.strikes[i];
+    const st = { ...before, voided: true, voidReason: reason.trim(), voidedBy: demoActor, voidedAt: new Date().toISOString() };
+    d.strikes[i] = st;
+    this.save(d, 'strike_void', id, before, st);
+    return st;
   },
   approveDay(a, status) {
     const hours = Math.round(Number(a.hours) * 100) / 100;
@@ -464,7 +542,9 @@ function seed() {
         const tin = new Date(sIn.getTime() + early * 6e4);
         if (who === 'Casey Novak' && k === today) continue; // a no-show today
         if (tin > now) continue;
-        punch(tin, r, 'in', { grace: early < 0 ? -early : 0 });
+        if (who === 'Quinn Hale' && di === 3) continue; // forgot to clock in and out last Thursday
+        // Forgot to clock in last Thursday, but clocked out.
+        if (!(who === 'Morgan Diaz' && di === 3)) punch(tin, r, 'in', { grace: early < 0 ? -early : 0 });
         if (who === 'Jordan Pike' && di === 2) continue; // forgot to clock out last Wednesday
         let tout = new Date(sOut.getTime() + (Math.round(rnd() * 4) - 1) * 6e4);
         let extra = {};
@@ -486,6 +566,30 @@ function seed() {
   for (let i = 0; i < 3; i++) book(dayKey(addDays(wk0, 7 + i)), 'Morgan Diaz', R.robots[0], tpl(R, 0), 'Extra cover');
 
   punches.sort((x, y) => x.ts.localeCompare(y.ts));
+
+  // Missed clock-in or out requests (demo): Jordan's and Quinn's wait for an admin
+  // (Quinn's came two days late), Morgan's was corrected. Quinn already had a soft
+  // warning; Kai's older one has run out and a newer one was cancelled.
+  const corrections = [];
+  const strikes = [];
+  const shiftOf = (name, i) => schedule.find((r) => r.name === name && r.date === dayKey(addDays(start, i)));
+  const ask = (r, extra) => r && at(r.date, r.end) < now && corrections.push({ id: `C-demo${seq++}`, email: r.email, name: r.name, operatorId: r.operatorId, date: r.date, shiftId: r.id, source: 'app', status: 'open', ...extra });
+  const jp = shiftOf('Jordan Pike', 2);
+  ask(jp, { missed: 'out', message: 'Demo: I forgot to tap out when I left at the end of the shift. Avery was on the robot with me.', requestedAt: jp && at(jp.date, jp.end, 150).toISOString() });
+  const qh = shiftOf('Quinn Hale', 3);
+  ask(qh, { missed: 'both', message: 'Demo: my phone died before the shift, so I couldn’t clock in or out. I was there the whole night with Taylor.', requestedAt: qh && at(dayKey(addDays(start, 5)), '09:10').toISOString() });
+  const md = shiftOf('Morgan Diaz', 3);
+  const mdOut = md && punches.find((p) => p.shiftId === md.id && p.type === 'out');
+  if (md && mdOut) {
+    const resolvedAt = at(dayKey(addDays(start, 4)), '10:20').toISOString();
+    corrections.push({ id: `C-demo${seq++}`, email: md.email, name: md.name, operatorId: md.operatorId, date: md.date, shiftId: md.id, missed: 'in', message: 'Demo: I forgot to clock in, I got there on time.', source: 'app', requestedAt: at(md.date, md.start, 75).toISOString(), status: 'approved', partnerConfirmed: true, timeIn: at(md.date, md.start).toISOString(), timeOut: mdOut.ts, note: 'Demo: Casey confirmed Morgan was there from the start.', counts: true, resolvedBy: 'admin@example.com', resolvedAt });
+    strikes.push({ id: `K-demo${seq++}`, email: md.email, name: md.name, operatorId: md.operatorId, date: md.date, reason: 'missed_in', ref: corrections[corrections.length - 1].id, at: resolvedAt, by: 'admin@example.com', voided: false });
+  }
+  const strikeFor = (name, daysAgo, reason, extra = {}) => { const o = op(name); strikes.push({ id: `K-demo${seq++}`, email: o.email, name: o.name, operatorId: o.id, date: dayKey(addDays(now, -daysAgo)), reason, ref: '', at: addDays(now, -daysAgo).toISOString(), by: 'admin@example.com', voided: false, ...extra }); };
+  strikeFor('Quinn Hale', 20, 'missed_out');
+  strikeFor('Kai Tan', 45, 'missed_in');
+  strikeFor('Kai Tan', 5, 'missed_out', { voided: true, voidReason: 'Demo: the lab Wi-Fi was down, so nobody could clock out.', voidedBy: 'admin@example.com', voidedAt: addDays(now, -4).toISOString() });
+
   // Last week Monday to Wednesday approved already; the rest waits for review.
   const approvals = [];
   for (let i = 0; i < 3; i++) {
@@ -518,5 +622,5 @@ function seed() {
       return rows;
     });
   }
-  return { operators: ops, punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule, resolutions: [], approvals, audit: [], notices, templates: [] };
+  return { operators: ops, punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule, resolutions: [], approvals, audit: [], notices, templates: [], corrections, strikes };
 }

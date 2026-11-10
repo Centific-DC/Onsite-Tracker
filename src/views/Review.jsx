@@ -9,6 +9,9 @@ import { useHashQuery, useNow } from '../lib/hooks.js';
 import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx';
 import { robotTitle } from '../lib/robots.js';
 import { robotLabel } from '../lib/schedule.js';
+import { hasRole } from '../lib/auth.js';
+import { MISSED, isLateReport, reportDelayHours, sortRequests } from '../lib/strikes.js';
+import { CorrectionSheet } from '../components/CorrectionSheet.jsx';
 
 export const DAY_STATUS = {
   needs_review: { label: 'Needs review', tone: 'warn' },
@@ -21,7 +24,11 @@ export const DAY_STATUS = {
 // suggested hours. Managers resolve each flag with a reason, then approve the day.
 // Only approved hours reach the reporting export.
 export function Review() {
-  const { data, approveMany, approving } = useStore();
+  const { data, session, approveMany, approving } = useStore();
+  const admin = hasRole(session, 'admin');
+  const [req, setReq] = useState(null); // a request, or { draft: { email, shiftId } }
+  // Missed clock-in or out requests from every week, oldest first: they hold up the day.
+  const requests = sortRequests(data.corrections || []).filter((c) => c.status === 'open');
   const now = useNow(60000);
   // Monday's review covers last week, so that's where it opens.
   const [wk0, setWk0] = useState(() => addDays(mondayOf(new Date()), -7));
@@ -96,6 +103,23 @@ export function Review() {
         )}
       </div>
 
+      {requests.length > 0 && (
+        <Group title={`Missed clock-in or out · ${requests.length} waiting`} footer={admin ? 'Check with the partner, then set the real times. Each counted miss is a warning or a strike.' : 'Only admins can correct hours. These wait for an admin.'}>
+          {requests.map((c) => {
+            const shift = (data.schedule || []).find((r) => r.id === c.shiftId);
+            return (
+              <Row
+                key={c.id}
+                onClick={() => setReq(c)}
+                leading={<Avatar name={c.name} tone="warn" />}
+                title={<>{c.name} <Tag tone="warn">{MISSED[c.missed].label}</Tag>{isLateReport(shift, c.requestedAt) && <Tag tone="bad">Late report</Tag>}</>}
+                subtitle={`${fmtDay(parseDay(c.date))}${shift ? ` · ${shift.start}–${shift.end} · ${robotLabel(shift)}` : ''} · ${c.source === 'email' ? 'by email' : 'from Lotus'}, ${Math.round(reportDelayHours(shift, c.requestedAt))} h after`}
+              />
+            );
+          })}
+        </Group>
+      )}
+
       {byDay.length === 0 && <Group><div className="empty-row">{show === 'todo' ? 'Nothing to review this week.' : 'Nothing here.'}</div></Group>}
       {byDay.map(([k, list]) => (
         <Group key={k} title={fmtLongDay(parseDay(k))}>
@@ -112,7 +136,8 @@ export function Review() {
         </Group>
       ))}
 
-      <DaySheet day={current} pending={current && approving[current.key]} onClose={() => setOpen(null)} />
+      <DaySheet day={current} pending={current && approving[current.key]} onClose={() => setOpen(null)} onRequest={(r) => { setOpen(null); setReq(r); }} />
+      <CorrectionSheet request={req?.draft ? null : req} draft={req?.draft} onClose={() => setReq(null)} />
     </div>
   );
 }
@@ -122,8 +147,10 @@ const OUTCOMES = {
   info: [{ value: 'noted', label: 'Noted' }],
 };
 
-function DaySheet({ day, pending, onClose }) {
-  const { data, approveDay } = useStore();
+function DaySheet({ day, pending, onClose, onRequest }) {
+  const { data, session, approveDay } = useStore();
+  // Only admins change hours away from what the clock recorded (the flows refuse it too).
+  const admin = hasRole(session, 'admin');
   const [hours, setHours] = useState('');
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
@@ -131,8 +158,13 @@ function DaySheet({ day, pending, onClose }) {
   const sessions = useMemo(() => (day ? buildSessions(data.punches.filter((p) => p.email === day.email)).sessions.filter((s) => s.day === day.day) : []), [data.punches, day]);
   const history = day ? (data.approvals || []).filter((a) => a.email === day.email && a.date === day.day).sort((a, b) => String(b.at).localeCompare(String(a.at))) : [];
   if (!day) return <Sheet open={false} onOpenChange={onClose} title="" />;
-  const blocked = day.openFlags > 0;
-  const h = Number(hours);
+  const asks = day.requests || [];
+  const blocked = day.openFlags > 0 || asks.length > 0;
+  const h = admin ? Number(hours) : day.computed;
+  // A shift on this day that's missing a clock-in or out, with no request yet: an admin
+  // can log one that came by email.
+  const missing = admin && !day.approval && !asks.length ? day.flags.find((f) => ['no_show', 'no_clockout', 'no_clockin'].includes(f.code) && !f.resolution) : null;
+  const missingShift = missing && (day.shifts.find((r) => r.id === missing.ref) || day.shifts[0]);
   const adjusted = Number.isFinite(h) && Math.abs(h - day.computed) > 0.005;
 
   // The sheet closes at once; the day says "Approving…" until the flow confirms it.
@@ -159,7 +191,7 @@ function DaySheet({ day, pending, onClose }) {
       footer={day.approval ? (
         <button type="button" className="btn btn-plain btn-block" disabled={!!pending} onClick={() => act('reopened')}>{pending ? 'Saving…' : 'Reopen to correct'}</button>
       ) : (
-        <button type="button" className="btn btn-primary btn-block" disabled={!!pending || blocked} onClick={() => act('approved')}>{pending ? 'Approving…' : blocked ? `Resolve ${day.openFlags} ${day.openFlags === 1 ? 'flag' : 'flags'} first` : `Approve ${Number.isFinite(h) ? fmtHrsU(h) : ''}`}</button>
+        <button type="button" className="btn btn-primary btn-block" disabled={!!pending || blocked} onClick={() => act('approved')}>{pending ? 'Approving…' : asks.length ? 'Handle the missed clock request first' : blocked ? `Resolve ${day.openFlags} ${day.openFlags === 1 ? 'flag' : 'flags'} first` : `Approve ${Number.isFinite(h) ? fmtHrsU(h) : ''}`}</button>
       )}
     >
       <Group>
@@ -179,15 +211,26 @@ function DaySheet({ day, pending, onClose }) {
         {!sessions.length && !day.flags.some((f) => f.code === 'no_clockout') && <div className="empty-row">No clock-ins this day.</div>}
       </Group>
 
+      {asks.length > 0 && (
+        <Group title="Missed clock-in or out">
+          {asks.map((c) => <Row key={c.id} onClick={() => onRequest(c)} title={<><Tag tone="warn">{MISSED[c.missed].label}</Tag> “{c.message}”</>} subtitle={admin ? 'Check with the partner and correct it' : 'Waiting for an admin'} />)}
+        </Group>
+      )}
+      {missingShift && (
+        <Group footer="If the operator emailed about this, log it here so the email is on record, then correct the times.">
+          <Row title="Log an emailed request" onClick={() => onRequest({ draft: { email: day.email, shiftId: missingShift.id } })} className="row-action" />
+        </Group>
+      )}
+
       {day.flags.length > 0 && (
         <Group title="Flags" footer="Each flag needs a decision and a reason. Grace minutes are logged for information and aren't counted unless you add them to the hours.">
-          {day.flags.map((f) => <FlagRow key={f.key} f={f} disabled={!!day.approval} />)}
+          {day.flags.map((f) => <FlagRow key={f.key} f={f} disabled={!!day.approval} admin={admin} />)}
         </Group>
       )}
 
       {!day.approval && (
-        <Group title="Approve" footer={err ? <span className="err" role="alert">{err}</span> : adjusted ? 'You changed the suggested hours, so add a note.' : 'Approve the suggested hours, or change them with a note.'}>
-          <label className="field-row"><span>Hours</span><input className="num-input" type="number" min="0" step="0.25" inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} /></label>
+        <Group title="Approve" footer={err ? <span className="err" role="alert">{err}</span> : !admin ? 'Approve the suggested hours. Only admins can change them.' : adjusted ? 'You changed the suggested hours, so add a note.' : 'Approve the suggested hours, or change them with a note.'}>
+          <label className="field-row"><span>Hours</span><input className="num-input" type="number" min="0" step="0.25" inputMode="decimal" value={admin ? hours : String(Math.round(day.computed * 100) / 100)} readOnly={!admin} aria-readonly={!admin} onChange={(e) => setHours(e.target.value)} /></label>
           <label className="field-row"><span>Note</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder={adjusted ? 'Required' : 'Optional'} /></label>
         </Group>
       )}
@@ -208,7 +251,7 @@ function DaySheet({ day, pending, onClose }) {
   );
 }
 
-function FlagRow({ f, disabled }) {
+function FlagRow({ f, disabled, admin }) {
   const { resolveFlag } = useStore();
   const [editing, setEditing] = useState(false);
   const [outcome, setOutcome] = useState(f.time ? 'accept' : 'noted');
@@ -226,7 +269,7 @@ function FlagRow({ f, disabled }) {
       if (d <= f.start) return setErr('The end has to be after the clock-in.');
       endTime = d.toISOString();
     }
-    if (f.code === 'no_clockout' && outcome === 'accept' && !end && !f.suggested) return setErr('Enter the time they left.');
+    if (f.code === 'no_clockout' && outcome === 'accept' && !end && !f.suggested) return setErr(admin ? 'Enter the time they left.' : 'Only an admin can set this end.');
     setBusy(true);
     try {
       await resolveFlag({ key: f.key, outcome, reason: reason.trim(), endTime });
@@ -250,7 +293,8 @@ function FlagRow({ f, disabled }) {
       {editing && (
         <div className="flag-edit">
           {options.length > 1 && <Segmented label="Decision" value={outcome} onChange={setOutcome} size="sm" options={f.code === 'no_clockout' ? [{ value: 'accept', label: 'Set the end' }, { value: 'decline', label: "Don't count" }] : options} />}
-          {f.code === 'no_clockout' && outcome === 'accept' && (
+          {f.code === 'no_clockout' && outcome === 'accept' && !admin && <p className="row-sub">{f.suggested ? `Ends at ${fmtTime(f.suggested)}, the scheduled end. Only admins can type another time.` : 'Only admins can set an end time.'} This counts as a missed clock-out.</p>}
+          {f.code === 'no_clockout' && outcome === 'accept' && admin && (
             <label className="field-row"><span>Left at</span><input type="time" value={end} onChange={(e) => setEnd(e.target.value)} step="300" aria-label="Time they left" placeholder={f.suggested ? fmtTime(f.suggested) : ''} /><span className="row-sub">{end ? '' : f.suggested ? `Blank uses ${fmtTime(f.suggested)}` : ''}</span></label>
           )}
           <textarea className="reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason, for example: confirmed with the lab lead" aria-label="Reason" />
