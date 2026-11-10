@@ -6,7 +6,7 @@ import { CFG, LOCATIONS, locationName } from '../lib/config.js';
 import { buildSessions } from '../lib/hours.js';
 import { completedSessions, experience, weeklyLoad } from '../lib/rules.js';
 import { ExperienceSelect } from '../components/Experience.jsx';
-import { planRosterImport, planScheduleImport } from '../lib/importer.js';
+import { ImportSheet } from '../components/ImportSheet.jsx';
 import { claimName, strayNumber } from '../lib/onboarding.js';
 import { EditOperatorSheet } from '../components/EditOperator.jsx';
 import { dayKey, mondayOf, fmtHrsU } from '../lib/time.js';
@@ -112,69 +112,6 @@ export function Roster() {
       <ResetLinkSheet user={resetting?.user} op={resetting?.op} onClose={() => { setResetting(null); signIns.load(); }} />
       <EditOperatorSheet op={editing} onClose={() => setEditing(null)} />
     </div>
-  );
-}
-
-const USER_BATCH = 5;
-const SHIFT_BATCH = 25;
-
-function ImportSheet({ open, onOpenChange }) {
-  const { data, upsertUsers, importShifts, background } = useStore();
-  const [kind, setKind] = useState('roster');
-  const [text, setText] = useState('');
-  useEffect(() => { if (open) setText(''); }, [open]);
-  const plan = useMemo(() => {
-    if (!text.trim()) return null;
-    return kind === 'roster' ? planRosterImport(text, data.operators, dayKey(new Date())) : planScheduleImport(text, data.operators, data.schedule);
-  }, [text, kind, data.operators, data.schedule]);
-  const file = async (e) => { const f = e.target.files?.[0]; if (f) setText(await f.text()); };
-  // The sheet closes at once; the import runs in the background in small batches
-  // (each Write call stays well under the flow's two-minute limit), with the count
-  // in the header, and a toast says how far it got if it stops.
-  const save = () => {
-    const rows = kind === 'roster' ? [...plan.add, ...plan.update].map(({ changed, ...o }) => o) : [...plan.add, ...plan.update]; // eslint-disable-line no-unused-vars
-    const size = kind === 'roster' ? USER_BATCH : SHIFT_BATCH;
-    const what = kind;
-    const counts = { add: plan.add.length, update: plan.update.length, skip: plan.skip.length };
-    let saved = 0;
-    background(`Importing ${rows.length} ${what === 'roster' ? 'operators' : 'shifts'}`, async (note) => {
-      for (let i = 0; i < rows.length; i += size) {
-        const part = rows.slice(i, i + size);
-        if (what === 'roster') await upsertUsers(part);
-        else await importShifts(part);
-        saved += part.length;
-        note(`${saved} of ${rows.length}`);
-      }
-    }).then(
-      () => toast.success(`Imported ${counts.add} new, ${counts.update} updated`, { description: counts.skip ? `${counts.skip} rows skipped` : undefined }),
-      (e) => toast.error("Import didn't finish", { description: `${saved} of ${rows.length} saved. ${e.message} Import the same file again to finish: saved rows show as up to date.`, duration: 20000 }),
-    );
-    onOpenChange(false);
-  };
-  const label = (x) => (kind === 'roster' ? `${x.name} · ${x.email}${x.changed ? ` · ${x.changed.join(', ')}` : ''}` : `${x.date} · ${x.name} · ${locationName(x.location)} ${x.station} · ${x.start}–${x.end}`);
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={onOpenChange}
-      title="Import from recruiting"
-      description="Export the sheet as CSV, then upload or paste it. Columns are matched by their headers. Nothing is saved until you confirm."
-      footer={<button type="button" className="btn btn-primary btn-block" disabled={!plan || plan.add.length + plan.update.length === 0} onClick={save}>{plan ? `Import ${plan.add.length + plan.update.length} rows` : 'Import'}</button>}
-    >
-      <div className="pad">
-        <Segmented label="What to import" value={kind} onChange={setKind} options={[{ value: 'roster', label: 'Active Roster 2' }, { value: 'schedule', label: 'Schedule' }]} />
-      </div>
-      <Group footer={kind === 'roster' ? 'Uses Name, Email, Cohort, Sessions completed, Training status and Location. New operators get the next ID.' : 'Uses Date, Name or Email, Location, Robot, and Start and End (or one Shift column like "7:00 AM - 12:30 PM"). Re-importing a week updates it.'}>
-        <label className="field-row"><span>File</span><input type="file" accept=".csv,text/csv,text/plain" onChange={file} /></label>
-        <textarea className="reason mono" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="Or paste CSV here" aria-label="CSV to import" />
-      </Group>
-      {plan && (
-        <>
-          <Group title={`New (${plan.add.length})`}>{plan.add.slice(0, 50).map((x, i) => <Row key={i} title={label(x)} subtitle={kind === 'roster' ? `${x.id} · ${locationName(x.location) || 'No lab'}` : x.template || 'Custom time'} />)}{!plan.add.length && <div className="empty-row">None</div>}</Group>
-          <Group title={`Updated (${plan.update.length})`}>{plan.update.slice(0, 50).map((x, i) => <Row key={i} title={label(x)} />)}{!plan.update.length && <div className="empty-row">None</div>}</Group>
-          <Group title={`Skipped (${plan.skip.length})`}>{plan.skip.slice(0, 50).map((x, i) => <Row key={i} title={`Line ${x.line} · ${x.name || 'blank'}`} subtitle={x.reason} />)}{!plan.skip.length && <div className="empty-row">None</div>}</Group>
-        </>
-      )}
-    </Sheet>
   );
 }
 
