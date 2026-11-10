@@ -5,7 +5,7 @@ import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
 import { openSpots, samePair, shiftTimes } from './schedule.js';
 import { mustEmail, normCorrection, normStrike, reasonsFor, standing } from './strikes.js';
-import { SHEET_SOURCE, normScheduleSync, planSheetSync, sheetKey, syncSummary } from './sheetSync.js';
+import { SHEET_SOURCE, normScheduleSync, planSheetSync, sheetKey, syncIncludesToday, syncSummary } from './sheetSync.js';
 
 export const storage = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -375,13 +375,13 @@ export const demo = {
     const before = d.schedule.find((r) => r.id === id);
     d.schedule = d.schedule.filter((r) => r.id !== id);
     // As Delete Shift does live: a sheet shift removed by hand stays out of later syncs.
-    if (before?.sheetKey && before.date > dayKey(new Date()) && !d.sheetSkips.includes(before.sheetKey)) d.sheetSkips.push(before.sheetKey);
+    if (before?.sheetKey && before.date >= dayKey(new Date()) && !d.sheetSkips.includes(before.sheetKey)) d.sheetSkips.push(before.sheetKey);
     this.save(d, 'shift_delete', id, before, null);
   },
   // Demo: a made-up Master List (seed's demoSheet), synced with the same rules as the flow.
   syncSchedule() {
     const d = this.load();
-    const plan = planSheetSync({ rows: d.demoSheet, shifts: d.schedule.map(normShift), users: d.operators, skips: d.sheetSkips, today: dayKey(new Date()), labs: LOCATIONS });
+    const plan = planSheetSync({ rows: d.demoSheet, shifts: d.schedule.map(normShift), users: d.operators, skips: d.sheetSkips, today: dayKey(new Date()), includeToday: syncIncludesToday(), labs: LOCATIONS });
     const gone = new Set(plan.remove);
     const changed = new Map(plan.update.map((r) => [r.id, r]));
     d.schedule = d.schedule.filter((r) => !gone.has(r.id)).map((r) => changed.get(r.id) || r)

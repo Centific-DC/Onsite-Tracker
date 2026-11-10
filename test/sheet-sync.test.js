@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSheetTime, planSheetSync, sheetDate, sheetKey } from '../src/lib/sheetSync.js';
+import { parseSheetTime, planSheetSync, sheetDate, sheetKey, syncIncludesToday } from '../src/lib/sheetSync.js';
 
 // Synthetic people and rows only (demo data); the real workbook never goes in the repo.
 const users = [
@@ -47,6 +47,19 @@ describe('the daily sync', () => {
     expect(p.add[0]).toMatchObject({ location: 'RED', template: 'RED-AM', start: '07:00', end: '12:30', source: 'sheet', sheetKey: 'RED|2026-11-11|morning|avery.lin@example.com', station: '', operatorId: 'OP-1' });
     expect(p.add[0].pair).toBe(p.add[1].pair);
     expect(p.add[0].pair).toMatch(/^P-sheet-/);
+  });
+
+  it('includes today only for a run before the workday (the 5:30 AM run)', () => {
+    expect(syncIncludesToday(new Date(2026, 10, 10, 5, 30))).toBe(true);
+    expect(syncIncludesToday(new Date(2026, 10, 10, 6, 0))).toBe(false);
+    expect(syncIncludesToday(new Date(2026, 10, 10, 14, 0))).toBe(false);
+    const rows = [row('2026-11-09', 'Morning', AM, 'avery'), row('2026-11-10', 'Morning', AM, 'jordan'), row('2026-11-11', 'Morning', AM, 'sam')];
+    const early = planSheetSync({ rows, users, today, includeToday: true, labs });
+    expect(early.from).toBe('2026-11-10');
+    expect(early.add.map((s) => s.date)).toEqual(['2026-11-10', '2026-11-11']);
+    // Later in the day, a sheet shift for today is left as it is, even if its row is gone.
+    const shifts = early.add.map((s, i) => ({ ...s, id: `S-${i}` }));
+    expect(planSheetSync({ rows: [], shifts, users, today, labs, labsRead: ['RED'] }).remove).toEqual(['S-1']);
   });
 
   it('leaves the pair to the scheduler when 3 or more share a shift, unless the sheet has a Pair column', () => {

@@ -364,7 +364,7 @@ For each shift: check that `date` is `yyyy-MM-dd`, `start` and `end` are `HH:mm`
 
 ### `shift_delete`: role `scheduler`
 
-Body `{ "id": "S-…" }`. Delete it, and return `{ "ok": true }` even if it was already gone. **Master List rows:** if the row had a `SheetKey` and its `Date` is after today (site-local), first add a `Lotus_SheetSkips` row (`Title` = that `SheetKey`, unless one exists), so the daily sync doesn't book it again. (This lives in the Delete Shift flow when the split flows are on.)
+Body `{ "id": "S-…" }`. Delete it, and return `{ "ok": true }` even if it was already gone. **Master List rows:** if the row had a `SheetKey` and its `Date` is today or later (site-local), first add a `Lotus_SheetSkips` row (`Title` = that `SheetKey`, unless one exists), so the daily sync doesn't book it again. (This lives in the Delete Shift flow when the split flows are on.)
 
 ### `fill_in`: role `operator`
 
@@ -526,12 +526,12 @@ The scheduling team plans in the **Master List** workbook on SharePoint (site `L
 Columns used: `Date` (an Excel date), `Shift` (`Morning`, `Afternoon`, `Night`), `Time` (text like `7:00 AM - 12:30 PM PT`; Mountain View rows can differ from the usual times), `Team Member` (the operator's name; **blank = an open slot**, skip it), `Email`. Optional, read only if the table has them: `Pair` (a letter, as in Schedule → Import: rows with the same letter on the same lab, day and shift are partners) and `Robot` (`Robot 1` …). Ignore `Day`, `Notes`, `Count Slot`, `Assigned Flag`, `Open Flag`, the `Active Roster` tab and the weekly sign-up tabs. **This flow only reads the workbook. Never write to it.**
 
 **Triggers.** One small child flow does the work, called by two parents (put all three in one solution):
-- **Lotus Schedule Sync Daily**: recurrence, every day at 5:30 AM Pacific.
+- **Lotus Schedule Sync Daily**: recurrence, every day at 5:30 AM Pacific (before 6:00, so it includes today).
 - **Lotus Schedule Sync Now**: HTTP, Anyone, token check and role `scheduler` or `admin` as in Write. Body `{ "action": "schedule_sync" }`. If a sync is running (`ScheduleSync` says `running` and started less than 10 minutes ago), respond 409 `{"error":"A sync is already running."}`. Otherwise respond **202** `{ "ok": true }` at once, then run the child. Its URL goes in the GitHub secret `LOTUS_SCHEDULE_SYNC_URL`.
 - If child flows aren't available on this licence, say so and stop: don't copy the logic into two flows.
 
 **Steps (the child flow):**
-1. `today` = site-local date. `first` = the day after `today`. **Today and earlier days are never added, changed or removed**: same-day changes are made by hand in Lotus.
+1. `today` = site-local date. **`first` = `today` if the run starts before 6:00 AM site-local** (the daily 5:30 AM run: no shift has started yet), **else the day after `today`** (a Sync now during the day). Days before `first` are never added, changed or removed: once the workday has begun, same-day changes are made by hand in Lotus (David, 2026-11-10).
 2. Set `ScheduleSync` = `{"at":"<utcNow>","running":true}` merged into the last summary.
 3. *Excel Online (Business) → List rows present in a table* for each table, with **DateTime Format = ISO 8601** and pagination on. If a table or one of its required columns is missing, record the error, change nothing for that lab, and go on with the other.
 4. Get `Lotus_Shifts` with `Date ge '<first>'`, all active `Lotus_Users`, and `Lotus_SheetSkips` with `Date ge '<first>'` (one *Get items* each, then *Filter array* in loops).
@@ -586,7 +586,7 @@ Columns used: `Date` (an Excel date), `Shift` (`Morning`, `Afternoon`, `Night`),
 16f. Password reset: as an admin, `user.reset_link` for an operator, then `email_send` kind `password-reset`: it arrives (at the alias in test mode) and the notice row has no HTML. Their old password still signs in. `reset` with the right `codeHash` sets the new password, signs them out (old token gets 401) and the old password no longer works. The same link again: 400. A wrong `codeHash` five times locks the account for 15 minutes.
 16g. Set `ResetExpires` to yesterday by hand: `reset` gets 400. `email_send` kind `password-reset` for someone with no `ResetHash`: 400, no email. `user.reset_link` as a scheduler without `admin`: 403.
 16k. Robot names: `robot_names` as an admin with `{"Robot 4":"jetson-thor-004"}`, then Read as an operator: `robotNames` has it. As a scheduler without `admin`: 403. A key `Robot 99` or a 61-character name: 400.
-16s. Schedule sync (copy the workbook to a test file first and point the flow at the copy; never test against the live sheet): a row for tomorrow with a Lotus user creates a `sheet` shift with the right `SheetKey`, times and template; running again changes nothing. Change its `Time`: the shift updates. Change its name to another Lotus user: the old shift goes, a new one comes. Blank it: the shift is removed. A row for today: nothing happens. Remove a synced shift in the app: it's in `Lotus_SheetSkips` and the next run doesn't bring it back. Add a shift in the app at the same time as a sheet row: the sync keeps the app's (`booked_in_lotus`). Rename the `Email` column in the copy: the run reports an error and removes nothing. Read as an operator: `scheduleSync` is `null`. `schedule_sync` as an operator: 403.
+16s. Schedule sync (copy the workbook to a test file first and point the flow at the copy; never test against the live sheet): a row for tomorrow with a Lotus user creates a `sheet` shift with the right `SheetKey`, times and template; running again changes nothing. Change its `Time`: the shift updates. Change its name to another Lotus user: the old shift goes, a new one comes. Blank it: the shift is removed. A row for today: added by a run before 6:00 AM, untouched by a Sync now after 6:00 AM. Remove a synced shift in the app: it's in `Lotus_SheetSkips` and the next run doesn't bring it back. Add a shift in the app at the same time as a sheet row: the sync keeps the app's (`booked_in_lotus`). Rename the `Email` column in the copy: the run reports an error and removes nothing. Read as an operator: `scheduleSync` is `null`. `schedule_sync` as an operator: 403.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:

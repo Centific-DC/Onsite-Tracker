@@ -4,8 +4,9 @@
 // JavaScript, so the rules have tests and demo mode can show a sync. Keep both in step.
 //
 // The rules (David, 2026-11-10):
-// - Only days after today. Past days and today are never touched: same-day changes
-//   are made by hand in Lotus.
+// - Past days are never touched. Today is synced only by a run that starts before the
+//   workday (before 6:00 AM site-local, as the daily 5:30 AM run does); a run later in
+//   the day starts from tomorrow, because same-day changes are made by hand in Lotus.
 // - The sheet is the source of truth for the shifts it made: a changed time updates
 //   the shift, a row that's gone removes it, a new name adds one.
 // - Shifts added in Lotus (Source app, import or fill_in) are never changed or removed.
@@ -51,6 +52,11 @@ const minutes = (hm) => { const [h, m] = hm.split(':').map(Number); return h * 6
 const span = (r) => { const a = minutes(r.start); let b = minutes(r.end); if (b <= a) b += 1440; return [a, b]; };
 const overlaps = (x, y) => { const [a1, b1] = span(x); const [a2, b2] = span(y); return Math.min(b1, b2) > Math.max(a1, a2); };
 
+// Before this site-local time a run includes today (no shift has started, nobody has
+// clocked in). David, 2026-11-10.
+export const SYNC_TODAY_BEFORE = '06:00';
+export const syncIncludesToday = (now = new Date()) => `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` < SYNC_TODAY_BEFORE;
+
 const nextDay = (k) => { const [y, m, d] = k.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1, d + 1)); return t.toISOString().slice(0, 10); };
 
 // The pair id the sync gives a shift: from the sheet's optional Pair column (A, B…),
@@ -64,12 +70,13 @@ const pairId = (lab, date, shift, letter) => `${SHEET_PAIR}${lab}-${date.replace
  * @param shifts  Lotus_Shifts rows (normShift shape, with source and sheetKey)
  * @param users   Lotus_Users (normOperator shape)
  * @param skips   keys removed in Lotus (Lotus_SheetSkips titles)
- * @param today   site-local yyyy-MM-dd; only later days are synced
+ * @param today   site-local yyyy-MM-dd; only later days are synced, unless includeToday
+ * @param includeToday the run started before the workday (syncIncludesToday)
  * @param labs    [{ id, templates: [{ id, start, end }] }] to name each shift's template
  * @param labsRead lab ids whose table was read (a lab missing here is never pruned)
  */
-export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], today, labs = [], labsRead }) {
-  const first = nextDay(today);
+export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], today, includeToday = false, labs = [], labsRead }) {
+  const first = includeToday ? today : nextDay(today);
   const byEmail = new Map(users.filter((u) => u.active !== false).map((u) => [String(u.email).toLowerCase(), u]));
   const skipSet = new Set(skips);
   const skipped = [];
@@ -82,7 +89,7 @@ export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], 
     const lab = raw.lab || labOfTable(raw.table);
     const date = sheetDate(raw.date);
     const name = String(raw.name || '').trim();
-    if (!lab || !date || date < first || !name) continue; // past, today, or an open slot
+    if (!lab || !date || date < first || !name) continue; // past, today (later in the day), or an open slot
     const email = String(raw.email || '').trim().toLowerCase();
     const shift = String(raw.shift || '').trim();
     const info = { lab, date, shift, name };

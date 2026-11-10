@@ -16,7 +16,7 @@ const when = (iso) => {
 
 // The Master List sync on the Schedule page: when it last ran, what it changed, the
 // rows it couldn't book, and "Sync now" for schedulers. The flow runs by itself each
-// morning; the sheet is the source of truth for days after today.
+// morning at 5:30 AM (that run includes today); a Sync now later starts from tomorrow.
 export function SheetSyncLine() {
   const { data, session, syncSchedule } = useStore();
   const s = data.scheduleSync;
@@ -65,7 +65,7 @@ export function SheetSyncLine() {
       <span className="sheet-sync-icon" aria-hidden="true"><FileSpreadsheet size={16} /></span>
       <span className="sheet-sync-text" role="status" aria-live="polite">
         <strong>Master List{DEMO ? ' (demo)' : ''}</strong>
-        <StatusLine text={summary} title={s?.error || (s ? `Days from ${fmtDay(parseDay(s.from))} on follow the sheet. Today and earlier days are only changed here.` : '')} />
+        <StatusLine text={summary} title={s?.error || (s ? `Days from ${fmtDay(parseDay(s.from))} on follow the sheet. Earlier days are only changed here in Lotus.` : '')} />
       </span>
       {s && (attention > 0 || s.kept.length > 0 || s.held > 0) && (
         <button type="button" className="link" onClick={() => setOpen(true)}>
