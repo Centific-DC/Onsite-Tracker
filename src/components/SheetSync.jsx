@@ -4,7 +4,7 @@ import { FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { DEMO, SYNC_URL, locationName } from '../lib/config.js';
-import { SYNC_REASONS } from '../lib/sheetSync.js';
+import { SYNC_CHECKS, SYNC_REASONS } from '../lib/sheetSync.js';
 import { fmtDay, fmtTime, parseDay } from '../lib/time.js';
 import { Group, Row, Sheet, StatusLine, Tag } from './ui.jsx';
 
@@ -41,16 +41,22 @@ export function SheetSyncLine() {
     s.removed && `${s.removed} removed`,
     !s.added && !s.changed && !s.removed && 'no changes',
   ].filter(Boolean) : [];
-  const summary = !s ? 'Not synced yet'
+  const last = !s?.at ? 'Not synced yet'
     : s.error ? `Last sync failed ${when(s.at)}`
-    : `Synced ${when(s.at)} · ${parts.join(' · ')}`;
+    : `Last sync ${when(s.at)} · ${parts.join(' · ')}`;
+  // A run under way, or a Sync now waiting for the flow's next check. A request older
+  // than the last finished run has been done.
+  const queued = s?.requestedAt && !s.runningSince && (!s.at || s.requestedAt > s.at);
+  const summary = s?.runningSince ? `${last} · running since ${fmtTime(new Date(s.runningSince))}`
+    : queued ? `${last} · Sync queued, runs at the next check (${SYNC_CHECKS})`
+    : last;
 
   const run = async () => {
     if (busy) return;
     setBusy(true);
     try {
       const out = await syncSchedule();
-      if (!out) toast('The sync is still running', { description: 'The schedule updates by itself when it finishes.' });
+      if (!out) toast('Sync queued', { description: `It runs at the next check (${SYNC_CHECKS}); after 7 PM, at 5:30 AM. The new counts show on the next refresh.` });
       else if (out.error) toast.error('The Master List sync failed', { description: out.error });
       else toast.success('Synced from the Master List', { description: `${out.added} added · ${out.changed} changed · ${out.removed} removed${out.skipped.length ? ` · ${out.skipped.length} to check` : ''}` });
     } catch (e) {
@@ -65,7 +71,7 @@ export function SheetSyncLine() {
       <span className="sheet-sync-icon" aria-hidden="true"><FileSpreadsheet size={16} /></span>
       <span className="sheet-sync-text" role="status" aria-live="polite">
         <strong>Master List{DEMO ? ' (demo)' : ''}</strong>
-        <StatusLine text={summary} title={s?.error || (s ? `Days from ${fmtDay(parseDay(s.from))} on follow the sheet. Earlier days are only changed here in Lotus.` : '')} />
+        <StatusLine text={summary} title={s?.error || (s?.from ? `Days from ${fmtDay(parseDay(s.from))} on follow the sheet. Earlier days are only changed here in Lotus.` : '')} />
       </span>
       {s && (attention > 0 || s.kept.length > 0 || s.held > 0) && (
         <button type="button" className="link" onClick={() => setOpen(true)}>
@@ -73,12 +79,12 @@ export function SheetSyncLine() {
         </button>
       )}
       {canRun && (
-        <button type="button" className={clsx('sync', busy && 'is-busy')} onClick={run} aria-busy={busy}>
+        <button type="button" className={clsx('sync', (busy || s?.runningSince) && 'is-busy')} onClick={run} aria-busy={busy} disabled={!!s?.runningSince || queued} title={s?.runningSince ? 'A sync is running' : queued ? 'Already queued' : `Queues a sync for the next check (${SYNC_CHECKS})`}>
           <span className="sync-icon" aria-hidden="true">
             <RefreshCw size={16} className="sync-glyph" />
             <span className="dots"><i /><i /><i /><i /></span>
           </span>
-          <span className="sync-text">{busy ? `Syncing ${secs}s` : 'Sync now'}</span>
+          <span className="sync-text">{busy ? `Asking ${secs}s` : s?.runningSince ? 'Syncing' : queued ? 'Queued' : 'Sync now'}</span>
         </button>
       )}
       <SyncDetails open={open} onOpenChange={setOpen} s={s} />
@@ -100,7 +106,7 @@ function SyncDetails({ open, onOpenChange, s }) {
       open={open}
       onOpenChange={onOpenChange}
       title="Master List sync"
-      description={`Last run ${when(s.at)}. Days from ${fmtDay(parseDay(s.from))} on follow the sheet; shifts added or changed here in Lotus stay as they are.`}
+      description={`${s.at ? `Last run ${when(s.at)}` : 'No run has finished yet'}.${s.from ? ` Days from ${fmtDay(parseDay(s.from))} on follow the sheet;` : ''} Shifts added or changed here in Lotus stay as they are.`}
     >
       {s.held > 0 && (
         <Group title="Removals held back" className="group-urgent">

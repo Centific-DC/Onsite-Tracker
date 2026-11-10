@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSheetTime, planSheetSync, sheetDate, sheetKey, syncIncludesToday } from '../src/lib/sheetSync.js';
+import { normScheduleSync, parseSheetTime, planSheetSync, sheetDate, sheetKey, syncIncludesToday } from '../src/lib/sheetSync.js';
 
 // Synthetic people and rows only (demo data); the real workbook never goes in the repo.
 const users = [
@@ -26,6 +26,24 @@ describe('reading the sheet', () => {
     expect(parseSheetTime('12:00 PM - 5:30 PM PT')).toEqual({ start: '12:00', end: '17:30' });
     expect(parseSheetTime('5:30 PM – 11:00 PM')).toEqual({ start: '17:30', end: '23:00' });
     expect(parseSheetTime('Lab closed')).toBeNull();
+  });
+  it('reads every range in the live tabs (3 Redmond, 7 Mountain View)', () => {
+    const ranges = {
+      '7:00 AM - 12:30 PM PT': ['07:00', '12:30'], '12:00 PM - 5:30 PM PT': ['12:00', '17:30'], '5:00 PM - 11:00 PM PT': ['17:00', '23:00'],
+      '9:00 AM - 11:00 AM PT': ['09:00', '11:00'], '7:00 AM - 11:00 AM PT': ['07:00', '11:00'], '7:00 AM - 12:00 PM PT': ['07:00', '12:00'],
+      '12:30 PM - 5:00 PM PT': ['12:30', '17:00'], '10:00 AM - 5:00 PM PT': ['10:00', '17:00'], '5:30 PM - 11:00 PM PT': ['17:30', '23:00'],
+    };
+    for (const [text, [start, end]] of Object.entries(ranges)) expect(parseSheetTime(text)).toEqual({ start, end });
+    // A row whose Time can't be read is skipped and reported, never guessed.
+    const p = plan([row('2026-11-12', 'Morning', 'TBD', 'avery')]);
+    expect(p.add).toEqual([]);
+    expect(p.skipped[0].reason).toBe('bad_time');
+  });
+  it('keeps the last counts while a run is under way or queued', () => {
+    const s = normScheduleSync(JSON.stringify({ at: '2026-11-10T13:30:00Z', added: 3, runningSince: '2026-11-10T22:00:00Z' }));
+    expect(s).toMatchObject({ at: '2026-11-10T13:30:00Z', added: 3, runningSince: '2026-11-10T22:00:00Z' });
+    expect(normScheduleSync({ requestedAt: '2026-11-10T22:00:00Z' })).toMatchObject({ at: '', requestedAt: '2026-11-10T22:00:00Z' });
+    expect(normScheduleSync('')).toBeNull();
   });
   it('reads Excel dates as ISO, serial numbers or m/d/yyyy', () => {
     expect(sheetDate('2026-11-12T00:00:00.000Z')).toBe('2026-11-12');

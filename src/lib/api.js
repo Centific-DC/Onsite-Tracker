@@ -232,13 +232,12 @@ export const api = {
     if (DEMO) return demo.removeShift(id);
     await paPost(WRITE_URL, { action: 'shift_delete', id });
   },
-  // Schedulers: run the Master List sync now instead of waiting for the daily run.
-  // The flow answers at once (202) and syncs in the background, or answers with the
-  // finished summary if it was quick.
+  // Schedulers: ask for a Master List sync. Live, the flow queues it (202) and the next
+  // check runs it (SYNC_CHECKS), so this answers null; the demo syncs at once.
   async syncSchedule() {
     if (DEMO) return demo.syncSchedule();
-    const out = await paPost(SYNC_URL, { action: 'schedule_sync' });
-    return normScheduleSync(out.scheduleSync);
+    await paPost(SYNC_URL, { action: 'schedule_sync' });
+    return null;
   },
   async upsertUsers(users) {
     if (DEMO) return demo.upsertUsers(users);

@@ -353,21 +353,15 @@ export const useStore = create((set, get) => ({
     return r;
   },
 
-  // "Sync now" from the Master List workbook (Lotus Schedule Sync). Demo mode and a
-  // quick flow answer with the summary; otherwise the flow syncs in the background and
-  // Lotus reads again, further apart each time, until the summary changes.
+  // "Sync now" from the Master List workbook (Lotus Schedule Sync). Live, the flow
+  // queues it for its next check; the line on Schedule says "queued" until a refresh
+  // brings the new counts. The demo syncs at once.
   syncSchedule() {
-    return get().background('Syncing from the Master List', async (note) => {
-      const before = get().data?.scheduleSync?.at || '';
+    return get().background('Asking for a Master List sync', async () => {
       const done = await api.syncSchedule();
       if (done) { get().commit((d) => (d ? { ...d, scheduleSync: done } : d)); await get().sync(); return done; }
-      for (const secs of [30, 45, 60, 90]) {
-        note('Waiting for the sync to finish');
-        await new Promise((r) => setTimeout(r, secs * 1000));
-        await get().sync().catch(() => {});
-        const now = get().data?.scheduleSync;
-        if (now && now.at !== before) return now;
-      }
+      const requestedAt = new Date().toISOString();
+      get().commit((d) => (d ? { ...d, scheduleSync: { ...(d.scheduleSync || { at: '', from: '', added: 0, changed: 0, removed: 0, held: 0, kept: [], skipped: [], error: '', runningSince: '' }), requestedAt } } : d));
       return null;
     });
   },

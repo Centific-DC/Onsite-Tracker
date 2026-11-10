@@ -1,5 +1,5 @@
 // The daily sync from the scheduling team's Master List workbook (SharePoint Excel,
-// tables tblRedmondSchedule and tblMVSchedule) into Lotus_Shifts. The live sync runs
+// tables tblRedmondSchedule and tblMVSchedule, tabs Redmond Schedule and MV Schedule) into Lotus_Shifts. The live sync runs
 // in the Lotus Schedule Sync flow (docs/lotus-flows.md §8); this is the same plan in
 // JavaScript, so the rules have tests and demo mode can show a sync. Keep both in step.
 //
@@ -66,7 +66,7 @@ const pairId = (lab, date, shift, letter) => `${SHEET_PAIR}${lab}-${date.replace
 
 /**
  * Work out what a sync would do. Pure: nothing is saved.
- * @param rows    sheet rows: { table | lab, date, shift, time, name, email, pair?, robot? }
+ * @param rows    sheet rows: { table | lab, date, shift, time, name, email, pair? }
  * @param shifts  Lotus_Shifts rows (normShift shape, with source and sheetKey)
  * @param users   Lotus_Users (normOperator shape)
  * @param skips   keys removed in Lotus (Lotus_SheetSkips titles)
@@ -105,7 +105,7 @@ export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], 
     seen.add(key);
     const L = labs.find((l) => l.id === lab);
     const template = L?.templates.find((x) => x.start === t.start && x.end === t.end)?.id || '';
-    valid.push({ key, lab, date, shift, ...t, template, user, letter: String(raw.pair || '').trim(), robot: String(raw.robot || '').trim() });
+    valid.push({ key, lab, date, shift, ...t, template, user, letter: String(raw.pair || '').trim() });
   }
 
   // Pairs: the Pair column when there is one, else exactly two on a shift share one.
@@ -127,9 +127,8 @@ export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], 
     if (have && have.source !== SHEET_SOURCE) { kept.push({ ...info, reason: 'changed_in_lotus' }); continue; }
     if (have) {
       const next = { ...have, ...want(v) };
-      // The sync owns its own pair ids; a pair a scheduler set stays. Robot: only from the sheet's optional Robot column.
+      // The sync owns its own pair ids; a pair a scheduler set stays. The robot is never changed.
       if (!have.pair || have.pair.startsWith(SHEET_PAIR)) next.pair = v.pair;
-      if (v.robot) next.station = v.robot;
       const changed = ['operatorId', 'name', 'template', 'start', 'end', 'pair', 'station', 'location'].some((k) => (next[k] || '') !== (have[k] || ''));
       if (changed) update.push(next);
       continue;
@@ -137,7 +136,7 @@ export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], 
     // Someone already booked by hand at that time (a shift added in Lotus) keeps theirs.
     const clash = future.find((r) => r.email === v.user.email && r.date === v.date && r.source !== SHEET_SOURCE && overlaps(r, v));
     if (clash) { kept.push({ ...info, reason: 'booked_in_lotus' }); continue; }
-    add.push({ ...want(v), station: v.robot, pair: v.pair, replaces: '', note: '' });
+    add.push({ ...want(v), station: '', pair: v.pair, replaces: '', note: '' });
   }
 
   // Sheet shifts whose row is gone. Only for labs whose table was read, and never a
@@ -162,6 +161,10 @@ export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], 
     held,
   };
 }
+
+// When Sync now runs: the flow checks for a request every 30 minutes from 6:00 AM to
+// 7:00 PM Pacific; a request after 7 PM waits for the 5:30 AM daily run.
+export const SYNC_CHECKS = 'every 30 min, 6 AM to 7 PM';
 
 // What the app shows (Read `scheduleSync`, from Lotus_Settings.ScheduleSync).
 export const syncSummary = (plan, at = new Date().toISOString()) => ({
@@ -190,10 +193,15 @@ export const SYNC_REASONS = {
 export function normScheduleSync(s) {
   let x = s;
   if (typeof x === 'string') { try { x = JSON.parse(x); } catch { x = null; } }
-  if (!x || typeof x !== 'object' || !x.at) return null;
+  if (!x || typeof x !== 'object' || !(x.at || x.runningSince || x.requestedAt)) return null;
   const list = (a) => (Array.isArray(a) ? a : []).map((r) => ({ lab: String(r.lab ?? ''), date: String(r.date ?? '').slice(0, 10), shift: String(r.shift ?? ''), name: String(r.name ?? ''), reason: String(r.reason ?? '') }));
   return {
-    at: String(x.at),
+    // `at` is the last finished run; empty if none has finished yet.
+    at: String(x.at ?? ''),
+    // A run under way (the flow keeps the last summary and adds this), and a Sync now
+    // waiting for the next check (every 30 minutes, 6 AM to 7 PM).
+    runningSince: String(x.runningSince ?? ''),
+    requestedAt: String(x.requestedAt ?? ''),
     from: String(x.from ?? ''),
     added: Number(x.added) || 0,
     changed: Number(x.changed) || 0,
