@@ -18,6 +18,9 @@ import { ShiftSheet } from './ShiftSheet.jsx';
 import { EditOperatorSheet } from './EditOperator.jsx';
 import { DAY_STATUS } from '../views/Review.jsx';
 import { robotTitle } from '../lib/robots.js';
+import { toast } from 'sonner';
+import { MISSED, REASON, RESET_DAYS, sortRequests, standing, stepText } from '../lib/strikes.js';
+import { CorrectionSheet } from './CorrectionSheet.jsx';
 
 const EXAMPLES = ['Jordan', 'OP-0004', 'no-show last week', 'robot 2 tomorrow', 'needs review', 'Mountain View next week', 'new operators', 'Nov 3'];
 const MAX = 8;
@@ -126,11 +129,13 @@ export function OperatorSheet() {
   const { data, session, profile, openProfile } = useStore();
   const [booking, setBooking] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [req, setReq] = useState(null);
   const now = useMemo(() => new Date(), [profile]); // eslint-disable-line react-hooks/exhaustive-deps
   const o = profile ? (data?.operators || []).find((x) => x.email === profile) : null;
   const { sessions } = useMemo(() => buildSessions(data?.punches || [], now), [data?.punches, now]);
   const canReview = hasRole(session, 'approver');
   const canBook = hasRole(session, 'scheduler');
+  const canStrike = hasRole(session, 'approver', 'admin');
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const wk0 = mondayOf(today);
   const days = useMemo(() => (o ? reviewDays(data, addDays(wk0, -21), addDays(today, 1), now).filter((d) => d.email === o.email && d.day < dayKey(addDays(today, 1))).reverse() : []), [o, data, now]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -175,6 +180,7 @@ export function OperatorSheet() {
           ))}
           {!upcoming.length && <div className="empty-row">Nothing booked.</div>}
         </Group>
+        {canStrike && <ClockRecord o={o} onRequest={setReq} />}
         <Group title="Last 3 weeks">
           {days.map((d) => (
             <Row
@@ -190,6 +196,50 @@ export function OperatorSheet() {
       </Sheet>
       <ShiftSheet open={!!booking} onOpenChange={(v) => !v && setBooking(null)} initial={booking} />
       <EditOperatorSheet op={editing} onClose={() => setEditing(null)} />
+      <CorrectionSheet request={req} onClose={() => setReq(null)} />
     </>
+  );
+}
+
+// Missed clock-ins and outs: where the operator stands, each warning or strike (an
+// admin can cancel one, with a reason), and their requests.
+function ClockRecord({ o, onRequest }) {
+  const { data, session, voidStrike } = useStore();
+  const admin = hasRole(session, 'admin');
+  const [cancel, setCancel] = useState(null);
+  const [why, setWhy] = useState('');
+  const st = standing(data.strikes, o.email);
+  const asks = sortRequests((data.corrections || []).filter((c) => c.email === o.email)).slice(0, 6);
+  const date = (iso) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const doCancel = (s) => {
+    if (!why.trim()) return;
+    voidStrike(s.id, why.trim()).then(() => toast.success('Strike cancelled', { description: 'It stays in the history as cancelled.' }), (e) => toast.error('Couldn’t cancel it', { description: e.message }));
+    setCancel(null); setWhy('');
+  };
+  return (
+    <Group title="Missed clock-ins" footer={`A soft warning, then strikes 1 to 3. The count clears after ${RESET_DAYS} days with no new miss.`}>
+      <Row title={st.count ? <Tag tone={st.count >= 4 ? 'bad' : st.count >= 2 ? 'warn' : 'muted'}>{st.text}</Tag> : 'No warnings'} subtitle={st.count ? `${st.step.note} · clears ${date(st.clearsOn)} with no new misses` : `Nothing in the last ${RESET_DAYS} days`} />
+      {st.list.map((s) => (
+        <div key={s.id}>
+          <Row
+            title={<>{REASON[s.reason] || s.reason} {s.voided ? <Tag tone="muted">Cancelled</Tag> : <Tag tone="muted">{stepText(s.count)}</Tag>}</>}
+            subtitle={`${fmtDay(parseDay(s.date))} · ${s.by} · ${s.emailed ? 'emailed' : 'not emailed'}${s.voided ? ` · cancelled by ${s.voidedBy}: “${s.voidReason}”` : ''}`}
+            trailing={admin && !s.voided && cancel !== s.id ? <button type="button" className="link" onClick={() => { setCancel(s.id); setWhy(''); }}>Cancel</button> : null}
+          />
+          {cancel === s.id && (
+            <div className="flag-edit">
+              <textarea className="reason" rows={2} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why it doesn’t count, for example: the lab Wi-Fi was down" aria-label="Why cancel" />
+              <div className="flag-actions">
+                <button type="button" className="link-quiet" onClick={() => setCancel(null)}>Keep it</button>
+                <button type="button" className="btn btn-primary btn-sm" disabled={!why.trim()} onClick={() => doCancel(s)}>Cancel strike</button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+      {asks.map((c) => (
+        <Row key={c.id} onClick={() => onRequest(c)} title={<>{MISSED[c.missed].label} <Tag tone={c.status === 'open' ? 'warn' : 'muted'}>{c.status === 'open' ? 'Waiting' : c.status === 'approved' ? 'Corrected' : 'Declined'}</Tag></>} subtitle={`${fmtDay(parseDay(c.date))} · requested ${date(c.requestedAt)}${c.source === 'email' ? ' by email' : ''}`} />
+      ))}
+    </Group>
   );
 }

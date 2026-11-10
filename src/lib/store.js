@@ -379,6 +379,30 @@ export const useStore = create((set, get) => ({
     return saved;
   },
 
+  // Missed clock-in or out requests: server-confirmed (the flow sends the email and
+  // the admins' answer decides the hours), but they run in the background.
+  requestCorrection(r) {
+    return get().background(r.source === 'email' ? 'Logging the emailed request' : 'Sending your request', async () => {
+      const c = await api.requestCorrection(r);
+      get().commit((d) => (d ? { ...d, corrections: [...(d.corrections || []).filter((x) => x.id !== c.id), c] } : d));
+      return c;
+    });
+  },
+  resolveCorrection(r, label = 'The correction') {
+    return get().background(label, async () => {
+      const out = await api.resolveCorrection(r);
+      get().commit((d) => (d ? { ...d, corrections: (d.corrections || []).map((x) => (x.id === out.correction.id ? out.correction : x)), strikes: [...(d.strikes || []), ...out.strikes] } : d));
+      return out;
+    });
+  },
+  voidStrike(id, reason) {
+    return get().background('Cancelling the strike', async () => {
+      const st = await api.voidStrike(id, reason);
+      get().commit((d) => (d ? { ...d, strikes: (d.strikes || []).map((x) => (x.id === st.id ? st : x)) } : d));
+      return st;
+    });
+  },
+
   resolveFlag(r) {
     get().enqueue('flag', { ...r, by: get().session?.email || '' }, 'The flag decision');
   },
