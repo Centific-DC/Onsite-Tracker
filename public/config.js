@@ -6,6 +6,8 @@ window.ONSITE_CONFIG = {
   // Empty = demo mode: sample data, saved only in this browser.
   readUrl: '',
   writeUrl: '',
+  // Lotus Corrections flow (missed clock-in requests, strikes). Empty: they go to writeUrl.
+  correctionsUrl: '',
 
   // Lotus Auth (usernames and passwords that a Lotus admin hands out). Empty = sign-ins
   // kept in this browser only, with the demo accounts Lotus-admin and Lotus-operator.

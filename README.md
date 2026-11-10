@@ -32,7 +32,7 @@ Once the flows are connected, staff can still switch to sample data in **Setting
 The live app is the GitHub Pages site. The flow trigger URLs never go in this repo: the deploy workflow reads them from the repo's Actions secrets and writes them only into the built `config.js` ([scripts/pages-config.mjs](scripts/pages-config.mjs)).
 
 1. Build the lists and flows with [docs/lotus-flows.md](docs/lotus-flows.md).
-2. On GitHub: **Settings > Secrets and variables > Actions > New repository secret**, three times: `LOTUS_AUTH_URL`, `LOTUS_READ_URL`, `LOTUS_WRITE_URL`. A secret left unset keeps that flow in demo mode.
+2. On GitHub: **Settings > Secrets and variables > Actions > New repository secret**, for each flow: `LOTUS_AUTH_URL`, `LOTUS_READ_URL`, `LOTUS_WRITE_URL` and `LOTUS_CORRECTIONS_URL` (missed clock-in requests and strikes; unset, those go to Write). A secret left unset keeps that flow in demo mode.
 3. **Actions > Deploy to GitHub Pages > Run workflow** (or push to `main`). The build log says which flows were set, never the URLs.
 4. Open the site with `?setup=1` once to create the first admin. Admins then give people sign-ins from Roster (Add operator, Set up sign-in) or Settings → Users and sign-ins. Adjust `locations` in `public/config.js` (robots, shift templates and how many operators each needs, the days each lab runs, grace) as labs change.
 
