@@ -4,6 +4,7 @@ import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
 import { openSpots, samePair, shiftTimes } from './schedule.js';
+import { writeFlowName, writeUrlFor } from './routes.js';
 import { mustEmail, normCorrection, normStrike, reasonsFor, standing } from './strikes.js';
 
 export const storage = {
@@ -26,8 +27,12 @@ export function errorText(out, status) {
 let onSignedOut = () => {};
 export const whenSignedOut = (fn) => { onSignedOut = fn; };
 
+// Write calls go to the op's one-job flow when its URL is set, else to Write (routes.js).
 async function paPost(url, body) {
-  return timed(`${url === READ_URL ? 'Read' : url === CORRECTIONS_URL && url !== WRITE_URL ? 'Corrections' : 'Write'} · ${body.action || 'call'}`, paPostChecked(url, body));
+  if (url === WRITE_URL) {
+    return timed(`${writeFlowName(body, CFG)} · ${body.action || 'call'}`, paPostChecked(writeUrlFor(body, CFG, WRITE_URL), body));
+  }
+  return timed(`${url === READ_URL ? 'Read' : url === CORRECTIONS_URL ? 'Corrections' : 'Write'} · ${body.action || 'call'}`, paPostChecked(url, body));
 }
 
 // A 401 can be a busy moment rather than a real sign-out (the token lookup itself
