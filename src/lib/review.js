@@ -21,6 +21,8 @@ export const FLAG = {
   auto_clockout: { label: 'Auto clock-out', tone: 'warn', time: false },
   no_clockin: { label: 'No clock-in', tone: 'warn', time: false },
   unscheduled: { label: 'Not on the schedule', tone: 'warn', time: true },
+  // An admin corrected the times for a shift after a missed clock-in or out request.
+  corrected: { label: 'Corrected', tone: 'muted', time: false, info: true },
 };
 
 const MIN = 1 / 60;
@@ -42,6 +44,14 @@ export function reviewDays(data, from, to, now = new Date()) {
   const ops = new Map((data.operators || []).map((o) => [o.email, o]));
   const res = latest(data.resolutions, (r) => r.key);
   const appr = latest(data.approvals, (r) => dayKeyOf(r.email, r.date));
+  // Missed clock-in or out requests. An approved one replaces the clock record for its
+  // shift with the times an admin set; the raw punches stay as they are.
+  const fixes = new Map();
+  const asks = new Map();
+  for (const c of data.corrections || []) {
+    if (c.status === 'approved' && c.shiftId && c.timeIn && c.timeOut) fixes.set(c.shiftId, c);
+    if (c.status === 'open') { const k = dayKeyOf(c.email, c.date); asks.set(k, [...(asks.get(k) || []), c]); }
+  }
 
   const days = new Map();
   const get = (email, day, name) => {
@@ -71,10 +81,13 @@ export function reviewDays(data, from, to, now = new Date()) {
     };
     const live = d.sessions.some((s) => s.live);
     const shiftOf = (s) => d.shifts.find((r) => r.id === s.shiftId) || d.shifts.find((r) => s.start < r.end && r.start < s.end) || null;
+    const fixedShifts = d.shifts.filter((r) => fixes.has(r.id));
+    const fixedAt = (t) => fixedShifts.some((r) => +t >= +r.start - 36e5 && +t <= +r.end + 3 * 36e5);
 
     let inShift = 0;
     for (const s of d.sessions) {
       const r = shiftOf(s);
+      if (r && fixes.has(r.id)) continue;
       const st = +s.start, en = +s.end;
       if (!r) {
         if (!s.live) flag('unscheduled', 'Clocked in with no shift booked', { ref: +s.start, minutes: Math.round(s.hours * 60), start: s.start, end: s.end });
@@ -92,6 +105,7 @@ export function reviewDays(data, from, to, now = new Date()) {
     }
     for (const i of d.noouts) {
       const r = d.shifts.find((x) => x.id === i.shiftId) || d.shifts.find((x) => +i.at < +x.end) || null;
+      if (r ? fixes.has(r.id) : fixedAt(i.at)) continue;
       // Never invent a departure. The scheduled end is offered as a suggestion,
       // marked system-generated, and only counts once someone accepts it.
       const suggested = r ? r.end : null;
@@ -99,8 +113,14 @@ export function reviewDays(data, from, to, now = new Date()) {
       const from = r ? new Date(Math.max(+i.at, +r.start)) : i.at;
       flag('no_clockout', 'Clocked in, never clocked out', { ref: +i.at, start: i.at, from, suggested, minutes: suggested ? Math.round(clip(+from, +suggested, -Infinity, Infinity) * 60) : 0 });
     }
-    for (const i of d.noins) flag('no_clockin', 'Clocked out with no clock-in', { ref: +i.at });
+    for (const i of d.noins) if (!fixedAt(i.at)) flag('no_clockin', 'Clocked out with no clock-in', { ref: +i.at });
+    for (const r of fixedShifts) {
+      const c = fixes.get(r.id);
+      inShift += clip(+new Date(c.timeIn), +new Date(c.timeOut), +r.start, +r.end);
+      flag('corrected', `${hm(new Date(c.timeIn))}–${hm(new Date(c.timeOut))} set by ${c.resolvedBy || 'an admin'}${c.partnerConfirmed ? ', partner confirmed' : ''}${c.note ? ` · “${c.note}”` : ''}`, { ref: c.id, correction: c });
+    }
     for (const r of d.shifts) {
+      if (fixes.has(r.id)) continue;
       const came = d.sessions.some((s) => shiftOf(s) === r) || d.noouts.some((i) => +i.at < +r.end && +i.at >= +r.start - 36e5);
       if (!came && now >= r.end) flag('no_show', `Booked ${r.startHM}–${r.endHM} on ${r.station}, never clocked in`, { ref: r.id });
     }
@@ -115,12 +135,13 @@ export function reviewDays(data, from, to, now = new Date()) {
       } else extra += (f.minutes || 0) / 60;
     }
     const recorded = d.sessions.filter((s) => !s.live).reduce((a, s) => a + s.hours, 0);
+    const requests = asks.get(d.key) || [];
     const scheduled = d.shifts.reduce((a, r) => a + (r.end - r.start) / 36e5, 0);
     const computed = inShift + extra;
     const a = appr.get(d.key);
     const approval = a && a.status === 'approved' ? a : null;
     const open = flags.filter((f) => !f.resolution && !f.info);
-    const status = approval ? 'approved' : live || d.day >= dayKey(now) && !d.shifts.every((r) => now >= r.end) ? 'in_progress' : open.length ? 'needs_review' : 'ready';
+    const status = approval ? 'approved' : live || d.day >= dayKey(now) && !d.shifts.every((r) => now >= r.end) ? 'in_progress' : open.length || requests.length ? 'needs_review' : 'ready';
     const locs = [...new Set([...d.shifts.map(locOf), ...d.sessions.map(locOf)].filter(Boolean))];
     out.push({
       ...d,
@@ -128,6 +149,8 @@ export function reviewDays(data, from, to, now = new Date()) {
       locationName: locs.map(locationName).join(', '),
       flags,
       openFlags: open.length,
+      requests,
+      fixes: fixedShifts.map((r) => fixes.get(r.id)),
       scheduled,
       recorded,
       inShift,
@@ -187,8 +210,11 @@ const hm = (t) => `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinute
 // First clock-in and last clock-out of an approved day, site-local HH:MM. A
 // missed clock-out counts only with the end time the manager accepted.
 export function clockSpan(d) {
-  const ins = d.sessions.map((s) => +s.start);
-  const outs = d.sessions.filter((s) => !s.live).map((s) => +s.end);
+  const fixed = new Set((d.fixes || []).map((c) => c.shiftId));
+  const own = d.sessions.filter((s) => !fixed.has(s.shiftId));
+  const ins = own.map((s) => +s.start);
+  const outs = own.filter((s) => !s.live).map((s) => +s.end);
+  for (const c of d.fixes || []) { ins.push(+new Date(c.timeIn)); outs.push(+new Date(c.timeOut)); }
   for (const f of d.flags) {
     if (f.code !== 'no_clockout') continue;
     ins.push(+f.start);

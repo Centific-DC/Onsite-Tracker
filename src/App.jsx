@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
-import { CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, Eye, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
+import { Bot, CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, Eye, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
 import { CFG, DEMO, DEMO_CHOSEN, LIVE_READY, PREVIEW } from './lib/config.js';
 import { useTimings } from './lib/timing.js';
@@ -25,6 +25,7 @@ import { OperatorSheet, SearchSheet } from './components/Search.jsx';
 import centificMark from './assets/centific-mark.png';
 import { Tour } from './tour/Tour.jsx';
 import { UpdateNotice, hardRefresh, useUpdate } from './components/UpdateNotice.jsx';
+import { RobotNamesSheet } from './components/RobotNames.jsx';
 import { VERSION } from './version.js';
 import { useTour } from './tour/tourStore.js';
 
@@ -40,7 +41,7 @@ const ADMIN_NAV = [
   { id: 'admin/today', label: 'Today', icon: Users, view: Today, roles: ['scheduler', 'approver'] },
   { id: 'admin/schedule', label: 'Schedule', icon: CalendarDays, view: Schedule, roles: ['scheduler', 'approver'] },
   { id: 'admin/roster', label: 'Roster', icon: IdCard, view: Roster, roles: ['scheduler'] },
-  { id: 'admin/review', label: 'Review', icon: ClipboardCheck, view: Review, roles: ['approver'] },
+  { id: 'admin/review', label: 'Review', icon: ClipboardCheck, view: Review, roles: ['approver', 'admin'] },
   { id: 'admin/hours', label: 'Hours', icon: ChartColumn, view: Hours, roles: ['scheduler', 'approver'] },
   { id: 'admin/records', label: 'Records', icon: List, view: Records, roles: ['scheduler', 'approver'] },
   { id: 'admin/reports', label: 'Reports', icon: FileSpreadsheet, view: Reports, roles: ['approver', 'reporting'] },
@@ -356,9 +357,12 @@ function NoAccess() {
 function SettingsSheet({ open, onOpenChange, admin, onTour }) {
   const { theme, setTheme, device, setDevice, session, signOut, resetDemo, switchDemo } = useStore();
   const [switching, setSwitching] = useState(false);
+  const [robots, setRobots] = useState(false);
   const latest = useUpdate((s) => s.latest);
   const timings = useTimings((s) => s.list);
   return (
+    <>
+    <RobotNamesSheet open={robots} onOpenChange={setRobots} />
     <Sheet open={open} onOpenChange={onOpenChange} title="Settings">
       <Group title="Appearance">
         <div className="pad">
@@ -395,8 +399,9 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
         </Group>
       )}
       {hasRole(session, 'admin') && (
-        <Group title="Admin" footer="Add people, set their roles, and reset passwords.">
+        <Group title="Admin" footer="Add people, set their roles, and reset passwords. Name each robot.">
           <Row leading={<KeyRound size={18} aria-hidden="true" />} title="Users and sign-ins" trailing={<ChevronRight size={18} aria-hidden="true" />} onClick={() => { onOpenChange(false); go('admin/users'); }} />
+          <Row leading={<Bot size={18} aria-hidden="true" />} title="Robots" subtitle="Names shown next to each robot" trailing={<ChevronRight size={18} aria-hidden="true" />} onClick={() => { onOpenChange(false); setTimeout(() => setRobots(true), 250); }} />
         </Group>
       )}
       {session && (
@@ -447,6 +452,7 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
         </Group>
       )}
     </Sheet>
+    </>
   );
 }
 

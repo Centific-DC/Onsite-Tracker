@@ -3,6 +3,7 @@ import { union } from '../lib/hours.js';
 import { fmtHrs, fmtTime, shortName, fmtHrsU } from '../lib/time.js';
 import { Tag } from './ui.jsx';
 import { TriangleAlert } from 'lucide-react';
+import { robotName, robotTitle } from '../lib/robots.js';
 
 const H = 36e5;
 const TIP_ROOM = 72; // a tooltip's height plus its gap; less room above flips it below
@@ -63,13 +64,13 @@ export function RobotLanes({ day, sessions, planned = [], stations, now, pairSiz
         return (
           <div className="lane" key={name}>
             <div className="lane-label">
-              <span className="lane-name">{name}</span>
+              <span className="lane-name">{name}</span>{robotName(name) && <span className="lane-meta">{robotName(name)}</span>}
               <span className="lane-meta">
                 {mine.length === 0 ? (due.length ? 'No one checked in' : 'Idle') : `${fmtHrsU(hours)} worked`}
               </span>
               {short && <Tag tone="warn" icon={<TriangleAlert size={12} />}>{liveNow} of {pairSize} on site</Tag>}
             </div>
-            <div className="lane-track" role="img" aria-label={`${name}: ${mine.map((s) => `${s.name} ${fmtTime(s.start)} to ${s.live ? 'now' : fmtTime(s.end)}`).join(', ') || 'no one'}. ${fmtHrs(hours)} hours worked.${due.length ? ` Scheduled but not here: ${due.map((p) => `${p.name} ${fmtTime(p.startAt)} to ${fmtTime(p.endAt)}`).join(', ')}.` : ''}`}>
+            <div className="lane-track" role="img" aria-label={`${robotTitle(name)}: ${mine.map((s) => `${s.name} ${fmtTime(s.start)} to ${s.live ? 'now' : fmtTime(s.end)}`).join(', ') || 'no one'}. ${fmtHrs(hours)} hours worked.${due.length ? ` Scheduled but not here: ${due.map((p) => `${p.name} ${fmtTime(p.startAt)} to ${fmtTime(p.endAt)}`).join(', ')}.` : ''}`}>
               {ticks.map((h) => <span key={h} className="gridline" style={{ left: `${((h - from) / span) * 100}%` }} />)}
               <div className="lane-people">
                 {mine.map((s, i) => (

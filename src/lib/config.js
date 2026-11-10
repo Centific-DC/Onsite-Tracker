@@ -6,6 +6,9 @@ export const CFG = Object.assign(
 );
 export const READ_URL = String(CFG.readUrl || '').trim();
 export const WRITE_URL = String(CFG.writeUrl || '').trim();
+// Lotus Corrections: missed clock-in or out requests and strikes, a flow of its own
+// because Write is near Power Automate's 500-step limit. Unset, they go to Write.
+export const CORRECTIONS_URL = String(CFG.correctionsUrl || '').trim() || WRITE_URL;
 // Live once both data flow URLs are set. Until then the app always shows demo data.
 export const LIVE_READY = !!(READ_URL && WRITE_URL);
 // Operator preview tab (public/preview.js): demo data and demo sign-in, this tab only.

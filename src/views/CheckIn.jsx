@@ -12,8 +12,10 @@ import { openSpots, partnersOf, robotLabel, shiftTimes } from '../lib/schedule.j
 import { FLAG, reviewDays } from '../lib/review.js';
 import { addDays, dayKey, firstName, fmtDay, fmtLongDay, fmtTime, greeting, initials, mondayOf, fmtHrsU } from '../lib/time.js';
 import { useNow } from '../lib/hooks.js';
-import { Group, Sheet } from '../components/ui.jsx';
+import { Group, Segmented, Sheet } from '../components/ui.jsx';
 import { Bar, BigButton, Card, Detail, Dial, Label, Pill, Well } from '../components/Soft.jsx';
+import { robotName, robotTitle } from '../lib/robots.js';
+import { MISSED, RESET_DAYS, standing } from '../lib/strikes.js';
 
 // The operator's page. Everyone signs in as themselves, on their phone or on the
 // lab laptop; the laptop signs the operator out again after each clock-in or out.
@@ -165,7 +167,7 @@ function Person({ person, onDone, laptop }) {
         ) : (
           <>
             <Pill tone="green" className="op-badge"><span className="op-dot is-green op-pulse" />Clocked in</Pill>
-            <Label className="op-center">{open.pending ? 'Saving your clock-in · ' : ''}On the clock since {fmtTime(since)} · {open.station}{shift && partnersOf(data, shift).length ? ` · with ${andList(partnersOf(data, shift))}` : ''}</Label>
+            <Label className="op-center">{open.pending ? 'Saving your clock-in · ' : ''}On the clock since {fmtTime(since)} · {robotTitle(open.station)}{shift && partnersOf(data, shift).length ? ` · with ${andList(partnersOf(data, shift))}` : ''}</Label>
             <Dial value={shift ? elapsedMs / lengthMs : 0} tone="green" onClick={clockOut} busy={busy} label={`Clock out. ${main} on the clock`}>
               <div className="op-timer op-num" aria-live="off">{main}<span className="op-timer-sec">{sec}</span></div>
               <Label>{shift ? `of ${clockParts(lengthMs)[0]} shift` : 'Not on the schedule'}</Label>
@@ -344,7 +346,7 @@ function RobotSheet({ open, onOpenChange, onConfirm, busy, lab, title, descripti
         <div className="robots" role="radiogroup" aria-label="Robot">
           {(L?.robots || []).map((s) => (
             <button key={s} type="button" role="radio" aria-checked={pick === s} className={clsx('robot', pick === s && 'is-on')} onClick={() => setPick(s)}>
-              <span className="robot-name">{s}</span>
+              <span className="robot-name">{s}</span>{robotName(s) && <span className="robot-who">{robotName(s)}</span>}
               {pick === s && <span className="robot-check"><Check size={14} strokeWidth={3} /></span>}
             </button>
           ))}
@@ -366,6 +368,7 @@ const DAY_STATUS = {
 function MyTime({ person }) {
   const { data } = useStore();
   const now = useNow(60000);
+  const [forgot, setForgot] = useState(false);
   const { wk0, days } = useMyWeek(person.email, now);
   const upcoming = (data.schedule || []).filter((r) => r.email === person.email && r.date > dayKey(now) && r.date < dayKey(addDays(now, 8))).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
   const byDay = new Map(days.map((d) => [d.day, d]));
@@ -383,6 +386,7 @@ function MyTime({ person }) {
         </div>
         <Pill inset tone={allApproved ? 'green' : review ? 'yellow' : null}>{allApproved ? 'Approved' : review ? 'Under review' : 'In progress'}</Pill>
       </header>
+      <MyStanding email={person.email} now={now} />
       <div className="op-days">
         {list.map((d, i) => {
           const k = dayKey(d);
@@ -390,13 +394,15 @@ function MyTime({ person }) {
           const future = k > dayKey(now);
           const hrs = day ? (day.approved ?? day.recorded) : 0;
           const st = day && !future ? DAY_STATUS[day.status] : null;
-          const robots = day ? [...new Set([...day.shifts.map((r) => r.station), ...day.sessions.map((s) => s.station)])].join(', ') : '';
+          const robots = day ? [...new Set([...day.shifts.map((r) => r.station), ...day.sessions.map((s) => s.station)])].map(robotTitle).join(', ') : '';
           return (
             <Card key={k} className={clsx('op-day', (!day || future) && 'is-off', 'op-rise')} style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}>
               <div className="op-day-col">
                 <span className="op-day-name">{k === dayKey(now) ? 'Today' : d.toLocaleDateString([], { weekday: 'long' })}</span>
                 <Label>{d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · {day ? (future ? `Booked · ${robots}` : robots || 'No robot') : 'No shift'}</Label>
                 {day && !future && day.flags.filter((f) => !f.info).map((f) => <span key={f.key} className="op-flag">{FLAG[f.code].label}{f.resolution ? ' · resolved' : ''}</span>)}
+                {day && day.requests.map((c) => <span key={c.id} className="op-flag">{MISSED[c.missed].label} · sent to admins</span>)}
+                {day && day.fixes.map((c) => <span key={c.id} className="op-flag is-muted">Corrected by an admin</span>)}
               </div>
               <div className="op-day-right">
                 {st && <Pill inset tone={st.tone} className="op-pill-sm">{st.label}</Pill>}
@@ -414,6 +420,11 @@ function MyTime({ person }) {
         <Bar value={total / CFG.weeklyHourCap} tone="ink" label="Week so far" />
         <p className="op-small">Your manager approves each week by Monday. Approved hours replace what you clocked once they're confirmed. Limit {CFG.weeklyHourCap}h a week.</p>
       </Well>
+      <MyRequests email={person.email} now={now} />
+      <div className="op-foot op-forgot">
+        <button type="button" className="op-link" onClick={() => setForgot(true)}>Forgot to clock in or out?</button>
+      </div>
+      <ForgotSheet open={forgot} onOpenChange={setForgot} person={person} now={now} />
       {upcoming.length > 0 && (
         <>
           <Label className="op-section">Coming up</Label>
@@ -424,7 +435,7 @@ function MyTime({ person }) {
                 <Card key={r.id} className="op-day">
                   <div className="op-day-col">
                     <span className="op-day-name">{t.start.toLocaleDateString([], { weekday: 'long' })}</span>
-                    <Label>{fmtDay(t.start).split(', ').slice(1).join(', ')} · {locationName(locOf(r))} · {r.station}</Label>
+                    <Label>{fmtDay(t.start).split(', ').slice(1).join(', ')} · {locationName(locOf(r))} · {robotLabel(r)}</Label>
                     {partnersOf(data, r).length > 0 && <span className="op-day-with">With {andList(partnersOf(data, r))}</span>}
                   </div>
                   <div className="op-day-right"><span className="op-upcoming-time op-num">{shiftLabel(r)} · {fmtTime(t.start)}</span></div>
@@ -444,7 +455,7 @@ function Done({ done, onNext, laptop }) {
     <div className="op op-screen op-enter op-done">
       <span className={clsx('op-medal', done.early && 'is-red')}><Check size={36} strokeWidth={2.5} aria-hidden="true" /></span>
       <h1 className="op-h1 op-center">{out ? 'Shift logged' : 'Clocked in'}</h1>
-      <p className="op-body op-center">{fmtLongDay(done.at)} · {locationName(done.location)} · {done.station}</p>
+      <p className="op-body op-center">{fmtLongDay(done.at)} · {locationName(done.location)} · {robotTitle(done.station)}</p>
       {done.pending && <p className="op-body op-small-body op-center" role="status">Saving in the background. Lotus records the exact time as it arrives.</p>}
       {out ? (
         <Well className="op-total-well">
@@ -477,5 +488,100 @@ function Done({ done, onNext, laptop }) {
         <button type="button" className="op-btn" onClick={onNext}>{laptop ? 'Sign out for the next operator' : 'Done'}</button>
       </div>
     </div>
+  );
+}
+
+// The operator's own warnings and strikes, only when there's something to show.
+// Partners never see each other's.
+function MyStanding({ email, now }) {
+  const { data } = useStore();
+  const st = standing(data.strikes, email, now);
+  if (!st.count) return null;
+  const tone = st.count >= 4 ? 'red' : st.count >= 2 ? 'yellow' : null;
+  return (
+    <Card className="op-standing">
+      <div className="op-row-between">
+        <span className="op-day-name">Missed clock-ins</span>
+        <Pill inset tone={tone}>{st.text}</Pill>
+      </div>
+      <p className="op-small op-left">Clears on {st.clearsOn.toLocaleDateString([], { month: 'short', day: 'numeric' })} if you don't miss a clock-in or out before then. {st.count >= 4 ? 'Your PM will talk with you about this.' : st.count >= 3 ? 'Your lead will talk with you about this.' : 'Each miss is a step toward a strike.'}</p>
+    </Card>
+  );
+}
+
+// "I forgot to clock in or out": pick the shift, say what happened. Lotus emails the
+// admins and copies the operator. They can't enter a time: an admin checks with the
+// partner and sets it.
+function ForgotSheet({ open, onOpenChange, person, now }) {
+  const { data, requestCorrection } = useStore();
+  const [pick, setPick] = useState('');
+  const [missed, setMissed] = useState('in');
+  const [message, setMessage] = useState('');
+  const [err, setErr] = useState('');
+  const asked = new Set((data.corrections || []).filter((c) => c.status !== 'declined').map((c) => c.shiftId));
+  const shifts = (data.schedule || [])
+    .filter((r) => r.email === person.email && r.date >= dayKey(addDays(now, -7)) && shiftTimes(r).start <= now && !asked.has(r.id))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.start.localeCompare(a.start));
+  useEffect(() => { if (open) { setPick(shifts[0]?.id || ''); setMissed('in'); setMessage(''); setErr(''); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const send = () => {
+    setErr('');
+    if (!pick) return setErr('Pick the shift.');
+    if (!message.trim()) return setErr('Say what happened.');
+    requestCorrection({ shiftId: pick, missed, message: message.trim() }).then(
+      () => toast.success('Request sent', { description: DEMO ? 'Demo: no email was sent. Live, the admins get it and you get a copy.' : 'The admins have it, and a copy is in your email.' }),
+      (e) => toast.error('Your request wasn’t sent', { description: e.message }),
+    );
+    onOpenChange(false);
+  };
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Forgot to clock in or out?"
+      description="Send this to the admins. They'll check with your partner and fix your hours."
+      footer={<button type="button" className="btn btn-primary btn-block" disabled={!shifts.length} onClick={send}>Send to the admins</button>}
+    >
+      <Group title="Which shift">
+        {shifts.map((r) => (
+          <button key={r.id} type="button" role="radio" aria-checked={pick === r.id} className="row row-btn" onClick={() => setPick(r.id)}>
+            <span className="row-main"><span className="row-title">{r.date === dayKey(now) ? 'Today' : fmtDay(shiftTimes(r).start)}</span><span className="row-sub">{fmtTime(shiftTimes(r).start)}–{fmtTime(shiftTimes(r).end)} · {robotLabel(r)}</span></span>
+            <span className="row-trail">{pick === r.id && <Check size={18} strokeWidth={2.5} aria-hidden="true" />}</span>
+          </button>
+        ))}
+        {!shifts.length && <div className="empty-row">No shifts in the last 7 days that still need this.</div>}
+      </Group>
+      <Group title="What did you miss">
+        <div className="pad"><Segmented label="What you missed" value={missed} onChange={setMissed} options={[{ value: 'in', label: 'Clock-in' }, { value: 'out', label: 'Clock-out' }, { value: 'both', label: 'Both' }]} /></div>
+      </Group>
+      <Group title="What happened" footer={`Each missed clock-in or out counts toward a warning, and a request more than a day late counts too. The count clears after ${RESET_DAYS} days with no misses.`}>
+        <div className="pad"><textarea className="reason" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="For example: my phone died, I was there the whole shift with Avery" aria-label="What happened" /></div>
+      </Group>
+      {err && <p className="err" role="alert">{err}</p>}
+    </Sheet>
+  );
+}
+
+// The operator's own missed clock-in or out requests from the last two weeks.
+function MyRequests({ email, now }) {
+  const { data } = useStore();
+  const list = (data.corrections || []).filter((c) => c.email === email && c.date >= dayKey(addDays(now, -14))).sort((a, b) => b.date.localeCompare(a.date));
+  if (!list.length) return null;
+  const label = { open: ['Sent to admins', 'yellow'], approved: ['Corrected', 'green'], declined: ['Declined', 'red'] };
+  return (
+    <>
+      <Label className="op-section">Your requests</Label>
+      <div className="op-days">
+        {list.map((c) => (
+          <Card key={c.id} className="op-day">
+            <div className="op-day-col">
+              <span className="op-day-name">{fmtDay(new Date(`${c.date}T12:00`))}</span>
+              <Label>{MISSED[c.missed].label}</Label>
+              {c.status !== 'open' && c.note && <span className="op-day-with">“{c.note}”</span>}
+            </div>
+            <div className="op-day-right"><Pill inset tone={label[c.status][1]} className="op-pill-sm">{label[c.status][0]}</Pill></div>
+          </Card>
+        ))}
+      </div>
+    </>
   );
 }

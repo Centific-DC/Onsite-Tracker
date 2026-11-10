@@ -6,6 +6,8 @@ window.ONSITE_CONFIG = {
   // Empty = demo mode: sample data, saved only in this browser.
   readUrl: '',
   writeUrl: '',
+  // Lotus Corrections flow (missed clock-in requests, strikes). Empty: they go to writeUrl.
+  correctionsUrl: '',
 
   // Lotus Auth (usernames and passwords that a Lotus admin hands out). Empty = sign-ins
   // kept in this browser only, with the demo accounts Lotus-admin and Lotus-operator.
@@ -20,6 +22,16 @@ window.ONSITE_CONFIG = {
   // handovers, never a flag. `seats` is how many operators each shift needs per day,
   // across the lab's robots (operators work in pairs, so 4 = both robots).
   // `days` are the days the lab runs: 0 = Sunday … 6 = Saturday.
+  // Robot names (their host names), shown next to the robot everywhere. The robot
+  // keeps its id ("Robot 3") in every saved record. Admins can change these in
+  // Settings → Robots; what they save there wins over this list.
+  robotNames: {
+    'Robot 1': 'Stationary',
+    'Robot 2': 'Mobile',
+    'Robot 3': 'franka-thor-02',
+    'Robot 4': 'jetson-thor-004',
+  },
+
   locations: [
     {
       id: 'RED',
@@ -37,7 +49,7 @@ window.ONSITE_CONFIG = {
     {
       id: 'MTV',
       name: 'Mountain View Lab',
-      robots: ['Robot 3'],
+      robots: ['Robot 3', 'Robot 4'],
       // Placeholder until the Bay Area shift times are confirmed.
       templates: [
         { id: 'MTV-AM', label: 'Morning', start: '07:00', end: '12:30', seats: 2 },

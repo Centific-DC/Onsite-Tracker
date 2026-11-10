@@ -7,6 +7,7 @@ import { addDays, dayKey, fmtDay, fmtHrs, fmtTime, mondayOf, weekLabel, fmtHrsU 
 import { useNow } from '../lib/hooks.js';
 import { shiftHours } from '../lib/schedule.js';
 import { Avatar, Group, Num, Row, Sheet, Tag } from '../components/ui.jsx';
+import { robotTitle } from '../lib/robots.js';
 
 export function Hours() {
   const { data, setClientHours } = useStore();
@@ -146,13 +147,13 @@ export function Hours() {
             {person.sessions.sort((a, b) => a.start - b.start).map((s) => (
               <Row
                 key={+s.start}
-                title={`${fmtDay(s.start)} · ${s.station}`}
+                title={`${fmtDay(s.start)} · ${robotTitle(s.station)}`}
                 subtitle={`${fmtTime(s.start)} – ${s.live ? 'now' : fmtTime(s.end)}${s.note ? ` · “${s.note}”` : ''}`}
                 trailing={<>{s.early && <Tag tone="bad">Left early</Tag>}{s.auto && <Tag tone="warn">Auto clock-out</Tag>}<span className="mono-num">{fmtHrsU(s.hours)}</span></>}
               />
             ))}
             {(person.issues || []).filter((i) => i.kind !== 'early').map((i) => (
-              <Row key={`${i.kind}${+i.at}`} title={`${fmtDay(i.at)} · ${i.station}`} subtitle={i.kind === 'noout' ? `In at ${fmtTime(i.at)}, no check-out` : `Out at ${fmtTime(i.at)}, no check-in`} trailing={<Tag tone="warn">{i.kind === 'noout' ? 'No check-out' : 'No check-in'}</Tag>} />
+              <Row key={`${i.kind}${+i.at}`} title={`${fmtDay(i.at)} · ${robotTitle(i.station)}`} subtitle={i.kind === 'noout' ? `In at ${fmtTime(i.at)}, no check-out` : `Out at ${fmtTime(i.at)}, no check-in`} trailing={<Tag tone="warn">{i.kind === 'noout' ? 'No check-out' : 'No check-in'}</Tag>} />
             ))}
           </Group>
         )}

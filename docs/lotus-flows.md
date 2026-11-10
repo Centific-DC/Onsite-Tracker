@@ -30,6 +30,18 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
     - Under 3 s: `signin`, `salt`, a one-user `users_upsert`, `user.create`, `user.reset_link`, `reset`, one welcome or reset `email_send`, `punch`, `fill_in`.
     - Under 5 s: Read for an operator; under 10 s: Read `all` for staff; under 15 s: a 20-row `users_upsert` or a 10-message `email_send`.
     - **The app never waits on Write for everyday edits** (the Atlas pattern, 2026-11-05). Shift adds and changes, shift deletes, edits to people already on the roster, flag decisions and the client's successful hours show at once and go through a save queue in the browser, up to 3 calls at a time, retried after 5, 15, 30, 60 and 120 s on no answer, 429, 5xx or 503. So each of these must be safe to receive twice: `shift_delete` of a missing id is 200, `users_upsert` matches by email, `resolve_flag` replaces by key, `client` replaces by week. For new shifts (no `id`) the app checks a fresh Read before resending after a timeout or 502/504, so it doesn't book a shift twice. A 4xx other than 401/408/429 is final, and the app undoes the change on screen. Approvals, clock-ins, fill-ins, new users, imports and emails are not queued: those still wait for the flow's answer.
+    - **One-job flows** (2026-11-06). Each takes the same `text/plain` body and token and answers the same way as Write (or Auth) for its op; only the URL changes. The app picks the flow by op (src/lib/routes.js); a flow whose secret is unset falls back to Write, and the reset ops fall back to Auth. URLs come only from these Actions secrets, filled into the built config.js:
+        | Op | Flow | Actions secret | Config key |
+        |---|---|---|---|
+        | `users_upsert` with 1 user | Save User | `LOTUS_SAVE_USER_URL` | `saveUserUrl` |
+        | `users_upsert` with 2+ users | Save Users | `LOTUS_SAVE_USERS_URL` | `saveUsersUrl` |
+        | `shift_upsert` | Save Shift | `LOTUS_SAVE_SHIFT_URL` | `saveShiftUrl` |
+        | `shift_delete` | Delete Shift | `LOTUS_DELETE_SHIFT_URL` | `deleteShiftUrl` |
+        | `punch` (clock in and out) | Punch | `LOTUS_PUNCH_URL` | `punchUrl` |
+        | `email_send` | Send Email | `LOTUS_SEND_EMAIL_URL` | `sendEmailUrl` |
+        | `change-password`, `user.reset`, `user.reset_link`, `reset` (Auth ops) | Reset Password | `LOTUS_RESET_PASSWORD_URL` | `resetPasswordUrl` |
+
+        Everything else (`fill_in`, `resolve_flag`, `approve_day`, `reopen_day`, `template_save`, `client`) stays on Write, and sign-in, accounts and activate/deactivate stay on Auth. The test-only `undo_punch` is never called by the app.
     - The app sends a roster import as `users_upsert` calls of at most 5 users, and a schedule import as `shift_upsert` calls of at most 25 shifts, one call after another, so no single call nears the flow's 2-minute limit. Each call must still be idempotent by email (users) or id (shifts).
     - How:
         - *Get items* with a `$filter` and `Top Count` (1 when looking up one row), never a whole list just to find one row.
@@ -134,6 +146,52 @@ The first admin is created by the Auth flow's `bootstrap` op (below). After that
 
 If a flag is resolved again, update the existing row with the same `Title`. The audit row keeps the history.
 
+### `Lotus_Corrections`: missed clock-in or out requests
+
+The project owner's rule (2026-11-10): only admins change hours away from what the clock recorded. An operator who forgot to clock in or out sends a request from Lotus; the flow emails the admins and copies the operator, which is the formal paper trail. An admin checks with the scheduled partner, then sets the real times or declines. The punches themselves are never changed.
+
+| Column | Type | Example |
+|---|---|---|
+| `Title` | text | `C-` + 8 characters of `guid()`; returned as `id` |
+| `Email` | text | the operator's email |
+| `Name` | text | the operator's name, from `Lotus_Users` |
+| `OperatorID` | text | `OP-0007` |
+| `Date` | text | the shift's `Date` |
+| `ShiftID` | text | the `Lotus_Shifts` row it's about |
+| `Missed` | text | `in`, `out` or `both` |
+| `Message` | multi-line text | the operator's words, or a summary of their email |
+| `Source` | text | `app` (sent from Lotus) or `email` (logged by an admin) |
+| `RequestedAt` | text | `utcNow()` for `app`; for `email`, when the email arrived (ISO UTC, from the admin) |
+| `Status` | text | `open`, `approved` or `declined` |
+| `PartnerConfirmed` | yes/no | the admin ticked that the partner confirmed |
+| `TimeIn`, `TimeOut` | text | ISO UTC, set by the admin on approval. These replace the clock record for this shift's hours |
+| `Note` | multi-line text | the admin's note, required |
+| `Counts` | yes/no | whether it counted toward a warning |
+| `NoCountReason` | text | required when an approved request doesn't count (an app or flow problem, a scheduling mistake) |
+| `ResolvedBy` | text | `callerEmail` |
+| `ResolvedAt` | text | `utcNow()` |
+
+Status changes update the row; the `Lotus_Audit` rows keep the history.
+
+### `Lotus_Strikes`: soft warnings and strikes
+
+Each counted miss is one row. The app works out the step from the rows: the 1st counted miss is a **soft warning**, then **Strike 1** (noted), **Strike 2** (a talk with the lead) and **Strike 3** (a talk with the PM and a removal review). After **30 days with no new counted miss** the count goes back to zero. Lotus records and emails each step but never blocks anyone.
+
+| Column | Type | Example |
+|---|---|---|
+| `Title` | text | `K-` + 8 characters of `guid()`; returned as `id` |
+| `Email`, `Name`, `OperatorID` | text | the operator |
+| `Date` | text | the day of the miss |
+| `Reason` | text | `missed_in`, `missed_out`, `missed_both` or `late_report` |
+| `Ref` | text | the correction `Title`, or the flag key for a missed clock-out found in review |
+| `StrikeAt` | text | `utcNow()`; returned as `at` (SharePoint doesn't allow a column named `At`) |
+| `By` | text | `callerEmail` |
+| `Emailed` | yes/no | the strike email was sent |
+| `Voided` | yes/no | an admin cancelled it |
+| `VoidReason`, `VoidedBy`, `VoidedAt` | text | required when cancelling |
+
+Never delete a row: a cancelled one stays, with `Voided` = Yes. **At most one row per `Email`, `Date` and `Reason`** that isn't voided: skip the add if one exists.
+
 ### `Lotus_Approvals`: approvals for each operator and day (append only)
 
 | Column | Type | Example |
@@ -160,7 +218,7 @@ The latest row per `DayKey` is the current state.
 | `Title` | text | `guid()` |
 | `RecordedAt` | text | `utcNow()`; returned as `at` |
 | `By` | text | `callerEmail` |
-| `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client`, `email_send`, `template_save` |
+| `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client`, `email_send`, `template_save`, `correction_request`, `correction_resolve`, `strike_add`, `strike_void` |
 | `Target` | text | the row key it touched |
 | `Before` | multi-line text | JSON of the row before, or empty |
 | `After` | multi-line text | JSON of the row after |
@@ -206,7 +264,7 @@ One row per template, edited on the app's Emails page. Missing rows mean the app
 
 ### `Lotus_Settings`
 
-One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**) and `SendFrom` (text: the mailbox every Lotus email is sent from, below). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
+One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**), `SendFrom` (text: the mailbox every Lotus email is sent from, below) and `RobotNames` (multiple lines of text: a JSON object of robot names, like `{"Robot 3":"franka-thor-02"}`, set by admins in Settings → Robots; empty = `{}`). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
 
 ## 2. Flow: **Lotus Auth**
 
@@ -240,8 +298,8 @@ The app opens the first-run screen at `<app URL>?setup=1`. Once an admin exists,
 Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action": "all", "from": "yyyy-MM-dd", "token": "…" }`. `from` defaults to 60 days ago.
 
 1. The token check above gives `callerEmail` and the caller's row. Compose `roles` = `split(Roles, ';')`.
-2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` from `Lotus_Settings`.
-3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
+2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, `Lotus_Corrections` with `Date ge '<from>'`, all of `Lotus_Strikes` (the history is short and the 30-day count needs older rows), and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` and `RobotNames` from `Lotus_Settings`, and return `robotNames` = `json(coalesce(RobotNames, '{}'))` to everyone, operators included (names aren't private).
+3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals, corrections, strikes and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
    - **The one exception is partners' names** (user decision, 2026-11-05). Before filtering, for each of the caller's shifts, find its partners among the other `Lotus_Shifts` rows of the same `Date` with a different `Email`, leaving out any row that another row's `Replaces` points to:
      - if either shift has a `Pair`, partners are the rows with the **same non-empty `Pair`** (robot and times don't matter);
      - if neither has one, partners are rows with the same `Location` and the same non-empty `Robot` whose time overlaps the caller's by **more than 60 minutes** (so the half-hour handover between shifts doesn't count; an end at or before the start runs past midnight).
@@ -260,6 +318,8 @@ Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action":
   "punches": [{ "id": "", "ts": "", "operatorId": "", "email": "", "name": "", "type": "in", "location": "RED", "station": "Robot 1", "shiftId": "", "grace": 0, "source": "laptop", "flag": "", "note": "" }],
   "resolutions": [{ "key": "", "outcome": "accept", "reason": "", "endTime": "", "by": "", "at": "" }],
   "approvals": [{ "email": "", "operatorId": "", "date": "", "status": "approved", "hours": 5.5, "computed": 5.5, "note": "", "final": false, "by": "", "at": "" }],
+  "corrections": [{ "id": "C-…", "email": "", "name": "", "operatorId": "", "date": "", "shiftId": "", "missed": "both", "message": "", "source": "app", "requestedAt": "", "status": "open", "partnerConfirmed": false, "timeIn": "", "timeOut": "", "note": "", "counts": true, "noCountReason": "", "resolvedBy": "", "resolvedAt": "" }],
+  "strikes": [{ "id": "K-…", "email": "", "name": "", "operatorId": "", "date": "", "reason": "missed_in", "ref": "", "at": "", "by": "", "voided": false, "voidReason": "", "voidedBy": "", "voidedAt": "" }],
   "client": [{ "week": "2026-11-02", "hours": 61.5 }],
   "notices": [{ "id": "N-…", "email": "", "operatorId": "", "weekStart": "2026-11-09", "kind": "operator-schedule", "subject": "", "sentAt": "", "by": "", "test": true, "snapshot": [] }],
   "templates": [{ "id": "operator-schedule", "subject": "", "html": "", "original": false, "updatedAt": "", "updatedBy": "" }],
@@ -328,18 +388,50 @@ Body `{ "users": [ { "id"?: "OP-…", "email", "name", "location", "cohort", "co
 
 Respond `{ "ok": true, "users": [ … ] }`.
 
-### `resolve_flag`: role `approver`
+### `resolve_flag`: role `approver` or `admin`
 
-Body `{ "key", "outcome": "accept" | "decline" | "noted", "reason", "endTime"? }`. `reason` must not be empty (400). Upsert the `Lotus_FlagResolutions` row by `Title` = `key`. Respond `{ "ok": true, "resolution": { … } }`.
+Body `{ "key", "outcome": "accept" | "decline" | "noted", "reason", "endTime"? }`. `reason` must not be empty (400). **A non-empty `endTime` needs `admin`** (403 `Only admins can change hours.`): approvers can accept the suggested end (the scheduled end) or decline. Upsert the `Lotus_FlagResolutions` row by `Title` = `key`.
 
-### `approve_day` and `reopen_day`: role `approver`
+If the key's third part is `no_clockout` and this is the first resolution for that key, add a `Lotus_Strikes` row (`Reason` = `missed_out`, `Ref` = `key`, `Email` and `Date` from the key, the one-per-day rule above) and a `strike_add` audit row, then send the strike email (below) only if the row takes the operator to Strike 3; set `Emailed` to match. Respond `{ "ok": true, "resolution": { … } }`.
+
+### `approve_day` and `reopen_day`: role `approver` or `admin`
 
 Body `{ "email", "operatorId", "date", "hours", "computed", "note" }`.
-- `approve_day`: `note` is required when `hours` ≠ `computed`.
+- `approve_day`: `note` is required when `hours` ≠ `computed`. **`hours` ≠ `computed` (more than 0.005 apart) needs `admin`**: anyone else gets 403 `Only admins can change hours.`
 - `reopen_day`: `note` is required.
 - If the latest row for that `DayKey` has `Final` = Yes, refuse with 409 `{"error":"That month is final","code":"final"}`.
 
 Add a `Lotus_Approvals` row with `Status` `approved` or `reopened`. Respond `{ "ok": true, "approval": { … } }`.
+
+### Flow: **Lotus Corrections** (`correction_request`, `correction_resolve`, `strike_void`)
+
+These three actions live in their own flow, **Lotus Corrections**, because Lotus Write is near Power Automate's 500-step limit (decided 2026-11-10). Same trigger as Write (**Anyone**), same body shape `{ "action", "token", ...fields }`, the same token check first, the same 403 for the wrong role, and a `Lotus_Audit` row per write. Its URL goes in the Actions secret **`LOTUS_CORRECTIONS_URL`**; the app sends these three actions there (and to Write while that secret is unset). Write keeps the `resolve_flag` strike and the admin-only checks; the strike email both flows send is described below.
+
+### `correction_request`: role `operator`, or `admin` for an emailed request
+
+Body `{ "shiftId", "missed": "in" | "out" | "both", "message", "source"?: "email", "email"?, "requestedAt"? }`.
+- `message` must not be empty (400 `Say what happened.`), `missed` must be one of the three.
+- Find the `Lotus_Shifts` row (404 if missing). **An operator** can only ask about their own shift (`Email` = `callerEmail`, else 403 `That shift isn’t yours.`), and only once it has started. `source`, `email` and `requestedAt` are ignored for them: `Source` = `app`, `RequestedAt` = `utcNow()`.
+- **An admin** logging an email sends `source` = `email`, the operator's `email` (must match the shift) and `requestedAt` (when the email arrived; not after now).
+- If a row for that `ShiftID` exists with `Status` ≠ `declined`: 409 `There’s already a request for that shift.`
+- Add the `Lotus_Corrections` row (`Status` = `open`, names and IDs from the shift), then, for `app` requests, **send the request email** (respond first, send after): to every active `Lotus_Users` row with `admin` in `Roles`, CC the operator, subject `Missed clock-<in|out|in and out>: <Name>, <Date>`, body: name, operator ID, lab, robot, scheduled times, what they missed, their message, when it was sent, the partner names on that shift (as for Read's `partners`) and a link to `#/admin/review`. `EmailTestMode` sends it to the alias as usual. Add a `Lotus_Notices` row (`Kind` = `correction-request`).
+- Respond `{ "ok": true, "correction": { … } }`.
+
+### `correction_resolve`: role `admin`
+
+Body `{ "id", "status": "approved" | "declined", "timeIn"?, "timeOut"?, "partnerConfirmed", "note", "counts", "noCountReason"?, "notify" }`.
+- The row must exist (404) and be `open` (409 `That request was already handled.`). `note` must not be empty (400).
+- `approved`: `timeIn` and `timeOut` are required ISO times with `timeOut` after `timeIn` (400). `counts` = false needs `noCountReason` (400).
+- Update the row (`Status`, times, `PartnerConfirmed`, `Note`, `Counts` = `status = approved and counts`, `NoCountReason`, `ResolvedBy`, `ResolvedAt`).
+- If it was approved and counts, add `Lotus_Strikes` rows: one with `Reason` = `missed_in`, `missed_out` or `missed_both` (from `Missed`), and **a second with `late_report` when `RequestedAt` is more than 24 hours after the shift's end** (site-local `Date` + `End`). `Ref` = the correction's `Title`. One audit row each (`strike_add`).
+- Email the operator the outcome (respond first, send after): approved with the new times, or declined with the note. **The strike email** (user rule, 2026-11-10): send it for each new row when `notify` is true, and **always when the row takes the operator to Strike 3** (a count of 4 or more, as below), whatever `notify` says. Set `Emailed` on each row to whether it went.
+- Respond `{ "ok": true, "correction": { … }, "strikes": [ … ] }`.
+
+**The strike email** (to the operator, from the shared mailbox, `EmailTestMode` as usual; a `Lotus_Notices` row with `Kind` = `strike`): subject `Lotus: <step> for a missed clock-<in|out>`. Body: the day and shift, the reason, the step reached (work it out as the app does: count that operator's non-voided rows in order, starting again from 1 after a gap of more than 30 days; 1 = Soft warning, 2 = Strike 1, 3 = Strike 2, 4 or more = Strike 3), what that step means (logged / noted / a talk with your lead / a talk with your PM and a review of your place on the project), and the date it clears if there are no more misses. Never mention anyone else's count.
+
+### `strike_void`: role `admin`
+
+Body `{ "id", "reason" }`. `reason` must not be empty (400). Set `Voided` = Yes, `VoidReason`, `VoidedBy` = `callerEmail`, `VoidedAt` = `utcNow()`. Never delete the row. Respond `{ "ok": true, "strike": { … } }`.
 
 ### `email_send`: role `scheduler` (and `admin` for welcome and password reset emails)
 
@@ -377,6 +469,13 @@ Up to 25 messages per call. For each message:
 ### `template_save`: role `scheduler`
 
 Body `{ "id", "subject", "html", "ready", "original"? }`. `id` must be one of the five template ids. Upsert `Lotus_Templates` by `Title` = `id`, set `UpdatedAt` and `UpdatedBy`. Respond `{ "template": { "id", "subject", "html", "original", "updatedAt", "updatedBy" } }`.
+
+### `robot_names`: role `admin`
+
+Body `{ "names": { "Robot 1": "Stationary", "Robot 3": "franka-thor-02", "Robot 4": "" } }`: the whole map, from Settings → Robots. A robot keeps its id (`Robot 3`) in every list; the name is only shown next to it.
+- Each key must be one of the robots the flow accepts (Robot 1 to Robot 10), and each value a string of at most 60 characters (empty clears it), else 400.
+- Set `Lotus_Settings.RobotNames` = `string(names)` on the `main` row. Add a `Lotus_Audit` row (action `robot_names`, before and after).
+- Respond `{ "ok": true, "robotNames": { …as saved… } }`.
 
 ### `client`: role `approver` or `scheduler`
 
@@ -452,12 +551,16 @@ User rule, 2026-11-06: an operator who forgets to clock out is clocked out by th
 16a. After `user.create`, set that row's `TempExpires` to yesterday by hand: `signin` with the right temp password gets 401 `This temp password has expired…`. `user.reset` makes it work again.
 16b. As a scheduler, `shift_upsert` an operator whose `HomeLocation` = `MTV` with `location` = `RED`: 400 and nothing saved. As that operator, `punch` in with `location` = `RED`: 403 `code` = `lab`.
 16c. As an admin, `email_send` a welcome to an operator who must change their password: it arrives (at the alias in test mode), the notice row has no HTML, and the run history shows the inputs as secured. For an operator who already changed their password: 400.
+16l. Missed clock-ins: as an operator, `correction_request` someone else's shift: 403. Your own: it saves `open`, and the admins get the email with you in CC. A second request for the same shift: 409.
+16m. As an approver (not admin), `approve_day` with `hours` ≠ `computed`, `resolve_flag` with an `endTime`, `correction_resolve` or `strike_void`: 403 each. As an admin they work and add audit rows.
+16n. `correction_resolve` approved with `counts` = true on a request sent 2 days after the shift: two `Lotus_Strikes` rows (the miss and `late_report`), and the operator gets the emails. Read as that operator: they see their own `strikes` and `corrections` only.
 16d. Pairs: book A and B on the same night with the same `Pair` and empty `Robot`. Read as A: `partners` names B. Book C with `Replaces` = A's shift and the same `Pair`: Read as B names only C.
 16e. Open spots: A doesn't clock in. 15 minutes after the start, Read as C (same home lab, no shift now) lists A's shift in `openSpots` with no name. `fill_in` as C creates C's shift (`Replaces` = A, same `Pair`); a second `fill_in` by D gets 409 `taken`. Read as an operator at the other lab: no spot.
 16f. Password reset: as an admin, `user.reset_link` for an operator, then `email_send` kind `password-reset`: it arrives (at the alias in test mode) and the notice row has no HTML. Their old password still signs in. `reset` with the right `codeHash` sets the new password, signs them out (old token gets 401) and the old password no longer works. The same link again: 400. A wrong `codeHash` five times locks the account for 15 minutes.
 16g. Set `ResetExpires` to yesterday by hand: `reset` gets 400. `email_send` kind `password-reset` for someone with no `ResetHash`: 400, no email. `user.reset_link` as a scheduler without `admin`: 403.
 16i. No shift: as an operator with no shift today, `punch` `in` with no `shiftId` (through Punch and through Write): 403 `no_shift`, no row added.
 16j. Auto clock-out: clock A in on a shift that ends in a few minutes and don't clock out. 15 to 30 minutes after the end, `Lotus_Punches` has one `OUT` for A with `Timestamp` = the scheduled end, `Device` = `system`, `Flag` = `Auto clock-out`, and Read returns `flag` = `auto`. Let the flow run again: still one `OUT`. Clock B in and out by hand before end + 15: no auto row for B.
+16k. Robot names: `robot_names` as an admin with `{"Robot 4":"jetson-thor-004"}`, then Read as an operator: `robotNames` has it. As a scheduler without `admin`: 403. A key `Robot 99` or a 61-character name: 400.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:
