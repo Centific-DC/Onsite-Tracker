@@ -174,6 +174,7 @@ Each counted miss is one row. The app works out the step from the rows: the 1st 
 | `Ref` | text | the correction `Title`, or the flag key for a missed clock-out found in review |
 | `At` | text | `utcNow()` |
 | `By` | text | `callerEmail` |
+| `Emailed` | yes/no | the strike email was sent |
 | `Voided` | yes/no | an admin cancelled it |
 | `VoidReason`, `VoidedBy`, `VoidedAt` | text | required when cancelling |
 
@@ -379,7 +380,7 @@ Respond `{ "ok": true, "users": [ … ] }`.
 
 Body `{ "key", "outcome": "accept" | "decline" | "noted", "reason", "endTime"? }`. `reason` must not be empty (400). **A non-empty `endTime` needs `admin`** (403 `Only admins can change hours.`): approvers can accept the suggested end (the scheduled end) or decline. Upsert the `Lotus_FlagResolutions` row by `Title` = `key`.
 
-If the key's third part is `no_clockout` and this is the first resolution for that key, add a `Lotus_Strikes` row (`Reason` = `missed_out`, `Ref` = `key`, `Email` and `Date` from the key, the one-per-day rule above) and a `strike_add` audit row, then send the strike email (below). Respond `{ "ok": true, "resolution": { … } }`.
+If the key's third part is `no_clockout` and this is the first resolution for that key, add a `Lotus_Strikes` row (`Reason` = `missed_out`, `Ref` = `key`, `Email` and `Date` from the key, the one-per-day rule above) and a `strike_add` audit row, then send the strike email (below) only if the row takes the operator to Strike 3; set `Emailed` to match. Respond `{ "ok": true, "resolution": { … } }`.
 
 ### `approve_day` and `reopen_day`: role `approver` or `admin`
 
@@ -402,12 +403,12 @@ Body `{ "shiftId", "missed": "in" | "out" | "both", "message", "source"?: "email
 
 ### `correction_resolve`: role `admin`
 
-Body `{ "id", "status": "approved" | "declined", "timeIn"?, "timeOut"?, "partnerConfirmed", "note", "counts", "noCountReason"? }`.
+Body `{ "id", "status": "approved" | "declined", "timeIn"?, "timeOut"?, "partnerConfirmed", "note", "counts", "noCountReason"?, "notify" }`.
 - The row must exist (404) and be `open` (409 `That request was already handled.`). `note` must not be empty (400).
 - `approved`: `timeIn` and `timeOut` are required ISO times with `timeOut` after `timeIn` (400). `counts` = false needs `noCountReason` (400).
 - Update the row (`Status`, times, `PartnerConfirmed`, `Note`, `Counts` = `status = approved and counts`, `NoCountReason`, `ResolvedBy`, `ResolvedAt`).
 - If it was approved and counts, add `Lotus_Strikes` rows: one with `Reason` = `missed_in`, `missed_out` or `missed_both` (from `Missed`), and **a second with `late_report` when `RequestedAt` is more than 24 hours after the shift's end** (site-local `Date` + `End`). `Ref` = the correction's `Title`. One audit row each (`strike_add`).
-- Email the operator the outcome (respond first, send after): approved with the new times, or declined with the note, and for each new strike the strike email.
+- Email the operator the outcome (respond first, send after): approved with the new times, or declined with the note. **The strike email** (user rule, 2026-11-10): send it for each new row when `notify` is true, and **always when the row takes the operator to Strike 3** (a count of 4 or more, as below), whatever `notify` says. Set `Emailed` on each row to whether it went.
 - Respond `{ "ok": true, "correction": { … }, "strikes": [ … ] }`.
 
 **The strike email** (to the operator, from the shared mailbox, `EmailTestMode` as usual; a `Lotus_Notices` row with `Kind` = `strike`): subject `Lotus: <step> for a missed clock-<in|out>`. Body: the day and shift, the reason, the step reached (work it out as the app does: count that operator's non-voided rows in order, starting again from 1 after a gap of more than 30 days; 1 = Soft warning, 2 = Strike 1, 3 = Strike 2, 4 or more = Strike 3), what that step means (logged / noted / a talk with your lead / a talk with your PM and a review of your place on the project), and the date it clears if there are no more misses. Never mention anyone else's count.

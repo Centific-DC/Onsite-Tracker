@@ -4,7 +4,7 @@ import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
 import { openSpots, samePair, shiftTimes } from './schedule.js';
-import { normCorrection, normStrike, reasonsFor } from './strikes.js';
+import { mustEmail, normCorrection, normStrike, reasonsFor, standing } from './strikes.js';
 
 export const storage = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -382,14 +382,14 @@ export const demo = {
     d.resolutions = d.resolutions.filter((x) => x.key !== r.key).concat(res);
     // A forgotten clock-out counts as a miss, once per operator and day, as the flow does.
     const [email, date, code] = r.key.split('|');
-    if (code === 'no_clockout' && !before) this.addStrike(d, { email, date, reason: 'missed_out', ref: r.key });
+    if (code === 'no_clockout' && !before) { const st = this.addStrike(d, { email, date, reason: 'missed_out', ref: r.key }); if (st) st.emailed = mustEmail(standing(d.strikes, email).count); }
     this.save(d, 'resolve_flag', r.key, before, res);
     return res;
   },
-  addStrike(d, { email, date, reason, ref }) {
+  addStrike(d, { email, date, reason, ref, emailed = false }) {
     if (d.strikes.some((x) => x.email === email && x.date === date && x.reason === reason && !x.voided)) return null;
     const o = d.operators.find((x) => x.email === email);
-    const st = normStrike({ id: `K-${crypto.randomUUID().slice(0, 8)}`, email, name: o?.name || email, operatorId: o?.id || '', date, reason, ref, at: new Date().toISOString(), by: demoActor });
+    const st = normStrike({ id: `K-${crypto.randomUUID().slice(0, 8)}`, email, name: o?.name || email, operatorId: o?.id || '', date, reason, ref, at: new Date().toISOString(), by: demoActor, emailed });
     d.strikes.push(st);
     d.audit.push({ id: crypto.randomUUID(), at: st.at, by: demoActor, action: 'strike_add', target: st.id, before: null, after: st });
     return st;
@@ -421,7 +421,13 @@ export const demo = {
     const strikes = [];
     if (c.status === 'approved' && c.counts) {
       const shift = d.schedule.find((x) => x.id === c.shiftId);
-      for (const reason of reasonsFor(c, shift)) { const st = this.addStrike(d, { email: c.email, date: c.date, reason, ref: c.id }); if (st) strikes.push(st); }
+      for (const reason of reasonsFor(c, shift)) {
+        const st = this.addStrike(d, { email: c.email, date: c.date, reason, ref: c.id });
+        if (!st) continue;
+        // The Strike 3 email always goes; earlier ones only if the admin chose to.
+        st.emailed = !!r.notify || mustEmail(standing(d.strikes, c.email).count);
+        strikes.push(st);
+      }
     }
     this.save(d, 'correction_resolve', c.id, before, c);
     return { correction: c, strikes };

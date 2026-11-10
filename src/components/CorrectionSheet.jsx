@@ -5,7 +5,7 @@ import { useStore } from '../lib/store.js';
 import { hasRole } from '../lib/auth.js';
 import { DEMO, locationName } from '../lib/config.js';
 import { partnersOf, robotLabel, shiftTimes } from '../lib/schedule.js';
-import { MISSED, REASON, isLateReport, nextSteps, reasonsFor, reportDelayHours, standing } from '../lib/strikes.js';
+import { MISSED, REASON, isLateReport, mustEmail, nextSteps, reasonsFor, reportDelayHours, standing } from '../lib/strikes.js';
 import { fmtLongDay, fmtTime, parseDay } from '../lib/time.js';
 import { Group, Row, Segmented, Sheet, Tag } from './ui.jsx';
 
@@ -52,6 +52,7 @@ export function CorrectionSheet({ request, draft, onClose }) {
   const [timeOut, setTimeOut] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [counts, setCounts] = useState(true);
+  const [notify, setNotify] = useState(true);
   const [noCount, setNoCount] = useState('');
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
@@ -63,7 +64,7 @@ export function CorrectionSheet({ request, draft, onClose }) {
     setReceived(new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16));
     setTimeIn(hhmm(rec.ins[0] || t.start));
     setTimeOut(hhmm(rec.outs[rec.outs.length - 1] || t.end));
-    setConfirmed(false); setCounts(true); setNoCount(''); setNote(''); setErr('');
+    setConfirmed(false); setCounts(true); setNotify(true); setNoCount(''); setNote(''); setErr('');
   }, [open, c?.id, shiftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open || !shift) return <Sheet open={false} onOpenChange={onClose} title="" />;
@@ -75,6 +76,9 @@ export function CorrectionSheet({ request, draft, onClose }) {
   const steps = nextSteps(data.strikes, email, reasons.length);
   const partners = partnersOf(data, shift);
   const handled = c && c.status !== 'open';
+  // Reaching Strike 3 always emails the operator; below that it's the admin's call.
+  const forced = steps.some((s) => mustEmail(s.count));
+  const emails = forced || notify;
 
   const decide = (status) => {
     setErr('');
@@ -87,14 +91,14 @@ export function CorrectionSheet({ request, draft, onClose }) {
       if (!counts && !noCount.trim()) return setErr('Say why this miss doesn’t count.');
     }
     if (draft && !message.trim()) return setErr('Summarise the email.');
-    const body = { status, timeIn: tin && tin.toISOString(), timeOut: tout && tout.toISOString(), partnerConfirmed: confirmed, note: note.trim(), counts: status === 'approved' && counts, noCountReason: counts ? '' : noCount.trim() };
+    const body = { status, timeIn: tin && tin.toISOString(), timeOut: tout && tout.toISOString(), partnerConfirmed: confirmed, note: note.trim(), counts: status === 'approved' && counts, noCountReason: counts ? '' : noCount.trim(), notify: status === 'approved' && counts && emails };
     const run = async () => {
       const id = c ? c.id : (await requestCorrection({ email, shiftId: shift.id, missed, message: message.trim(), source: 'email', requestedAt })).id;
       return resolveCorrection({ id, ...body }, `${status === 'approved' ? 'Correcting' : 'Declining'} ${name}’s ${fmtLongDay(parseDay(shift.date))}`);
     };
     run().then(
       (out) => toast.success(status === 'approved' ? `Corrected ${name}’s hours` : `Declined ${name}’s request`, {
-        description: out.strikes.length ? `${out.strikes.map((s) => REASON[s.reason]).join(' and ')}: now at ${steps[steps.length - 1].text}. ${DEMO ? 'Demo: no email sent.' : `${name.split(' ')[0]} has been emailed.`}` : status === 'approved' ? 'Doesn’t count toward a warning.' : (DEMO ? 'Demo: no email sent.' : `${name.split(' ')[0]} has been emailed.`),
+        description: out.strikes.length ? `${out.strikes.map((s) => REASON[s.reason]).join(' and ')}: now at ${steps[steps.length - 1].text}. ${!emails ? 'No strike email sent.' : DEMO ? 'Demo: no email sent.' : `${name.split(' ')[0]} has been emailed.`}` : status === 'approved' ? 'Doesn’t count toward a warning.' : (DEMO ? 'Demo: no email sent.' : `${name.split(' ')[0]} has been emailed.`),
       }),
       (e) => toast.error(`${name}’s request wasn’t saved`, { description: e.message }),
     );
@@ -150,9 +154,10 @@ export function CorrectionSheet({ request, draft, onClose }) {
               <label className="field-row"><span>Note</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Required, e.g. confirmed with Avery" /></label>
             </Group>
           )}
-          <Group title="Warnings and strikes" footer={admin && !counts ? null : 'Each step is emailed to the operator. Lotus never blocks anyone; at Strike 3 the PM decides.'}>
+          <Group title="Warnings and strikes" footer={admin && !counts ? null : forced ? 'Strike 3 is always emailed to the operator. Lotus never blocks anyone; the PM decides what happens next.' : 'You decide whether to email the operator about a soft warning, Strike 1 or Strike 2. Lotus never blocks anyone.'}>
             <Row title={`Now: ${before.text || 'No warnings'}`} subtitle={before.clearsOn ? `Clears ${before.clearsOn.toLocaleDateString([], { month: 'short', day: 'numeric' })} with no new misses` : 'Nothing in the last 30 days'} />
             {counts && reasons.map((r, i) => <Row key={r} title={`${REASON[r]} → ${steps[i].text}`} subtitle={steps[i].step.note} trailing={<Tag tone={steps[i].count >= 4 ? 'bad' : steps[i].count >= 2 ? 'warn' : 'muted'}>{steps[i].text}</Tag>} />)}
+            {admin && counts && <SwitchRow title={`Email ${name.split(' ')[0]} about this`} subtitle={forced ? 'Required at Strike 3' : 'Optional below Strike 3'} on={emails} onChange={setNotify} disabled={forced} />}
             {admin && <SwitchRow title="Doesn’t count" subtitle="An app or flow problem, or a scheduling mistake" on={!counts} onChange={(v) => setCounts(!v)} />}
             {admin && !counts && <label className="field-row"><span>Why</span><input value={noCount} onChange={(e) => setNoCount(e.target.value)} placeholder="Required" /></label>}
           </Group>

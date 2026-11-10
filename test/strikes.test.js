@@ -5,6 +5,7 @@ import { approvedRows, clockSpan, reviewDays } from '../src/lib/review.js';
 import { RESET_DAYS, isLateReport, nextSteps, reasonsFor, standing, stepText } from '../src/lib/strikes.js';
 import { demo, setDemoActor } from '../src/lib/api.js';
 import { addDays, parseDay } from '../src/lib/time.js';
+const storageSave = (d) => localStorage.setItem(demo.KEY, JSON.stringify(d));
 
 const DAY = '2026-11-02';
 const MON = parseDay(DAY);
@@ -123,5 +124,39 @@ describe('demo flow', () => {
     expect(() => demo.voidStrike(st.id, ' ')).toThrow();
     expect(demo.voidStrike(st.id, 'Scheduler error').voided).toBe(true);
     expect(demo.load().strikes.find((x) => x.id === st.id).voidReason).toBe('Scheduler error');
+  });
+});
+
+describe('strike emails', () => {
+  it('are the admin’s call below Strike 3, and always sent at Strike 3', () => {
+    demo.reset();
+    setDemoActor('admin@example.com');
+    const d = demo.load();
+    const r = d.corrections.find((c) => c.status === 'open' && c.missed === 'both');
+    const s = d.schedule.find((x) => x.id === r.shiftId);
+    const body = { id: r.id, status: 'approved', timeIn: at(s.start, s.date).toISOString(), timeOut: at(s.end, s.date).toISOString(), note: 'ok', counts: true, notify: false };
+    // Quinn: soft warning, so this adds Strike 1 and Strike 2; no email asked for.
+    expect(demo.resolveCorrection(body).strikes.map((x) => x.emailed)).toEqual([false, false]);
+  });
+  it('always emails the step that reaches Strike 3, even when the admin chose not to', () => {
+    demo.reset();
+    setDemoActor('admin@example.com');
+    const d = demo.load();
+    const r = d.corrections.find((c) => c.status === 'open' && c.missed === 'out');
+    // Jordan already at Strike 2 from three earlier misses.
+    demo.addStrike(d, { email: r.email, date: '2026-10-30', reason: 'missed_in', ref: '' });
+    demo.addStrike(d, { email: r.email, date: '2026-10-31', reason: 'missed_in', ref: '' });
+    demo.addStrike(d, { email: r.email, date: '2026-11-01', reason: 'missed_in', ref: '' });
+    for (const x of d.strikes) if (x.email === r.email) x.at = new Date(Date.now() - 864e5).toISOString();
+    storageSave(d);
+    expect(standing(demo.load().strikes, r.email).count).toBe(3);
+    const s = d.schedule.find((x) => x.id === r.shiftId);
+    const body = { id: r.id, status: 'approved', timeIn: at(s.start, s.date).toISOString(), timeOut: at(s.end, s.date).toISOString(), note: 'ok', counts: true, notify: false };
+    // On time: one step, to Strike 3, emailed anyway.
+    expect(demo.resolveCorrection(body).strikes.map((x) => x.emailed)).toEqual([true]);
+  });
+  it('mustEmail is only for Strike 3', async () => {
+    const { mustEmail } = await import('../src/lib/strikes.js');
+    expect([1, 2, 3, 4, 5].map(mustEmail)).toEqual([false, false, false, true, true]);
   });
 });

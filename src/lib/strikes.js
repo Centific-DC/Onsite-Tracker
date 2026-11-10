@@ -23,6 +23,9 @@ export const STEPS = [
   { label: 'Strike 2', note: 'Talk with the lead' },
   { label: 'Strike 3', note: 'Talk with the PM and a removal review' },
 ];
+// The Strike 3 email always goes; for earlier steps the admin decides.
+export const FINAL_COUNT = 4;
+export const mustEmail = (count) => count >= FINAL_COUNT;
 export const stepOf = (count) => (count > 0 ? STEPS[Math.min(count, STEPS.length) - 1] : null);
 // "Soft warning", or "Strike 2 of 3".
 export const stepText = (count) => (count <= 0 ? '' : count === 1 ? 'Soft warning' : `Strike ${Math.min(count - 1, 3)} of 3`);
@@ -123,6 +126,7 @@ export const normStrike = (s) => ({
   ref: String(s.ref ?? s.Ref ?? ''),
   at: String(s.at ?? s.At ?? ''),
   by: String(s.by ?? s.By ?? ''),
+  emailed: yes(s.emailed ?? s.Emailed),
   voided: yes(s.voided ?? s.Voided),
   voidReason: String(s.voidReason ?? s.VoidReason ?? ''),
   voidedBy: String(s.voidedBy ?? s.VoidedBy ?? ''),

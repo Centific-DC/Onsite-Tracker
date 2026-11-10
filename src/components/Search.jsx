@@ -223,7 +223,7 @@ function ClockRecord({ o, onRequest }) {
         <div key={s.id}>
           <Row
             title={<>{REASON[s.reason] || s.reason} {s.voided ? <Tag tone="muted">Cancelled</Tag> : <Tag tone="muted">{stepText(s.count)}</Tag>}</>}
-            subtitle={`${fmtDay(parseDay(s.date))} · ${s.by}${s.voided ? ` · cancelled by ${s.voidedBy}: “${s.voidReason}”` : ''}`}
+            subtitle={`${fmtDay(parseDay(s.date))} · ${s.by} · ${s.emailed ? 'emailed' : 'not emailed'}${s.voided ? ` · cancelled by ${s.voidedBy}: “${s.voidReason}”` : ''}`}
             trailing={admin && !s.voided && cancel !== s.id ? <button type="button" className="link" onClick={() => { setCancel(s.id); setWhy(''); }}>Cancel</button> : null}
           />
           {cancel === s.id && (
