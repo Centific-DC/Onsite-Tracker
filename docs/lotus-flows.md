@@ -172,7 +172,7 @@ Each counted miss is one row. The app works out the step from the rows: the 1st 
 | `Date` | text | the day of the miss |
 | `Reason` | text | `missed_in`, `missed_out`, `missed_both` or `late_report` |
 | `Ref` | text | the correction `Title`, or the flag key for a missed clock-out found in review |
-| `At` | text | `utcNow()` |
+| `StrikeAt` | text | `utcNow()`; returned as `at` (SharePoint doesn't allow a column named `At`) |
 | `By` | text | `callerEmail` |
 | `Emailed` | yes/no | the strike email was sent |
 | `Voided` | yes/no | an admin cancelled it |

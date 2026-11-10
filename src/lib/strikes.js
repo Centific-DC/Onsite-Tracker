@@ -124,7 +124,7 @@ export const normStrike = (s) => ({
   date: String(s.date ?? s.Date ?? '').slice(0, 10),
   reason: String(s.reason ?? s.Reason ?? 'missed_in'),
   ref: String(s.ref ?? s.Ref ?? ''),
-  at: String(s.at ?? s.At ?? ''),
+  at: String(s.at ?? s.StrikeAt ?? s.At ?? ''),
   by: String(s.by ?? s.By ?? ''),
   emailed: yes(s.emailed ?? s.Emailed),
   voided: yes(s.voided ?? s.Voided),
