@@ -11,12 +11,13 @@ import { describe, search } from '../lib/search.js';
 import { reviewDays } from '../lib/review.js';
 import { addDays, dayKey, fmtDay, fmtHrsU, fmtLongDay, fmtTime, mondayOf, parseDay } from '../lib/time.js';
 import { go } from '../lib/hooks.js';
-import { shiftTimes } from '../lib/schedule.js';
+import { robotLabel, shiftTimes } from '../lib/schedule.js';
 const span = (r) => { const t = shiftTimes(r); return `${fmtTime(t.start)}–${fmtTime(t.end)}`; };
 import { Avatar, Group, Row, Sheet, Tag } from './ui.jsx';
 import { ShiftSheet } from './ShiftSheet.jsx';
 import { EditOperatorSheet } from './EditOperator.jsx';
 import { DAY_STATUS } from '../views/Review.jsx';
+import { robotTitle } from '../lib/robots.js';
 
 const EXAMPLES = ['Jordan', 'OP-0004', 'no-show last week', 'robot 2 tomorrow', 'needs review', 'Mountain View next week', 'new operators', 'Nov 3'];
 const MAX = 8;
@@ -56,7 +57,7 @@ export function SearchSheet() {
       }
     }
     for (const r of res.shifts.slice(0, MAX)) {
-      items.push({ key: `h${r.id}`, group: 'Shifts', avatar: r.name, title: r.name, sub: `${fmtDay(parseDay(r.date))} · ${span(r)} · ${locationName(r.location)} · ${r.station}`, run: () => { close(); openSchedule(r.date); } });
+      items.push({ key: `h${r.id}`, group: 'Shifts', avatar: r.name, title: r.name, sub: `${fmtDay(parseDay(r.date))} · ${span(r)} · ${locationName(r.location)} · ${robotLabel(r)}`, run: () => { close(); openSchedule(r.date); } });
     }
   }
   const counts = res ? { Operators: res.operators.length, Days: canReview ? res.days.length : 0, Shifts: res.shifts.length } : {};
@@ -170,7 +171,7 @@ export function OperatorSheet() {
         </Group>
         <Group title="Coming up">
           {upcoming.map((r) => (
-            <Row key={r.id} onClick={() => leave(() => openSchedule(r.date))} title={fmtLongDay(parseDay(r.date))} subtitle={`${span(r)} · ${locationName(r.location)} · ${r.station}`} />
+            <Row key={r.id} onClick={() => leave(() => openSchedule(r.date))} title={fmtLongDay(parseDay(r.date))} subtitle={`${span(r)} · ${locationName(r.location)} · ${robotLabel(r)}`} />
           ))}
           {!upcoming.length && <div className="empty-row">Nothing booked.</div>}
         </Group>

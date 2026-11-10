@@ -4,6 +4,7 @@ import { api, demo, normNotice, setDemoActor, storage, whenSignedOut } from './a
 import { AUTH_URL, DEMO, setDemo } from './config.js';
 import * as auth from './auth/api.js';
 import { getAuth, setAuth } from './auth/session.js';
+import { setRobotNames } from './robots.js';
 import { KINDS, MAX_TRIES, afterFail, isTemp, overlay, ready, refused } from './outbox.js';
 
 let noticeTimer;
@@ -301,6 +302,16 @@ export const useStore = create((set, get) => ({
     get().setJobs((jobs) => jobs.filter((j) => j.state !== 'stuck'));
   },
 
+  // Admins: robot names (Settings → Robots). Saved once the flow confirms it, in the
+  // background like other server-confirmed changes.
+  saveRobotNames(names) {
+    return get().background('Robot names', async () => {
+      const saved = await api.robotNames(names);
+      get().commit((d) => (d ? { ...d, robotNames: saved } : d));
+      return saved;
+    });
+  },
+
   setClientHours(week, hours) {
     get().enqueue('client', { week, hours }, `Successful hours for the week of ${week}`);
   },
@@ -453,3 +464,7 @@ whenSignedOut(() => {
   useStore.getState().signOut({ everywhere: false });
   toast('Signed out', { description: 'Your sign-in ended, maybe because this username signed in on another device. Sign in again to carry on.' });
 });
+
+// Screens read robot names through robots.js; keep it in step with the data.
+setRobotNames(useStore.getState().data?.robotNames);
+useStore.subscribe((s, prev) => { if (s.data?.robotNames !== prev.data?.robotNames) setRobotNames(s.data?.robotNames); });

@@ -7,6 +7,8 @@ import { FLAG, reviewDays } from '../lib/review.js';
 import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, mondayOf, parseDay, weekLabel, fmtHrsU } from '../lib/time.js';
 import { useHashQuery, useNow } from '../lib/hooks.js';
 import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx';
+import { robotTitle } from '../lib/robots.js';
+import { robotLabel } from '../lib/schedule.js';
 
 export const DAY_STATUS = {
   needs_review: { label: 'Needs review', tone: 'warn' },
@@ -161,7 +163,7 @@ function DaySheet({ day, pending, onClose }) {
       )}
     >
       <Group>
-        <Row title="Scheduled" subtitle={day.shifts.map((r) => `${fmtTime(r.start)}–${fmtTime(r.end)} · ${r.station}`).join(', ') || 'No shift'} trailing={<span className="mono-num">{fmtHrsU(day.scheduled)}</span>} />
+        <Row title="Scheduled" subtitle={day.shifts.map((r) => `${fmtTime(r.start)}–${fmtTime(r.end)} · ${robotLabel(r)}`).join(', ') || 'No shift'} trailing={<span className="mono-num">{fmtHrsU(day.scheduled)}</span>} />
         <Row title="Recorded" subtitle="Clock-in to clock-out, as tapped" trailing={<span className="mono-num">{fmtHrsU(day.recorded)}</span>} />
         <Row title="Suggested" subtitle="Inside the shift, plus extra time you counted" trailing={<span className="mono-num">{fmtHrsU(day.computed)}</span>} />
         {day.approval && <Row title="Approved" subtitle={`${day.approval.by} · ${new Date(day.approval.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}${day.approval.note ? ` · “${day.approval.note}”` : ''}`} trailing={<span className="mono-num">{fmtHrsU(day.approval.hours)}</span>} />}
@@ -169,7 +171,7 @@ function DaySheet({ day, pending, onClose }) {
 
       <Group title="Clock-ins">
         {sessions.map((s) => (
-          <Row key={+s.start} leading={<span className="row-icon icon-in"><LogIn size={16} /></span>} title={`${fmtTime(s.start)} – ${s.live ? 'now' : fmtTime(s.end)}`} subtitle={`${s.station}${s.source ? ` · ${s.source}` : ''}${s.grace ? ` · ${s.grace} min grace` : ''}${s.note ? ` · “${s.note}”` : ''}`} trailing={<span className="mono-num">{fmtHrsU(s.hours)}</span>} />
+          <Row key={+s.start} leading={<span className="row-icon icon-in"><LogIn size={16} /></span>} title={`${fmtTime(s.start)} – ${s.live ? 'now' : fmtTime(s.end)}`} subtitle={`${robotTitle(s.station)}${s.source ? ` · ${s.source}` : ''}${s.grace ? ` · ${s.grace} min grace` : ''}${s.note ? ` · “${s.note}”` : ''}`} trailing={<span className="mono-num">{fmtHrsU(s.hours)}</span>} />
         ))}
         {day.flags.filter((f) => f.code === 'no_clockout').map((f) => (
           <Row key={f.key} leading={<span className="row-icon icon-warn"><LogOut size={16} /></span>} title={`${fmtTime(f.start)} – no clock-out`} subtitle={f.suggested ? `Suggested end ${fmtTime(f.suggested)} (system-generated, not a real clock-out)` : 'No shift to suggest an end from'} />

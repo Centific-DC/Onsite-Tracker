@@ -13,6 +13,7 @@ import { ShiftSheet } from '../components/ShiftSheet.jsx';
 import { SendSchedules } from '../components/SendSchedules.jsx';
 import { noticeStatus } from '../lib/email/notices.js';
 import { STATUS, backfillStart, dayPlan, pairOf, robotLabel, shiftHours, shiftTimes } from '../lib/schedule.js';
+import { robotTitle } from '../lib/robots.js';
 
 const PAIR = 2;
 // "Robot 2" -> "R2", the tag on each person in a shift that spans robots.
@@ -201,7 +202,7 @@ export function Schedule() {
                             <span className="slot-dot" aria-hidden="true" />
                             <span className="slot-name">{stub(r.name)}</span>
                             {loc.robots.length > 1
-                              ? <span className={clsx('slot-robot', isNew(r.email) && 'is-new')} title={isNew(r.email) ? 'New operator' : undefined}>{shortRobot(r.station)}</span>
+                              ? <span className={clsx('slot-robot', isNew(r.email) && 'is-new')} title={[r.station ? robotTitle(r.station) : 'Any robot', isNew(r.email) && 'New operator'].filter(Boolean).join(' · ')}>{shortRobot(r.station)}</span>
                               : isNew(r.email) && <span className="chip-new">new</span>}
                             {!row.template && <span className="slot-time">{r.start}</span>}
                           </button>

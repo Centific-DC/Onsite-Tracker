@@ -206,7 +206,7 @@ One row per template, edited on the app's Emails page. Missing rows mean the app
 
 ### `Lotus_Settings`
 
-One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**) and `SendFrom` (text: the mailbox every Lotus email is sent from, below). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
+One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**), `SendFrom` (text: the mailbox every Lotus email is sent from, below) and `RobotNames` (multiple lines of text: a JSON object of robot names, like `{"Robot 3":"franka-thor-02"}`, set by admins in Settings → Robots; empty = `{}`). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
 
 ## 2. Flow: **Lotus Auth**
 
@@ -240,7 +240,7 @@ The app opens the first-run screen at `<app URL>?setup=1`. Once an admin exists,
 Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action": "all", "from": "yyyy-MM-dd", "token": "…" }`. `from` defaults to 60 days ago.
 
 1. The token check above gives `callerEmail` and the caller's row. Compose `roles` = `split(Roles, ';')`.
-2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` from `Lotus_Settings`.
+2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` and `RobotNames` from `Lotus_Settings`, and return `robotNames` = `json(coalesce(RobotNames, '{}'))` to everyone, operators included (names aren't private).
 3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
    - **The one exception is partners' names** (user decision, 2026-11-05). Before filtering, for each of the caller's shifts, find its partners among the other `Lotus_Shifts` rows of the same `Date` with a different `Email`, leaving out any row that another row's `Replaces` points to:
      - if either shift has a `Pair`, partners are the rows with the **same non-empty `Pair`** (robot and times don't matter);
@@ -378,6 +378,13 @@ Up to 25 messages per call. For each message:
 
 Body `{ "id", "subject", "html", "ready", "original"? }`. `id` must be one of the five template ids. Upsert `Lotus_Templates` by `Title` = `id`, set `UpdatedAt` and `UpdatedBy`. Respond `{ "template": { "id", "subject", "html", "original", "updatedAt", "updatedBy" } }`.
 
+### `robot_names`: role `admin`
+
+Body `{ "names": { "Robot 1": "Stationary", "Robot 3": "franka-thor-02", "Robot 4": "" } }`: the whole map, from Settings → Robots. A robot keeps its id (`Robot 3`) in every list; the name is only shown next to it.
+- Each key must be one of the robots the flow accepts (Robot 1 to Robot 10), and each value a string of at most 60 characters (empty clears it), else 400.
+- Set `Lotus_Settings.RobotNames` = `string(names)` on the `main` row. Add a `Lotus_Audit` row (action `robot_names`, before and after).
+- Respond `{ "ok": true, "robotNames": { …as saved… } }`.
+
 ### `client`: role `approver` or `scheduler`
 
 Body `{ "week", "hours" }`. Upsert `Lotus_ClientHours` by `Title` = week, or delete the row when `hours` is null. Respond `{ "ok": true }`.
@@ -439,6 +446,7 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 16e. Open spots: A doesn't clock in. 15 minutes after the start, Read as C (same home lab, no shift now) lists A's shift in `openSpots` with no name. `fill_in` as C creates C's shift (`Replaces` = A, same `Pair`); a second `fill_in` by D gets 409 `taken`. Read as an operator at the other lab: no spot.
 16f. Password reset: as an admin, `user.reset_link` for an operator, then `email_send` kind `password-reset`: it arrives (at the alias in test mode) and the notice row has no HTML. Their old password still signs in. `reset` with the right `codeHash` sets the new password, signs them out (old token gets 401) and the old password no longer works. The same link again: 400. A wrong `codeHash` five times locks the account for 15 minutes.
 16g. Set `ResetExpires` to yesterday by hand: `reset` gets 400. `email_send` kind `password-reset` for someone with no `ResetHash`: 400, no email. `user.reset_link` as a scheduler without `admin`: 403.
+16k. Robot names: `robot_names` as an admin with `{"Robot 4":"jetson-thor-004"}`, then Read as an operator: `robotNames` has it. As a scheduler without `admin`: 403. A key `Robot 99` or a 61-character name: 400.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:
