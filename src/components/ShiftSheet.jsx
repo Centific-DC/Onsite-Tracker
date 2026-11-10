@@ -8,6 +8,7 @@ import { checkNewShift, homeLabProblem, isNew } from '../lib/rules.js';
 import { fmtDay, fmtTime, mondayOf, parseDay } from '../lib/time.js';
 import { newPairId, pairOf, replacedIds, robotLabel, samePair, shiftTimes } from '../lib/schedule.js';
 import { Group, Select, Sheet } from './ui.jsx';
+import { robotTitle } from '../lib/robots.js';
 
 const CUSTOM = '__custom__';
 
@@ -120,7 +121,7 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
         </label>
         <label className="field-row">
           <span>Robot</span>
-          <Select className="sel-field" label="Robot" value={f.station || ''} onChange={set('station')} disabled={!!backfill} options={[{ value: '', label: 'Any robot' }, ...L.robots.map((r) => ({ value: r, label: r }))]} />
+          <Select className="sel-field" label="Robot" value={f.station || ''} onChange={set('station')} disabled={!!backfill} options={[{ value: '', label: 'Any robot' }, ...L.robots.map((r) => ({ value: r, label: robotTitle(r) }))]} />
         </label>
         <label className="field-row">
           <span>Shift</span>
@@ -160,16 +161,16 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
               label="Pair with"
               value={f.pairWith || ''}
               onChange={set('pairWith')}
-              options={[{ value: '', label: f.station ? `Whoever is on ${f.station}` : 'Nobody yet' }, ...pairable.map((r) => ({ value: r.id, label: `${r.name}${isNew(byEmail.get(r.email), sessions) ? ' · New' : ''} · ${robotLabel(r)} · ${fmtTime(shiftTimes(r).start)}–${fmtTime(shiftTimes(r).end)}` }))]}
+              options={[{ value: '', label: f.station ? `Whoever is on ${robotTitle(f.station)}` : 'Nobody yet' }, ...pairable.map((r) => ({ value: r.id, label: `${r.name}${isNew(byEmail.get(r.email), sessions) ? ' · New' : ''} · ${robotLabel(r)} · ${fmtTime(shiftTimes(r).start)}–${fmtTime(shiftTimes(r).end)}` }))]}
             />
           </label>
         )}
         {partners.length > 0 ? (
           <p className={needExperienced ? 'hint hint-warn field-hint' : 'hint field-hint'}>
-            Paired with {partners.map((r) => `${r.name}${isNew(byEmail.get(r.email), sessions) ? ' (new)' : ''}`).join(', ')}{f.station ? ` on ${f.station}` : ''}.{needExperienced ? ' Pick an experienced operator.' : ''}
+            Paired with {partners.map((r) => `${r.name}${isNew(byEmail.get(r.email), sessions) ? ' (new)' : ''}`).join(', ')}{f.station ? ` on ${robotTitle(f.station)}` : ''}.{needExperienced ? ' Pick an experienced operator.' : ''}
           </p>
         ) : !backfill && f.who && (
-          <p className="hint field-hint">No partner yet. Pick one under Pair with{f.station ? `, or book someone else on ${f.station}` : ''}, so they know who they work with.</p>
+          <p className="hint field-hint">No partner yet. Pick one under Pair with{f.station ? `, or book someone else on ${robotTitle(f.station)}` : ''}, so they know who they work with.</p>
         )}
         <label className="field-row"><span>Note</span><input value={f.note || ''} onChange={set('note')} placeholder="Optional" /></label>
       </Group>

@@ -1,7 +1,7 @@
 // Fills in the flow addresses for the GitHub Pages build. The deploy workflow runs this
 // after `vite build`, with the URLs from the repo's Actions secrets: LOTUS_AUTH_URL,
-// LOTUS_READ_URL, LOTUS_WRITE_URL, plus the one-job flows (see SPLIT below and
-// src/lib/routes.js). They go only into the built
+// LOTUS_READ_URL, LOTUS_WRITE_URL, LOTUS_CORRECTIONS_URL, plus the one-job flows (see
+// SPLIT below and src/lib/routes.js). They go only into the built
 // dist/config.js that Pages serves, never into the repo. A secret left unset keeps that
 // flow in demo mode; an unset one-job flow sends its ops to Write (or Auth). Never
 // prints a URL.
@@ -31,7 +31,7 @@ const SPLIT = {
   LOTUS_RESET_PASSWORD_URL: 'resetPasswordUrl',
 };
 
-const urls = { authUrl: https('LOTUS_AUTH_URL'), readUrl: https('LOTUS_READ_URL'), writeUrl: https('LOTUS_WRITE_URL') };
+const urls = { authUrl: https('LOTUS_AUTH_URL'), readUrl: https('LOTUS_READ_URL'), writeUrl: https('LOTUS_WRITE_URL'), correctionsUrl: https('LOTUS_CORRECTIONS_URL') };
 for (const [secret, key] of Object.entries(SPLIT)) urls[key] = https(secret);
 const set = Object.fromEntries(Object.entries(urls).filter(([, v]) => v));
 const base = await readFile(FILE, 'utf8');

@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { VERSION } from '../version.js';
+import { COUNTDOWN_S, nextLeft, waitReason } from '../lib/autoUpdate.js';
+import { useStore } from '../lib/store.js';
 
 // "A new version of Lotus is ready", as in Atlas. The app reads version.json beside
 // the build every 5 minutes and whenever the tab comes back; a different version
-// shows this notice. Like every notice (ux-behavior-spec section 8) it closes after
-// 6 seconds, pausing while hovered or focused; Settings keeps a "Refresh to update"
-// row until the page is reloaded. Offline or no version file: nothing happens.
+// shows this notice, which refreshes the page after a 10-second countdown (ux-behavior-
+// spec section 8a). It waits while anything is saving, a sheet is open or someone is
+// typing, and holds while hovered or focused. "Not now" skips this version; Settings
+// keeps a "Refresh to update" row. Offline or no version file: nothing happens.
 const CHECK_MS = 5 * 60 * 1000;
-const NOTICE_MS = 6000;
 const EXIT_MS = 180;
 
 export const useUpdate = create(() => ({ latest: null }));
@@ -43,48 +45,77 @@ export function UpdateNotice() {
   useVersionCheck();
   const latest = useUpdate((s) => s.latest);
   const [shown, setShown] = useState(null); // the version this notice is about
+  const [dismissed, setDismissed] = useState(null); // "Not now" for this version
   const [leaving, setLeaving] = useState(false);
   const [busy, setBusy] = useState(false);
-  const timer = useRef(0);
+  const [left, setLeft] = useState(COUNTDOWN_S);
+  const [reason, setReason] = useState('');
+  const paused = useRef(false);
+  const leftRef = useRef(COUNTDOWN_S);
+  const exit = useRef(0);
   const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+  const refresh = () => { setBusy(true); hardRefresh(); };
   const close = () => {
-    clearTimeout(timer.current);
+    clearTimeout(exit.current);
     if (reduced) { setShown(null); return; }
     setLeaving(true);
-    timer.current = setTimeout(() => { setShown(null); setLeaving(false); }, EXIT_MS);
+    exit.current = setTimeout(() => { setShown(null); setLeaving(false); }, EXIT_MS);
   };
-  const arm = () => { clearTimeout(timer.current); timer.current = setTimeout(close, NOTICE_MS); };
-  const pause = () => clearTimeout(timer.current);
+  const notNow = () => { setDismissed(shown); close(); };
 
   useEffect(() => {
-    if (!latest) return undefined;
+    if (!latest || latest === dismissed) return;
     setShown(latest);
     setLeaving(false);
-    arm();
-    return () => clearTimeout(timer.current);
-  }, [latest]); // eslint-disable-line react-hooks/exhaustive-deps
+    leftRef.current = COUNTDOWN_S;
+    setLeft(COUNTDOWN_S);
+  }, [latest, dismissed]);
+
+  // Once a second: wait while work is in progress, hold while hovered or focused,
+  // otherwise count down and refresh at 0. A tab nobody is looking at refreshes as
+  // soon as it's quiet, so it's on the new build when they come back.
+  useEffect(() => {
+    if (!shown || leaving || busy) return undefined;
+    const tick = () => {
+      const why = waitReason(useStore.getState());
+      setReason(why);
+      if (!why && document.visibilityState === 'hidden') { refresh(); return; }
+      leftRef.current = nextLeft(leftRef.current, { paused: paused.current, waiting: !!why });
+      setLeft(leftRef.current);
+      if (leftRef.current === 0) refresh();
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [shown, leaving, busy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => clearTimeout(exit.current), []);
 
   if (!shown) return null;
+  const sub = busy ? `Getting ${shown}…`
+    : reason === 'saving' ? `Lotus will refresh to ${shown} once your changes are saved.`
+    : reason ? `Lotus will refresh to ${shown} when you’re done here.`
+    : `Refreshing to ${shown} in ${left}s.`;
   return (
     <div
       className="update-notice"
       data-leaving={leaving || undefined}
-      role="status"
-      aria-live="polite"
-      onPointerEnter={pause}
-      onPointerLeave={arm}
-      onFocus={pause}
-      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) arm(); }}
+      onPointerEnter={() => { paused.current = true; }}
+      onPointerLeave={() => { paused.current = false; }}
+      onFocus={() => { paused.current = true; }}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) paused.current = false; }}
     >
       <span className="update-dot" aria-hidden="true" />
-      <p className="update-text">
+      {/* Read out once; the ticking seconds aren't announced. */}
+      <p className="sr-only" role="status">A new version of Lotus is ready. It refreshes in {COUNTDOWN_S} seconds unless you choose Not now. Nothing you're saving is lost.</p>
+      <p className="update-text" aria-hidden="true">
         <strong>A new version of Lotus is ready</strong>
-        <span className="update-sub">You're on {VERSION}. Refresh to get {shown}.</span>
+        <span className="update-sub">{sub}</span>
       </p>
       <div className="update-actions">
-        <button type="button" className="link" onClick={close}>Later</button>
-        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => { setBusy(true); hardRefresh(); }}>
+        <button type="button" className="link" disabled={busy} onClick={notNow}>Not now</button>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={refresh}>
           {busy ? 'Refreshing…' : 'Refresh now'}
         </button>
       </div>

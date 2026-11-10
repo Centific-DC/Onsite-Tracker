@@ -13,17 +13,11 @@ import { ShiftSheet } from '../components/ShiftSheet.jsx';
 import { SendSchedules } from '../components/SendSchedules.jsx';
 import { noticeStatus } from '../lib/email/notices.js';
 import { STATUS, backfillStart, dayPlan, pairOf, robotLabel, shiftHours, shiftTimes } from '../lib/schedule.js';
+import { robotTitle } from '../lib/robots.js';
 
 const PAIR = 2;
 // "Robot 2" -> "R2", the tag on each person in a shift that spans robots.
 const shortRobot = (r) => (r ? r.replace(/^robot\s*/i, 'R') : 'Any');
-// Fill a robot's pair before starting the next: the robot with an odd count first,
-// then the emptiest.
-const nextRobot = (loc, rows) => {
-  const n = new Map(loc.robots.map((r) => [r, rows.filter((x) => x.station === r).length]));
-  const odd = loc.robots.find((r) => n.get(r) % 2 === 1);
-  return odd || [...loc.robots].sort((a, b) => n.get(a) - n.get(b))[0];
-};
 const wd = (k) => parseDay(k).toLocaleDateString([], { weekday: 'short' });
 // "Avery Lin" -> "Avery L.", so two names fit in a narrow cell.
 const stub = (name) => {
@@ -208,14 +202,14 @@ export function Schedule() {
                             <span className="slot-dot" aria-hidden="true" />
                             <span className="slot-name">{stub(r.name)}</span>
                             {loc.robots.length > 1
-                              ? <span className={clsx('slot-robot', isNew(r.email) && 'is-new')} title={isNew(r.email) ? 'New operator' : undefined}>{shortRobot(r.station)}</span>
+                              ? <span className={clsx('slot-robot', isNew(r.email) && 'is-new')} title={[r.station ? robotTitle(r.station) : 'Any robot', isNew(r.email) && 'New operator'].filter(Boolean).join(' · ')}>{shortRobot(r.station)}</span>
                               : isNew(r.email) && <span className="chip-new">new</span>}
                             {!row.template && <span className="slot-time">{r.start}</span>}
                           </button>
                         );
                       })}
                       {!past && [...Array(empty)].map((_, i) => (
-                        <button key={`o${i}`} type="button" className="slot slot-open" aria-label={`Book ${row.template.label} at ${loc.name} on ${fmtDay(d)}`} onClick={() => setAdding({ date: k, location: loc.id, station: nextRobot(loc, rows), start: row.template.start, end: row.template.end })}>
+                        <button key={`o${i}`} type="button" className="slot slot-open" aria-label={`Book ${row.template.label} at ${loc.name} on ${fmtDay(d)}`} onClick={() => setAdding({ date: k, location: loc.id, station: '', start: row.template.start, end: row.template.end })}>
                           <Plus size={13} aria-hidden="true" /> Open
                         </button>
                       ))}
@@ -274,7 +268,7 @@ function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
       description={value ? `${fmtLongDay(parseDay(value.k))}${t ? ` · ${hm(t)}–${hmEnd(t)} · ${rows.length} of ${t.seats} booked` : ''}` : ''}
       footer={value && !past && (late
         ? <button type="button" className="btn btn-primary btn-block" onClick={() => onAdd({ date: late.date, location: value.loc.id, station: late.station, start: backfillStart(late, now), end: late.end, note: `Replacing ${late.name}`, backfill: late.name, replaces: late.id })}>Replace {shortName(late.name)}</button>
-        : <button type="button" className="btn btn-plain btn-block" onClick={() => onAdd({ date: value.k, location: value.loc.id, station: nextRobot(value.loc, rows), start: t?.start, end: t?.end })}>Add an operator</button>)}
+        : <button type="button" className="btn btn-plain btn-block" onClick={() => onAdd({ date: value.k, location: value.loc.id, station: '', start: t?.start, end: t?.end })}>Add an operator</button>)}
     >
       <Group>
         {live.map((r) => (
