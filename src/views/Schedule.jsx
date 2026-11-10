@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { ChevronLeft, ChevronRight, Mail, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Mail, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS, locOf } from '../lib/config.js';
@@ -11,6 +11,7 @@ import { useHashQuery, useMedia, useNow } from '../lib/hooks.js';
 import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx';
 import { ShiftSheet } from '../components/ShiftSheet.jsx';
 import { SendSchedules } from '../components/SendSchedules.jsx';
+import { ImportSheet } from '../components/ImportSheet.jsx';
 import { noticeStatus } from '../lib/email/notices.js';
 import { STATUS, backfillStart, dayPlan, pairOf, robotLabel, shiftHours, shiftTimes } from '../lib/schedule.js';
 import { robotTitle } from '../lib/robots.js';
@@ -36,6 +37,7 @@ export function Schedule() {
   const canSend = !!session?.roles?.includes('scheduler');
   const testMode = data.emailTestMode !== false;
   const [mailing, setMailing] = useState(false);
+  const [importing, setImporting] = useState(false);
   const now = useNow(60000);
   const phone = useMedia('(max-width: 767px)');
   const [wk0, setWk0] = useState(() => mondayOf(new Date()));
@@ -125,6 +127,7 @@ export function Schedule() {
               <Mail size={16} />{!phone && ' Email schedules'}{unsent + changedN > 0 && <span className="mail-count" aria-label={`${unsent + changedN} to send`}>{unsent + changedN}</span>}
             </button>
           )}
+          <button type="button" className="btn btn-plain btn-sm" aria-label={phone ? 'Import schedule' : undefined} onClick={() => setImporting(true)}><Upload size={16} />{!phone && ' Import'}</button>
           <button type="button" className="btn btn-primary btn-sm" data-tour="sched-add" onClick={() => setAdding({ date: dayKey(thisWeek ? now : wk0) })}><Plus size={16} /> Add shift</button>
         </div>
       </header>
@@ -238,6 +241,7 @@ export function Schedule() {
 
       <SlotSheet value={slot} onClose={() => setSlot(null)} status={status} isNew={isNew} onAdd={(init) => { setSlot(null); setAdding(init); }} now={now} />
       <SendSchedules open={mailing} onOpenChange={setMailing} wk0={wk0} entries={mail} testMode={testMode} />
+      <ImportSheet open={importing} onOpenChange={setImporting} kinds={['schedule']} />
       <ShiftSheet open={!!adding} onOpenChange={(o) => !o && setAdding(null)} initial={adding} backfill={adding?.backfill} />
     </div>
   );

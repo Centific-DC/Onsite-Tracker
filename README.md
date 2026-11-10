@@ -9,7 +9,7 @@ Raw clock-ins are never payable hours. Each operator-day is reviewed and approve
 | Role | Where | What they do |
 |---|---|---|
 | Operator | `/` (phone or lab laptop) | Clock in to today's assigned shift (opens 10 min before the start, never backdated), clock out, see their own week, flags and approval status. The lab laptop signs each operator out after their tap. |
-| Scheduler | Today, Schedule, Roster | Book shifts from each lab's templates; see open slots, pairing risk (two operators under 2 completed sessions), the 37 hrs weekly limit and conflicts; import Active Roster 2 and recruiting's schedule from CSV. |
+| Scheduler | Today, Schedule, Roster | Book shifts from each lab's templates; see open slots, pairing risk (two operators under 2 completed sessions), the 37 hrs weekly limit and conflicts; import Active Roster 2 from CSV, and the Schedulers' schedule from Excel or CSV (Schedule > Import; template built by `scripts/make-schedule-template.py`). |
 | Approver | Today, Review, Records, Reports | Resolve each flag with a reason, adjust or approve each operator-day, reopen before monthly reporting. Every decision keeps who and when. |
 | Reporting | Reports | Download approved hours by operator and day, in the fixed columns the agency sheet imports. |
 
