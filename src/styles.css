@@ -258,6 +258,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* Saving in the background: the dots run, but the button still works (Refresh). */
 .sync.is-saving .sync-glyph { opacity: 0; scale: 0.6; }
 .sync.is-saving .dots { opacity: 1; scale: 1; }
+/* The Master List sync line on Schedule: one quiet row, the summary, details, Sync now. */
+.sheet-sync { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -12px 0 20px; font-size: 0.875rem; color: var(--ink-2); }
+.sheet-sync-icon { display: inline-grid; place-items: center; color: var(--ink-3, var(--ink-2)); }
+.sheet-sync-text { display: inline-flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.sheet-sync-text strong { color: var(--ink); font-weight: 600; }
+.sheet-sync.is-bad .sheet-sync-text .status-line { color: var(--red-text); }
+.sheet-sync .link { font-size: 0.875rem; }
+@media (max-width: 767px) { .sheet-sync { margin-top: -4px; gap: 4px 10px; } .sheet-sync-icon { display: none; } .sheet-sync .sync { margin-left: auto; } }
 .sync-text { min-width: 0; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 767px) { .sync-compact .sr-only-sm { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } }
 .status-line { display: inline-block; animation: statusLine 240ms var(--ease-out) both; }

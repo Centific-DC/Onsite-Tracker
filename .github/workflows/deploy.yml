@@ -34,6 +34,7 @@ jobs:
           LOTUS_READ_URL: ${{ secrets.LOTUS_READ_URL }}
           LOTUS_WRITE_URL: ${{ secrets.LOTUS_WRITE_URL }}
           LOTUS_CORRECTIONS_URL: ${{ secrets.LOTUS_CORRECTIONS_URL }}
+          LOTUS_SCHEDULE_SYNC_URL: ${{ secrets.LOTUS_SCHEDULE_SYNC_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

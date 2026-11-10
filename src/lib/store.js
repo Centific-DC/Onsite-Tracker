@@ -353,6 +353,25 @@ export const useStore = create((set, get) => ({
     return r;
   },
 
+  // "Sync now" from the Master List workbook (Lotus Schedule Sync). Demo mode and a
+  // quick flow answer with the summary; otherwise the flow syncs in the background and
+  // Lotus reads again, further apart each time, until the summary changes.
+  syncSchedule() {
+    return get().background('Syncing from the Master List', async (note) => {
+      const before = get().data?.scheduleSync?.at || '';
+      const done = await api.syncSchedule();
+      if (done) { get().commit((d) => (d ? { ...d, scheduleSync: done } : d)); await get().sync(); return done; }
+      for (const secs of [30, 45, 60, 90]) {
+        note('Waiting for the sync to finish');
+        await new Promise((r) => setTimeout(r, secs * 1000));
+        await get().sync().catch(() => {});
+        const now = get().data?.scheduleSync;
+        if (now && now.at !== before) return now;
+      }
+      return null;
+    });
+  },
+
   removeShift(id, label = 'Removing the shift') {
     if (isTemp(id)) {
       // Not sent yet: just take it out of its job.
