@@ -4,6 +4,7 @@ import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
 import { openSpots, samePair, shiftTimes } from './schedule.js';
+import { writeFlowName, writeUrlFor } from './routes.js';
 import { mustEmail, normCorrection, normStrike, reasonsFor, standing } from './strikes.js';
 
 export const storage = {
@@ -26,8 +27,12 @@ export function errorText(out, status) {
 let onSignedOut = () => {};
 export const whenSignedOut = (fn) => { onSignedOut = fn; };
 
+// Write calls go to the op's one-job flow when its URL is set, else to Write (routes.js).
 async function paPost(url, body) {
-  return timed(`${url === READ_URL ? 'Read' : url === CORRECTIONS_URL && url !== WRITE_URL ? 'Corrections' : 'Write'} · ${body.action || 'call'}`, paPostChecked(url, body));
+  if (url === WRITE_URL) {
+    return timed(`${writeFlowName(body, CFG)} · ${body.action || 'call'}`, paPostChecked(writeUrlFor(body, CFG, WRITE_URL), body));
+  }
+  return timed(`${url === READ_URL ? 'Read' : url === CORRECTIONS_URL ? 'Corrections' : 'Write'} · ${body.action || 'call'}`, paPostChecked(url, body));
 }
 
 // A 401 can be a busy moment rather than a real sign-out (the token lookup itself
@@ -93,8 +98,16 @@ export function normPunch(p) {
     grace: Number(p.grace ?? p.GraceMinutes) || 0,
     source: String(p.source ?? p.Device ?? ''),
     note: String(p.note ?? p.Note ?? ''),
-    flag: String(p.flag ?? p.Flag ?? '').trim() ? 'early' : '',
+    // `Left early` (the operator's own clock-out) or `Auto clock-out` (the flow closed
+    // a shift nobody clocked out of, 15 minutes after its end).
+    flag: punchFlag(p.flag ?? p.Flag),
   };
+}
+
+export function punchFlag(v) {
+  const f = String(v ?? '').trim().toLowerCase();
+  if (!f) return '';
+  return /auto/.test(f) ? 'auto' : 'early';
 }
 
 // "8:00", "08:00:00" or an Excel day fraction (0.333…) all become "08:00".
@@ -298,7 +311,7 @@ export const demo = {
       const at = shift ? locOf(shift) : b.location;
       if (me?.location && at && at !== me.location) { const e = new Error(`You can only clock in at ${locationName(me.location)}.`); e.code = 'lab'; throw e; }
       const c = clockInCheck(shift, new Date());
-      if (!c.allowed) { const e = new Error(c.reason === 'early' ? `Clock-in opens at ${c.window.opensAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'That shift has ended'); e.code = c.reason; throw e; }
+      if (!c.allowed) { const e = new Error(c.reason === 'no_shift' ? 'You have no shift to clock into.' : c.reason === 'early' ? `Clock-in opens at ${c.window.opensAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'That shift has ended'); e.code = c.reason; throw e; }
       b = { ...b, grace: c.grace };
     } else {
       const open = [...d.punches].reverse().find((p) => p.email === b.email);
@@ -551,7 +564,9 @@ function seed() {
         if (who === 'Quinn Hale' && di === 3) continue; // forgot to clock in and out last Thursday
         // Forgot to clock in last Thursday, but clocked out.
         if (!(who === 'Morgan Diaz' && di === 3)) punch(tin, r, 'in', { grace: early < 0 ? -early : 0 });
-        if (who === 'Jordan Pike' && di === 2) continue; // forgot to clock out last Wednesday
+        if (who === 'Jordan Pike' && di === 2) continue; // forgot to clock out last Wednesday (before auto clock-out)
+        // Forgot to clock out last Thursday: the Auto Clock-out flow closed the shift.
+        if (who === 'Jordan Pike' && di === 3) { if (+sOut + 15 * 6e4 <= +now) punch(sOut, r, 'out', { flag: 'auto', source: 'system' }); continue; }
         let tout = new Date(sOut.getTime() + (Math.round(rnd() * 4) - 1) * 6e4);
         let extra = {};
         if (who === 'Riley Chen' && di === 5) { tout = at(k, t.start, 195); extra = { flag: 'early', note: 'Felt unwell, told the client lead' }; }

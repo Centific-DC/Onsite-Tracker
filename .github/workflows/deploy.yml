@@ -33,6 +33,13 @@ jobs:
           LOTUS_AUTH_URL: ${{ secrets.LOTUS_AUTH_URL }}
           LOTUS_READ_URL: ${{ secrets.LOTUS_READ_URL }}
           LOTUS_WRITE_URL: ${{ secrets.LOTUS_WRITE_URL }}
+          LOTUS_SAVE_USER_URL: ${{ secrets.LOTUS_SAVE_USER_URL }}
+          LOTUS_SAVE_USERS_URL: ${{ secrets.LOTUS_SAVE_USERS_URL }}
+          LOTUS_SAVE_SHIFT_URL: ${{ secrets.LOTUS_SAVE_SHIFT_URL }}
+          LOTUS_DELETE_SHIFT_URL: ${{ secrets.LOTUS_DELETE_SHIFT_URL }}
+          LOTUS_PUNCH_URL: ${{ secrets.LOTUS_PUNCH_URL }}
+          LOTUS_SEND_EMAIL_URL: ${{ secrets.LOTUS_SEND_EMAIL_URL }}
+          LOTUS_RESET_PASSWORD_URL: ${{ secrets.LOTUS_RESET_PASSWORD_URL }}
           LOTUS_CORRECTIONS_URL: ${{ secrets.LOTUS_CORRECTIONS_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
