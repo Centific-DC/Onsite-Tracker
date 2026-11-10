@@ -8,6 +8,7 @@ import { ISSUE, issueDetail } from './Today.jsx';
 import { STATUS, dayPlan, unscheduledIns } from '../lib/schedule.js';
 import { download } from '../lib/csv.js';
 import { locOf, locationName } from '../lib/config.js';
+import { robotTitle } from '../lib/robots.js';
 
 const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
@@ -21,7 +22,7 @@ export function Records() {
   const flags = useMemo(() => issues.concat(offSchedule.map((p) => ({ kind: 'unscheduled', name: p.name, email: p.email, station: p.station, at: new Date(p.ts) }))), [issues, offSchedule]);
   const ids = useMemo(() => new Map((data.operators || []).map((o) => [o.email, o.id])), [data.operators]);
   const opId = (email) => ids.get(email) || '';
-  const match = (x) => `${x.name} ${x.email} ${x.station}`.toLowerCase().includes(q.toLowerCase());
+  const match = (x) => `${x.name} ${x.email} ${robotTitle(x.station)}`.toLowerCase().includes(q.toLowerCase());
 
   const groups = useMemo(() => {
     const items = mode === 'flags'
@@ -104,7 +105,7 @@ export function Records() {
               key={it.p.id}
               leading={<span className={`row-icon icon-${it.p.type}`}>{it.p.type === 'in' ? <LogIn size={16} /> : <LogOut size={16} />}</span>}
               title={<>{it.p.name}{it.p.flag && <Tag tone="bad">Left early</Tag>}{offIds.has(it.p.id) && <Tag tone="warn">Not on the schedule</Tag>}</>}
-              subtitle={`${it.p.type === 'in' ? 'In' : 'Out'} · ${locationName(locOf(it.p))} · ${it.p.station}${it.p.note ? ` · “${it.p.note}”` : ''}`}
+              subtitle={`${it.p.type === 'in' ? 'In' : 'Out'} · ${locationName(locOf(it.p))} · ${robotTitle(it.p.station)}${it.p.note ? ` · “${it.p.note}”` : ''}`}
               trailing={<span className="mono-num">{fmtTime(it.at)}</span>}
             />
           ) : (
@@ -112,7 +113,7 @@ export function Records() {
               key={`${it.i.kind}${it.i.email}${+it.at}`}
               leading={<span className={`row-icon icon-${ISSUE[it.i.kind].tone}`}>{ISSUE[it.i.kind].icon}</span>}
               title={<>{it.i.name} <Tag tone={ISSUE[it.i.kind].tone}>{ISSUE[it.i.kind].label}</Tag></>}
-              subtitle={`${it.i.station} · ${issueDetail(it.i)}`}
+              subtitle={`${robotTitle(it.i.station)} · ${issueDetail(it.i)}`}
               trailing={it.i.hours != null ? <span className="mono-num">{fmtHrsU(it.i.hours)}</span> : null}
             />
           ))}

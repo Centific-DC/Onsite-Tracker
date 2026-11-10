@@ -9,6 +9,7 @@ import { Avatar, Group, Num, Row, Tag } from '../components/ui.jsx';
 import { RobotLanes } from '../components/RobotLanes.jsx';
 import { ShiftSheet } from '../components/ShiftSheet.jsx';
 import { backfillStart, backfills, dayPlan, robotLabel } from '../lib/schedule.js';
+import { robotTitle } from '../lib/robots.js';
 
 export const ISSUE = {
   early: { label: 'Left early', tone: 'bad', icon: <LogOut size={12} /> },
@@ -49,17 +50,17 @@ export function Today() {
   const attention = useMemo(() => {
     const out = issues
       .filter((i) => (isToday ? now - i.at < 7 * 864e5 : dayKey(i.at) === k))
-      .map((i) => ({ key: `${i.kind}-${i.email}-${+i.at}`, kind: i.kind, name: i.name, at: i.at, sub: `${fmtDay(i.at)} · ${i.station} · ${issueDetail(i)}` }));
+      .map((i) => ({ key: `${i.kind}-${i.email}-${+i.at}`, kind: i.kind, name: i.name, at: i.at, sub: `${fmtDay(i.at)} · ${robotTitle(i.station)} · ${issueDetail(i)}` }));
     const days = isToday ? [...Array(7)].map((_, n) => addDays(now, -n)) : [day];
     for (const d of days) {
       const p = dayKey(d) === k ? plan : dayPlan(schedule, sessions, issues, d, now);
       for (const r of p.rows) {
         if (r.status !== 'late' && r.status !== 'noshow') continue;
-        out.push({ key: `${r.status}-${r.id}`, kind: r.status, name: r.name, at: r.startAt, sub: `${fmtDay(r.startAt)} · ${r.station} · due ${fmtTime(r.startAt)}–${fmtTime(r.endAt)}${r.status === 'late' ? ', no check-in yet' : ', never checked in'}` });
+        out.push({ key: `${r.status}-${r.id}`, kind: r.status, name: r.name, at: r.startAt, sub: `${fmtDay(r.startAt)} · ${robotLabel(r)} · due ${fmtTime(r.startAt)}–${fmtTime(r.endAt)}${r.status === 'late' ? ', no check-in yet' : ', never checked in'}` });
       }
       for (const u of p.unscheduled) {
         if (!schedule.length) break;
-        out.push({ key: `unsch-${u.email}-${dayKey(d)}`, kind: 'unscheduled', name: u.name, at: u.start, sub: `${fmtDay(u.start)} · ${u.station} · in at ${fmtTime(u.start)}` });
+        out.push({ key: `unsch-${u.email}-${dayKey(d)}`, kind: 'unscheduled', name: u.name, at: u.start, sub: `${fmtDay(u.start)} · ${robotTitle(u.station)} · in at ${fmtTime(u.start)}` });
       }
     }
     const rank = { late: 0, noshow: 1, early: 2, noout: 3, noin: 4, unscheduled: 5 };
@@ -144,7 +145,7 @@ export function Today() {
                 style={{ animationDelay: `${i * 30}ms` }}
                 leading={<Avatar name={s.name} tone="on" />}
                 title={s.name}
-                subtitle={`${locationName(locOf(s))} · ${s.station} · since ${fmtTime(s.start)}`}
+                subtitle={`${locationName(locOf(s))} · ${robotTitle(s.station)} · since ${fmtTime(s.start)}`}
                 trailing={<span className="mono-num">{fmtHrsU(hoursBetween(s.start, now))}</span>}
               />
             )) : <div className="empty-row">Check-ins show up here as operators arrive.</div>}

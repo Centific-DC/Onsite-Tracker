@@ -158,6 +158,8 @@ const normAll = (d) => ({
   notices: (d.notices || []).map(normNotice).filter((n) => n.email && n.weekStart),
   templates: (d.templates || []).filter((t) => t && t.id),
   emailTestMode: d.emailTestMode !== false,
+  // Robot names saved in Settings, { "Robot 3": "franka-thor-02" } (robots.js).
+  robotNames: d.robotNames && typeof d.robotNames === 'object' ? d.robotNames : {},
 });
 
 export const normNotice = (n) => {
@@ -191,6 +193,12 @@ export const api = {
     if (DEMO) return demo.punch(body);
     const out = await paPost(WRITE_URL, { action: 'punch', ...body, deviceTs: new Date().toISOString(), ...(token ? { token } : {}) });
     return normPunch(out.punch);
+  },
+  // Admins only: the whole map of robot names, { "Robot 3": "franka-thor-02" }.
+  async robotNames(names) {
+    if (DEMO) return demo.robotNames(names);
+    const out = await paPost(WRITE_URL, { action: 'robot_names', names });
+    return out.robotNames && typeof out.robotNames === 'object' ? out.robotNames : names;
   },
   async clientHours(week, hours) {
     if (DEMO) return demo.clientHours(week, hours);
@@ -248,6 +256,7 @@ export const demo = {
     let d = storage.get(this.KEY, null);
     if (!d) { d = seed(); storage.set(this.KEY, d); }
     for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit', 'notices', 'templates']) d[k] ||= [];
+    d.robotNames ||= {};
     // Demo mode never sends email, so it behaves like test mode.
     d.emailTestMode = true;
     return structuredClone(d);
@@ -276,6 +285,13 @@ export const demo = {
     d.punches.push(p);
     this.save(d, 'punch', p.id, null, p);
     return p;
+  },
+  robotNames(names) {
+    const d = this.load();
+    const before = d.robotNames || {};
+    d.robotNames = { ...names };
+    this.save(d, 'robot_names', 'robots', before, d.robotNames);
+    return d.robotNames;
   },
   clientHours(week, hours) {
     const d = this.load();

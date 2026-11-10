@@ -1,4 +1,5 @@
 import { dayKey, parseDay } from './time.js';
+import { robotTitle } from './robots.js';
 
 // Minutes after a shift's start before a missing person counts as "not here yet".
 export const GRACE_MIN = 15;
@@ -122,7 +123,7 @@ export function pairOf(schedule, shift) {
   return (schedule || []).filter((r) => !gone.has(r.id) && samePair(r, shift));
 }
 /** Which robot a shift is on, for people to read. */
-export const robotLabel = (r) => r?.station || 'Any robot';
+export const robotLabel = (r) => (r?.station ? robotTitle(r.station) : 'Any robot');
 
 // Who an operator works with on a shift. Live, an operator's Read holds only their
 // own shifts, so the flow sends just their partners' names in `partners`; staff (and

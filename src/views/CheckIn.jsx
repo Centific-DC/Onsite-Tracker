@@ -14,6 +14,7 @@ import { addDays, dayKey, firstName, fmtDay, fmtLongDay, fmtTime, greeting, init
 import { useNow } from '../lib/hooks.js';
 import { Group, Sheet } from '../components/ui.jsx';
 import { Bar, BigButton, Card, Detail, Dial, Label, Pill, Well } from '../components/Soft.jsx';
+import { robotName, robotTitle } from '../lib/robots.js';
 
 // The operator's page. Everyone signs in as themselves, on their phone or on the
 // lab laptop; the laptop signs the operator out again after each clock-in or out.
@@ -167,7 +168,7 @@ function Person({ person, onDone, laptop }) {
         ) : (
           <>
             <Pill tone="green" className="op-badge"><span className="op-dot is-green op-pulse" />Clocked in</Pill>
-            <Label className="op-center">{open.pending ? 'Saving your clock-in · ' : ''}On the clock since {fmtTime(since)} · {open.station}{shift && partnersOf(data, shift).length ? ` · with ${andList(partnersOf(data, shift))}` : ''}</Label>
+            <Label className="op-center">{open.pending ? 'Saving your clock-in · ' : ''}On the clock since {fmtTime(since)} · {robotTitle(open.station)}{shift && partnersOf(data, shift).length ? ` · with ${andList(partnersOf(data, shift))}` : ''}</Label>
             <Dial value={shift ? elapsedMs / lengthMs : 0} tone="green" onClick={clockOut} busy={busy} label={`Clock out. ${main} on the clock`}>
               <div className="op-timer op-num" aria-live="off">{main}<span className="op-timer-sec">{sec}</span></div>
               <Label>{shift ? `of ${clockParts(lengthMs)[0]} shift` : 'Not on the schedule'}</Label>
@@ -346,7 +347,7 @@ function OffShiftSheet({ open, onOpenChange, onConfirm, busy, home }) {
           <div className="robots" role="radiogroup" aria-label={`${l.name} robot`}>
             {l.robots.map((s) => (
               <button key={s} type="button" role="radio" aria-checked={pick === `${l.id}|${s}`} className={clsx('robot', pick === `${l.id}|${s}` && 'is-on')} onClick={() => setPick(`${l.id}|${s}`)}>
-                <span className="robot-name">{s}</span>
+                <span className="robot-name">{s}</span>{robotName(s) && <span className="robot-who">{robotName(s)}</span>}
                 {pick === `${l.id}|${s}` && <span className="robot-check"><Check size={14} strokeWidth={3} /></span>}
               </button>
             ))}
@@ -374,7 +375,7 @@ function RobotSheet({ open, onOpenChange, onConfirm, busy, lab, title, descripti
         <div className="robots" role="radiogroup" aria-label="Robot">
           {(L?.robots || []).map((s) => (
             <button key={s} type="button" role="radio" aria-checked={pick === s} className={clsx('robot', pick === s && 'is-on')} onClick={() => setPick(s)}>
-              <span className="robot-name">{s}</span>
+              <span className="robot-name">{s}</span>{robotName(s) && <span className="robot-who">{robotName(s)}</span>}
               {pick === s && <span className="robot-check"><Check size={14} strokeWidth={3} /></span>}
             </button>
           ))}
@@ -420,7 +421,7 @@ function MyTime({ person }) {
           const future = k > dayKey(now);
           const hrs = day ? (day.approved ?? day.recorded) : 0;
           const st = day && !future ? DAY_STATUS[day.status] : null;
-          const robots = day ? [...new Set([...day.shifts.map((r) => r.station), ...day.sessions.map((s) => s.station)])].join(', ') : '';
+          const robots = day ? [...new Set([...day.shifts.map((r) => r.station), ...day.sessions.map((s) => s.station)])].map(robotTitle).join(', ') : '';
           return (
             <Card key={k} className={clsx('op-day', (!day || future) && 'is-off', 'op-rise')} style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}>
               <div className="op-day-col">
@@ -454,7 +455,7 @@ function MyTime({ person }) {
                 <Card key={r.id} className="op-day">
                   <div className="op-day-col">
                     <span className="op-day-name">{t.start.toLocaleDateString([], { weekday: 'long' })}</span>
-                    <Label>{fmtDay(t.start).split(', ').slice(1).join(', ')} · {locationName(locOf(r))} · {r.station}</Label>
+                    <Label>{fmtDay(t.start).split(', ').slice(1).join(', ')} · {locationName(locOf(r))} · {robotLabel(r)}</Label>
                     {partnersOf(data, r).length > 0 && <span className="op-day-with">With {andList(partnersOf(data, r))}</span>}
                   </div>
                   <div className="op-day-right"><span className="op-upcoming-time op-num">{shiftLabel(r)} · {fmtTime(t.start)}</span></div>
@@ -474,7 +475,7 @@ function Done({ done, onNext, laptop }) {
     <div className="op op-screen op-enter op-done">
       <span className={clsx('op-medal', done.early && 'is-red')}><Check size={36} strokeWidth={2.5} aria-hidden="true" /></span>
       <h1 className="op-h1 op-center">{out ? 'Shift logged' : 'Clocked in'}</h1>
-      <p className="op-body op-center">{fmtLongDay(done.at)} · {locationName(done.location)} · {done.station}</p>
+      <p className="op-body op-center">{fmtLongDay(done.at)} · {locationName(done.location)} · {robotTitle(done.station)}</p>
       {done.pending && <p className="op-body op-small-body op-center" role="status">Saving in the background. Lotus records the exact time as it arrives.</p>}
       {out ? (
         <Well className="op-total-well">

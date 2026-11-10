@@ -28,12 +28,12 @@ const jordan = op('Jordan Pike');
 const morgan = op('Morgan Diaz');
 
 describe('configuration', () => {
-  it('has Redmond with two robots and three overlapping shifts, and Mountain View with one robot', () => {
+  it('has Redmond with two robots and three overlapping shifts, and Mountain View with two robots', () => {
     const red = LOCATIONS.find((l) => l.id === 'RED');
     const mtv = LOCATIONS.find((l) => l.id === 'MTV');
     expect(red.robots).toEqual(['Robot 1', 'Robot 2']);
     expect(red.templates.map((t) => `${t.start}-${t.end}`)).toEqual(['07:00-12:30', '12:00-17:30', '17:00-23:00']);
-    expect(mtv.robots).toEqual(['Robot 3']);
+    expect(mtv.robots).toEqual(['Robot 3', 'Robot 4']);
   });
 });
 
