@@ -1,11 +1,12 @@
 import { timed } from './timing.js';
-import { CFG, CORRECTIONS_URL, DEMO, LOCATIONS, READ_URL, WRITE_URL, locOf, locationName, locationOfRobot } from './config.js';
+import { CFG, CORRECTIONS_URL, DEMO, LOCATIONS, READ_URL, SYNC_URL, WRITE_URL, locOf, locationName, locationOfRobot } from './config.js';
 import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
 import { clockInCheck } from './attendance.js';
 import { openSpots, samePair, shiftTimes } from './schedule.js';
 import { writeFlowName, writeUrlFor } from './routes.js';
 import { mustEmail, normCorrection, normStrike, reasonsFor, standing } from './strikes.js';
+import { SHEET_SOURCE, normScheduleSync, planSheetSync, sheetKey, syncIncludesToday, syncSummary } from './sheetSync.js';
 
 export const storage = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -136,6 +137,11 @@ export function normShift(r) {
     // Partners share a pair id, so the robot can stay open. A replacement names the shift it replaces.
     pair: String(r.pair ?? r.Pair ?? ''),
     replaces: String(r.replaces ?? r.Replaces ?? ''),
+    // Where it came from: app, import, fill_in, or sheet (the daily Master List sync,
+    // which also sets sheetKey). Sent back unchanged on every save, so a pair change
+    // doesn't turn a sheet shift into a hand-made one.
+    source: String(r.source ?? r.Source ?? ''),
+    sheetKey: String(r.sheetKey ?? r.SheetKey ?? ''),
   };
 }
 
@@ -178,6 +184,8 @@ const normAll = (d) => ({
   emailTestMode: d.emailTestMode !== false,
   // Robot names saved in Settings, { "Robot 3": "franka-thor-02" } (robots.js).
   robotNames: d.robotNames && typeof d.robotNames === 'object' ? d.robotNames : {},
+  // Staff only: the last Master List sync (sheetSync.js), or null if it never ran.
+  scheduleSync: normScheduleSync(d.scheduleSync),
 });
 
 export const normNotice = (n) => {
@@ -237,6 +245,13 @@ export const api = {
     if (DEMO) return demo.removeShift(id);
     await paPost(WRITE_URL, { action: 'shift_delete', id });
   },
+  // Schedulers: ask for a Master List sync. Live, the flow queues it (202) and the next
+  // check runs it (SYNC_CHECKS), so this answers null; the demo syncs at once.
+  async syncSchedule() {
+    if (DEMO) return demo.syncSchedule();
+    await paPost(SYNC_URL, { action: 'schedule_sync' });
+    return null;
+  },
   async upsertUsers(users) {
     if (DEMO) return demo.upsertUsers(users);
     const out = await paPost(WRITE_URL, { action: 'users_upsert', users });
@@ -288,11 +303,11 @@ let demoActor = 'demo';
 export const setDemoActor = (email) => { demoActor = email || 'demo'; };
 
 export const demo = {
-  KEY: 'lotus-demo-v5',
+  KEY: 'lotus-demo-v6',
   load() {
     let d = storage.get(this.KEY, null);
     if (!d) { d = seed(); storage.set(this.KEY, d); }
-    for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit', 'notices', 'templates', 'corrections', 'strikes']) d[k] ||= [];
+    for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit', 'notices', 'templates', 'corrections', 'strikes', 'demoSheet', 'sheetSkips']) d[k] ||= [];
     d.robotNames ||= {};
     // Demo mode never sends email, so it behaves like test mode.
     d.emailTestMode = true;
@@ -344,7 +359,7 @@ export const demo = {
     }
     const out = shifts.map((s) => {
       const i = s.id ? d.schedule.findIndex((r) => r.id === s.id) : -1;
-      const r = normShift({ ...s, id: s.id || `S-${crypto.randomUUID().slice(0, 8)}`, location: s.location || locOf(s) });
+      const r = normShift({ ...s, id: s.id || `S-${crypto.randomUUID().slice(0, 8)}`, location: s.location || locOf(s), source: s.source || (i >= 0 ? d.schedule[i].source : '') || 'app', sheetKey: s.sheetKey || (i >= 0 ? d.schedule[i].sheetKey : '') });
       if (i >= 0) { const before = d.schedule[i]; d.schedule[i] = r; d.audit.push({ id: crypto.randomUUID(), at: new Date().toISOString(), by: demoActor, action: 'shift_upsert', target: r.id, before, after: r }); } else { d.schedule.push(r); d.audit.push({ id: crypto.randomUUID(), at: new Date().toISOString(), by: demoActor, action: 'shift_upsert', target: r.id, before: null, after: r }); }
       return r;
     });
@@ -371,7 +386,21 @@ export const demo = {
     const d = this.load();
     const before = d.schedule.find((r) => r.id === id);
     d.schedule = d.schedule.filter((r) => r.id !== id);
+    // As Delete Shift does live: a sheet shift removed by hand stays out of later syncs.
+    if (before?.sheetKey && before.date >= dayKey(new Date()) && !d.sheetSkips.includes(before.sheetKey)) d.sheetSkips.push(before.sheetKey);
     this.save(d, 'shift_delete', id, before, null);
+  },
+  // Demo: a made-up Master List (seed's demoSheet), synced with the same rules as the flow.
+  syncSchedule() {
+    const d = this.load();
+    const plan = planSheetSync({ rows: d.demoSheet, shifts: d.schedule.map(normShift), users: d.operators, skips: d.sheetSkips, today: dayKey(new Date()), includeToday: syncIncludesToday(), labs: LOCATIONS });
+    const gone = new Set(plan.remove);
+    const changed = new Map(plan.update.map((r) => [r.id, r]));
+    d.schedule = d.schedule.filter((r) => !gone.has(r.id)).map((r) => changed.get(r.id) || r)
+      .concat(plan.add.map((r) => normShift({ ...r, id: `S-${crypto.randomUUID().slice(0, 8)}` })));
+    d.scheduleSync = syncSummary(plan);
+    this.save(d, 'schedule_sync', 'master-list', null, { added: plan.add.length, changed: plan.update.length, removed: plan.remove.length });
+    return normScheduleSync(d.scheduleSync);
   },
   upsertUsers(users) {
     const d = this.load();
@@ -643,5 +672,27 @@ function seed() {
       return rows;
     });
   }
-  return { operators: ops, punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule, resolutions: [], approvals, audit: [], notices, templates: [], corrections, strikes };
+  // A made-up Master List for the demo's "Sync now": next days' crews as sheet rows,
+  // with a few edits the scheduling team might make. The shifts it made are marked as
+  // synced from it, so the first sync shows a changed time, a removed row and two rows
+  // it can't book.
+  const ampm = (hm) => { const [h, m] = hm.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+  const label = (r) => locationOfRobot(r.station)?.templates.find((t) => t.id === r.template)?.label || 'Other';
+  const sheetRows = schedule.filter((r) => r.date > today && !r.note)
+    .map((r) => ({ lab: r.location, date: r.date, shift: label(r), time: `${ampm(r.start)} - ${ampm(r.end)} PT`, name: r.name, email: r.email }));
+  const first = planSheetSync({ rows: sheetRows, users: ops, today, labs: LOCATIONS });
+  for (const r of schedule) {
+    const k = r.date > today && !r.note ? sheetKey(r.location, r.date, label(r), r.email) : '';
+    const made = k && first.add.find((x) => x.sheetKey === k);
+    if (made) Object.assign(r, { source: SHEET_SOURCE, sheetKey: k, pair: made.pair });
+  }
+  const demoSheet = sheetRows.map((x) => ({ ...x }));
+  const mtv = demoSheet.find((x) => x.lab === M.id && x.date > dayKey(addDays(now, 1)));
+  if (mtv) mtv.time = `8:00 AM - ${mtv.time.split(' - ')[1]}`;
+  const drop = demoSheet.findIndex((x) => x.lab === R.id && x.shift === 'Night' && x.date > dayKey(addDays(now, 2)));
+  if (drop >= 0) demoSheet.splice(drop, 1);
+  const k3 = dayKey(addDays(now, 3));
+  demoSheet.push({ lab: R.id, date: k3, shift: 'Night', time: '5:00 PM - 11:00 PM PT', name: 'Jesse Lane', email: 'jesse.lane@example.com' });
+  demoSheet.push({ lab: M.id, date: k3, shift: 'Morning', time: '7:00 AM - 12:00 PM PT', name: 'Robin Vale', email: '' });
+  return { operators: ops, punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule, resolutions: [], approvals, audit: [], notices, templates: [], corrections, strikes, demoSheet, sheetSkips: [], scheduleSync: null };
 }

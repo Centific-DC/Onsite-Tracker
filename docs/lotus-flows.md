@@ -107,10 +107,22 @@ The first admin is created by the Auth flow's `bootstrap` op (below). After that
 | `Start` | text | `07:00` (24h, site-local) |
 | `End` | text | `12:30` |
 | `Note` | text | `Backfill for Jordan` |
-| `Source` | text | `app` or `import` |
+| `Source` | text | `app` (added in Lotus), `import` (Schedule → Import), `fill_in`, or `sheet` (made by the Master List sync, §6a). When a save leaves `source` empty, keep the row's current value (`app` for a new row) |
+| `SheetKey` | text | Only on rows the Master List sync made: `<Location>\|<Date>\|<shift, lower case>\|<email, lower case>`, e.g. `RED\|2026-11-12\|night\|avery.lin@centific.com`. **Index it.** Never cleared by a save that leaves it empty |
 | `ReminderSentAt` | text | ISO UTC, set by the reminder flow |
 | `UpdatedBy` | text | caller email |
 | `Updated` | text | ISO UTC |
+
+### `Lotus_SheetSkips`: Master List rows removed in Lotus
+
+When a scheduler removes a shift the Master List sync made, the sync must not add it back the next morning. One row per removed shift:
+
+| Column | Type | Example |
+|---|---|---|
+| `Title` | text | the shift's `SheetKey`. **Index it** |
+| `Date` | text | `2026-11-12`. Rows for past days can be deleted by the sync |
+| `RemovedBy` | text | caller email |
+| `RemovedAt` | text | ISO UTC |
 
 ### `Lotus_Punches`: every clock-in and clock-out (append only)
 
@@ -218,7 +230,7 @@ The latest row per `DayKey` is the current state.
 | `Title` | text | `guid()` |
 | `RecordedAt` | text | `utcNow()`; returned as `at` |
 | `By` | text | `callerEmail` |
-| `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client`, `email_send`, `template_save`, `correction_request`, `correction_resolve`, `strike_add`, `strike_void` |
+| `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client`, `email_send`, `template_save`, `correction_request`, `correction_resolve`, `strike_add`, `strike_void`, `schedule_sync` |
 | `Target` | text | the row key it touched |
 | `Before` | multi-line text | JSON of the row before, or empty |
 | `After` | multi-line text | JSON of the row after |
@@ -264,7 +276,7 @@ One row per template, edited on the app's Emails page. Missing rows mean the app
 
 ### `Lotus_Settings`
 
-One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**), `SendFrom` (text: the mailbox every Lotus email is sent from, below) and `RobotNames` (multiple lines of text: a JSON object of robot names, like `{"Robot 3":"franka-thor-02"}`, set by admins in Settings → Robots; empty = `{}`). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
+One row, `Title` = `main`, with `EmailTestMode` (yes/no, **default Yes**), `SendFrom` (text: the mailbox every Lotus email is sent from, below) `RobotNames` (multiple lines of text: a JSON object of robot names, like `{"Robot 3":"franka-thor-02"}`, set by admins in Settings → Robots; empty = `{}`) and `ScheduleSync` (multiple lines of text: the last Master List sync's summary, written by §6a; empty = never ran). While it is Yes, every email from every Lotus flow goes to `project_lotus@centific.com` only, with the intended recipient at the top of the body. The scheduling team switches it off once they have checked a few days of test emails and turned off their manual Outlook emails.
 
 ## 2. Flow: **Lotus Auth**
 
@@ -298,7 +310,7 @@ The app opens the first-run screen at `<app URL>?setup=1`. Once an admin exists,
 Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action": "all", "from": "yyyy-MM-dd", "token": "…" }`. `from` defaults to 60 days ago.
 
 1. The token check above gives `callerEmail` and the caller's row. Compose `roles` = `split(Roles, ';')`.
-2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, `Lotus_Corrections` with `Date ge '<from>'`, all of `Lotus_Strikes` (the history is short and the 30-day count needs older rows), and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode` and `RobotNames` from `Lotus_Settings`, and return `robotNames` = `json(coalesce(RobotNames, '{}'))` to everyone, operators included (names aren't private).
+2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, `Lotus_Corrections` with `Date ge '<from>'`, all of `Lotus_Strikes` (the history is short and the 30-day count needs older rows), and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode`, `RobotNames` and `ScheduleSync` from `Lotus_Settings`, and return `robotNames` = `json(coalesce(RobotNames, '{}'))` to everyone, operators included (names aren't private). Return `scheduleSync` = `json(ScheduleSync)` **to staff only** (it lists operator names); operators and an empty cell get `null`. Each `schedule` row carries `source` and `sheetKey` too.
 3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals, corrections, strikes and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
    - **The one exception is partners' names** (user decision, 2026-11-05). Before filtering, for each of the caller's shifts, find its partners among the other `Lotus_Shifts` rows of the same `Date` with a different `Email`, leaving out any row that another row's `Replaces` points to:
      - if either shift has a `Pair`, partners are the rows with the **same non-empty `Pair`** (robot and times don't matter);
@@ -360,11 +372,11 @@ If `Flag` = `Left early`, send an email from the shared mailbox (the email step 
 
 Body: `{ "shifts": [ { "id"?: "", "date", "operatorId", "email", "name", "location", "station", "template", "start", "end", "note", "source", "pair", "replaces" } ] }`. Up to 200 per call. `station` may be empty (any robot). Save `pair` and `replaces` as sent. When the scheduler pairs someone with a shift that has no `Pair` yet, or replaces a no-show, the app sends the partners' rows again in the same call with the new `Pair`, so save them all.
 
-For each shift: check that `date` is `yyyy-MM-dd`, `start` and `end` are `HH:mm`, and `email` is in `Lotus_Users`. **Home lab only:** if that user's row has a `HomeLocation`, the shift's `location` must equal it, else 400 `{"error":"<name> works at <lab name> only."}` and nothing in the call is saved. With an `id`, update that row. Without one, create it with `Title` = `S-` + `guid()`. Respond `{ "ok": true, "shifts": [ …saved shifts, same shape as Read… ] }`. The app has already shown the scheduler any warnings (37 hrs, conflicts, pairing), so don't block on those.
+For each shift: check that `date` is `yyyy-MM-dd`, `start` and `end` are `HH:mm`, and `email` is in `Lotus_Users`. **Home lab only:** if that user's row has a `HomeLocation`, the shift's `location` must equal it, else 400 `{"error":"<name> works at <lab name> only."}` and nothing in the call is saved. With an `id`, update that row. Without one, create it with `Title` = `S-` + `guid()`. Save `source` and `sheetKey` as sent; when either is empty, keep what the row already has (a new row gets `Source` = `app`). The app sends both back unchanged when it re-saves a row (for example to give it a pair), so a pairing never turns a sheet shift into a hand-made one. Respond `{ "ok": true, "shifts": [ …saved shifts, same shape as Read… ] }`. The app has already shown the scheduler any warnings (37 hrs, conflicts, pairing), so don't block on those.
 
 ### `shift_delete`: role `scheduler`
 
-Body `{ "id": "S-…" }`. Delete it, and return `{ "ok": true }` even if it was already gone.
+Body `{ "id": "S-…" }`. Delete it, and return `{ "ok": true }` even if it was already gone. **Master List rows:** if the row had a `SheetKey` and its `Date` is today or later (site-local), first add a `Lotus_SheetSkips` row (`Title` = that `SheetKey`, unless one exists), so the daily sync doesn't book it again. (This lives in the Delete Shift flow when the split flows are on.)
 
 ### `fill_in`: role `operator`
 
@@ -512,6 +524,52 @@ The proposed weekly cycle: operators record time, approvers approve last week's 
 3. Get the `approver-weekly` row from `Lotus_Templates`. If it is missing, send the alias a plain email "The Lotus approval reminder template is missing. Open the Emails page in Lotus once to create it." and stop.
 4. For each active `Lotus_Users` row with `approver` in `Roles`: take `Ready` and `Subject`, replace `{{approverFirstName}}` / `{approverFirstName}` (first word of `Name`), `{{reviewWeek}}` / `{reviewWeek}` and `{{openDays}}` / `{openDays}`, and send it.
 
+## 6a. Flow: **Lotus Schedule Sync** (scheduled, plus "Sync now")
+
+The scheduling team plans in the **Master List** workbook on SharePoint (site `Lotus_Moderators`, file `Master List_Project Lotus_Onsite Availability.xlsx`), and edits it every day. This flow copies it into `Lotus_Shifts` so Lotus's schedule, reminders, check-in and the Thursday schedule emails follow the sheet. The rules are the user's (David, 2026-11-10), and `src/lib/sheetSync.js` in the app is the same logic with tests: when in doubt, match it.
+
+**What the sheet looks like** (read it through the Excel tables, never by sheet name or cell range):
+
+| Table | Tab | Lab |
+|---|---|---|
+| `tblRedmondSchedule` | Redmond Schedule | `RED` |
+| `tblMVSchedule` | MV Schedule | `MTV` |
+
+Both tables have the headers `Date, Day, Shift, Time, Team Member, Email, Notes` (dates show as MM/DD/YYYY). Columns used: `Date`, `Shift` (`Morning`, `Afternoon`, `Night`), `Time` (free text like `7:00 AM - 12:30 PM PT`: Redmond uses 3 ranges, Mountain View 7, including one-offs like 9–11 AM and 10 AM–5 PM; read any `h:mm AM - h:mm PM` range, and skip a row you can't read as `bad_time`), `Team Member` (the operator's name; **blank Team Member and Email = an open slot**, skip it, not an error), `Email`. **Optional `Pair` column** (David, 2026-11-10: the scheduling team is asked to add it to both tables): a letter, as in Schedule → Import; rows with the same letter on the same lab, day and shift are partners. Read it only if the table has it. Ignore every other column, the `Active Roster` tab and its 7 roster tables, and the weekly tabs ("Redmond Sign Up Nov 09 Week" and so on). Find the tables by name, never by tab or cell range; the scheduling team must not rename the two schedule tables. **This flow only reads the workbook. Never write to it.**
+
+**When it runs** (David, 2026-11-10, 1:56 PM PT). No child flows; Sync now is a request that a scheduled check picks up:
+- **The daily run** at **5:30 AM Pacific**, every day. It starts before 6:00, so it includes today.
+- **Checks every 30 minutes from 6:00 AM to 7:00 PM Pacific.** A check runs the sync only if a Sync now is waiting (`ScheduleSync.requestedAt` later than the last finished `at`), else it ends at once. No checks outside those times: a request after 7 PM waits for the 5:30 AM run.
+- **Lotus Schedule Sync Now**: HTTP, Anyone, token check and role `scheduler` or `admin`, as in Write. Body `{ "action": "schedule_sync" }`. Set `ScheduleSync.requestedAt` = `utcNow()` (keep the rest), and respond **202** `{ "ok": true, "queued": true }`. Its URL goes in the GitHub secret `LOTUS_SCHEDULE_SYNC_URL`. The app shows "Sync queued, runs at the next check (every 30 min, 6 AM to 7 PM)" and the new counts on its next refresh.
+- **Write is not touched.** The `shift_upsert` and `shift_delete` changes in §4 go only into Save Shift and Delete Shift, so the app's PR #20 (shift saves routed to those flows) must be live before the sync is switched on: until then a synced shift deleted in the app records no skip and would be booked again the next morning.
+- A temporary admin-only test flow for the before-6 AM case is fine; delete it after the tests.
+
+**Steps (each run):**
+1. `today` = site-local date. **`first` = `today` if the run starts before 6:00 AM site-local** (the daily 5:30 AM run: no shift has started yet), **else the day after `today`** (a Sync now during the day). Days before `first` are never added, changed or removed: once the workday has begun, same-day changes are made by hand in Lotus (David, 2026-11-10).
+2. Set `ScheduleSync.runningSince` = `utcNow()`, keeping the last finished summary (its `at` and counts) as it is. The app shows the old counts as "last sync", plus "running since …".
+3. *Excel Online (Business) → List rows present in a table* for each table, with **DateTime Format = ISO 8601** and pagination on. If a table or one of its required columns is missing, record the error, change nothing for that lab, and go on with the other.
+4. Get `Lotus_Shifts` with `Date ge '<first>'`, all active `Lotus_Users`, and `Lotus_SheetSkips` with `Date ge '<first>'` (one *Get items* each, then *Filter array* in loops).
+5. For each sheet row with `Date` ≥ `first` and a non-blank `Team Member`:
+    - `email` = `Email` trimmed and lower case; `key` = `<lab>|<yyyy-MM-dd>|<Shift lower case>|<email>`.
+    - Skip and report (`skipped`, with `reason`): no email (`no_email`); `Time` you can't read (`bad_time`); not an active Lotus user (`not_in_lotus`: an admin adds them on Roster; **the sync never creates users**); their `HomeLocation` is the other lab (`other_lab`); the same key twice (`duplicate`).
+    - `start`/`end` from `Time`, as `HH:mm` 24-hour. `Template` = the lab's template with exactly those times (`RED-AM` 07:00–12:30, `RED-MID` 12:00–17:30, `RED-PM` 17:00–23:00, `MTV-AM` 07:00–12:00, `MTV-MID` 12:30–17:00, `MTV-PM` 17:30–23:00), else empty.
+    - `Name` and `OperatorID` come from `Lotus_Users`, not the sheet.
+    - `Pair`: with a `Pair` letter, `P-sheet-<LAB>-<yyyyMMdd>-<shift>-<letter>`; without one, if **exactly two** valid rows share that lab, day and shift, both get `P-sheet-<LAB>-<yyyyMMdd>-<shift>`; three or more get none (the scheduler pairs them). The lab stays upper case and the shift and letter are lower case, exactly as `sheetSync.js` makes them: `P-sheet-RED-20261112-night`, `P-sheet-MTV-20261112-morning-a`.
+6. Then, per valid row:
+    - `key` is in `Lotus_SheetSkips` → leave it out (`kept`, `removed_in_lotus`).
+    - A `Lotus_Shifts` row has `SheetKey` = `key`:
+        - its `Source` ≠ `sheet` → leave it (`kept`, `changed_in_lotus`);
+        - else update it if `Start`, `End`, `Template`, `Name`, `OperatorID` or `Location` differ, and `Pair` only if the row's `Pair` is empty or starts with `P-sheet-` (a pair the scheduler set stays). Never change `Robot`. Don't touch `Replaces`, `Note` or `ReminderSentAt`.
+    - No such row: if that operator already has a `Lotus_Shifts` row that day with `Source` ≠ `sheet` overlapping these times, leave it (`kept`, `booked_in_lotus`). Else create one: `Title` = `S-` + `guid()`, `Source` = `sheet`, `SheetKey` = `key`, `Robot` empty (= any robot), `Note` empty.
+7. Remove `Lotus_Shifts` rows with `Date` ≥ `first`, `Source` = `sheet`, a `SheetKey` that no longer appears in the sheet (blank `Team Member` rows count as gone; skipped rows still count as there), whose lab's table was read, and that no other row `Replaces`. **Safety stop:** if that's more than 10 rows and more than half of the future `sheet` rows, remove none, and set `held` to the count (a renamed table or column looks exactly like this).
+8. Writes: only the rows that change, *Apply to each* concurrency 10, retry as in Write. One `Lotus_Audit` row for the run: `Action` = `schedule_sync`, `Target` = `master-list`, `After` = the counts.
+9. Set `ScheduleSync` (JSON; `runningSince` empty, `requestedAt` kept): `{ "at": "<ISO UTC>", "runningSince": "", "requestedAt": "<as it was>", "from": "<first>", "added": n, "changed": n, "removed": n, "held": n, "kept": [ { "lab", "date", "shift", "name", "reason" } ], "skipped": [ …same… ], "error": "" }`. On a failure, keep the last counts, clear `runningSince`, and set `error` to a short reason a scheduler can act on (never a URL or run id).
+10. Delete `Lotus_SheetSkips` rows whose `Date` is before `today`.
+
+**Speed and limits:** the two tables are about 900 rows through Dec 31 and grow as the team adds weeks. Filter in memory; never one *Get items* per row. Aim for under 60 seconds for a normal day's changes.
+
+**Not this flow's job:** emails. Reminders (§5) and the Thursday schedule emails (Schedule → Email schedules in the app) pick up the synced shifts; the app shows who's "changed since" their last email.
+
 ## 7. Flow: **Lotus Auto Clock-out** (scheduled)
 
 User rule, 2026-11-06: an operator who forgets to clock out is clocked out by the system 15 minutes after their shift's scheduled end, and the punch is labelled `Auto clock-out` so approvers can use it in performance reviews. The approver still reviews the day; the app flags it as "Auto clock-out".
@@ -561,6 +619,7 @@ User rule, 2026-11-06: an operator who forgets to clock out is clocked out by th
 16i. No shift: as an operator with no shift today, `punch` `in` with no `shiftId` (through Punch and through Write): 403 `no_shift`, no row added.
 16j. Auto clock-out: clock A in on a shift that ends in a few minutes and don't clock out. 15 to 30 minutes after the end, `Lotus_Punches` has one `OUT` for A with `Timestamp` = the scheduled end, `Device` = `system`, `Flag` = `Auto clock-out`, and Read returns `flag` = `auto`. Let the flow run again: still one `OUT`. Clock B in and out by hand before end + 15: no auto row for B.
 16k. Robot names: `robot_names` as an admin with `{"Robot 4":"jetson-thor-004"}`, then Read as an operator: `robotNames` has it. As a scheduler without `admin`: 403. A key `Robot 99` or a 61-character name: 400.
+16s. Schedule sync (copy the workbook to a test file first and point the flow at the copy; never test against the live sheet): a row for tomorrow with a Lotus user creates a `sheet` shift with the right `SheetKey`, times and template; running again changes nothing. Change its `Time`: the shift updates. Change its name to another Lotus user: the old shift goes, a new one comes. Blank it: the shift is removed. A row for today: added by a run before 6:00 AM, untouched by a Sync now after 6:00 AM. Remove a synced shift in the app: it's in `Lotus_SheetSkips` and the next run doesn't bring it back. Add a shift in the app at the same time as a sheet row: the sync keeps the app's (`booked_in_lotus`). Rename the `Email` column in the copy: the run reports an error and removes nothing. Read as an operator: `scheduleSync` is `null`. `schedule_sync` as an operator: 403. As a scheduler: 202, and the next 30-minute check runs it; while it runs, Read shows the old counts with `runningSince`.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:

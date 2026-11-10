@@ -73,7 +73,7 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
     const away = homeLabProblem({ email: person.email, location: f.location }, data.operators);
     if (away) return setErr(away);
     if (!start || !end) return setErr('Add a start and end time.');
-    const shift = { date: f.date, operatorId: person.id, name: person.name, email: person.email, location: L.id, station: f.station || '', template: tpl?.id || '', start, end, note: f.note.trim(), pair: '', replaces: replaced?.id || '' };
+    const shift = { date: f.date, operatorId: person.id, name: person.name, email: person.email, location: L.id, station: f.station || '', template: tpl?.id || '', start, end, note: f.note.trim(), pair: '', replaces: replaced?.id || '', source: 'app' };
     // Partners who don't have a pair id yet get one now, so the pair holds whatever robot they end up on.
     const anchor = replaced || target;
     const linked = [];

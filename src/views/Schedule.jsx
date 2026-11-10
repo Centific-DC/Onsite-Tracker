@@ -12,6 +12,7 @@ import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx'
 import { ShiftSheet } from '../components/ShiftSheet.jsx';
 import { SendSchedules } from '../components/SendSchedules.jsx';
 import { ImportSheet } from '../components/ImportSheet.jsx';
+import { SheetSyncLine } from '../components/SheetSync.jsx';
 import { noticeStatus } from '../lib/email/notices.js';
 import { STATUS, backfillStart, dayPlan, pairOf, robotLabel, shiftHours, shiftTimes } from '../lib/schedule.js';
 import { robotTitle } from '../lib/robots.js';
@@ -131,6 +132,8 @@ export function Schedule() {
           <button type="button" className="btn btn-primary btn-sm" data-tour="sched-add" onClick={() => setAdding({ date: dayKey(thisWeek ? now : wk0) })}><Plus size={16} /> Add shift</button>
         </div>
       </header>
+
+      <SheetSyncLine />
 
       {canSend && unsent + changedN > 0 && (
         <div className="mail-banner" role="status">
@@ -257,7 +260,7 @@ function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
   const remove = async (r) => {
     try {
       await removeShift(r.id);
-      toast(`Removed ${r.name}'s shift`, { description: `${robotLabel(r)} · ${fmtDay(parseDay(value.k))}` });
+      toast(`Removed ${r.name}'s shift`, { description: `${robotLabel(r)} · ${fmtDay(parseDay(value.k))}${r.source === 'sheet' && value.k > dayKey(now) ? ' · The Master List sync won’t add it back' : ''}` });
       if (rows.length === 1) onClose();
     } catch (e) {
       toast.error("Couldn't remove the shift", { description: e.message });
@@ -280,7 +283,7 @@ function SlotSheet({ value, onClose, status, isNew, onAdd, now }) {
             key={r.id}
             leading={<Avatar name={r.name} tone={r.status ? STATUS[r.status].tone : undefined} />}
             title={<>{r.name} {r.status && r.status !== 'upcoming' && <Tag tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Tag>}{isNew(r.email) && <Tag tone="warn">New</Tag>}</>}
-            subtitle={`${robotLabel(r)} · ${fmtTime(shiftTimes(r).start)}–${fmtTime(shiftTimes(r).end)}${pairOf(data.schedule, r).length ? ` · with ${pairOf(data.schedule, r).map((x) => shortName(x.name)).join(', ')}` : ''}${r.note ? ` · ${r.note}` : ''}${r.elsewhere ? ` · clocked in on ${r.elsewhere}` : ''}`}
+            subtitle={`${robotLabel(r)} · ${fmtTime(shiftTimes(r).start)}–${fmtTime(shiftTimes(r).end)}${pairOf(data.schedule, r).length ? ` · with ${pairOf(data.schedule, r).map((x) => shortName(x.name)).join(', ')}` : ''}${r.note ? ` · ${r.note}` : ''}${r.source === 'sheet' ? ' · from the Master List' : ''}${r.elsewhere ? ` · clocked in on ${r.elsewhere}` : ''}`}
             trailing={!past ? <button type="button" className="link" onClick={() => remove(r)}>Remove</button> : null}
           />
         ))}

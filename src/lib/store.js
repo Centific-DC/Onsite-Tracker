@@ -353,6 +353,19 @@ export const useStore = create((set, get) => ({
     return r;
   },
 
+  // "Sync now" from the Master List workbook (Lotus Schedule Sync). Live, the flow
+  // queues it for its next check; the line on Schedule says "queued" until a refresh
+  // brings the new counts. The demo syncs at once.
+  syncSchedule() {
+    return get().background('Asking for a Master List sync', async () => {
+      const done = await api.syncSchedule();
+      if (done) { get().commit((d) => (d ? { ...d, scheduleSync: done } : d)); await get().sync(); return done; }
+      const requestedAt = new Date().toISOString();
+      get().commit((d) => (d ? { ...d, scheduleSync: { ...(d.scheduleSync || { at: '', from: '', added: 0, changed: 0, removed: 0, held: 0, kept: [], skipped: [], error: '', runningSince: '' }), requestedAt } } : d));
+      return null;
+    });
+  },
+
   removeShift(id, label = 'Removing the shift') {
     if (isTemp(id)) {
       // Not sent yet: just take it out of its job.

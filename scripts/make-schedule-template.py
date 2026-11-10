@@ -22,7 +22,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 # Keep in step with public/config.js.
 LABS = [
     ('Redmond Lab', ['Robot 1', 'Robot 2'], [('Morning', '7:00 AM', '12:30 PM', 2), ('Afternoon', '12:00 PM', '5:30 PM', 2), ('Night', '5:00 PM', '11:00 PM', 4)], 'Every day'),
-    ('Mountain View Lab', ['Robot 3', 'Robot 4'], [('Morning', '7:00 AM', '12:30 PM', 2), ('Afternoon', '12:00 PM', '5:30 PM', 2)], 'Monday to Friday'),
+    ('Mountain View Lab', ['Robot 3', 'Robot 4'], [('Morning', '7:00 AM', '12:00 PM', 4), ('Afternoon', '12:30 PM', '5:00 PM', 2), ('Night', '5:30 PM', '11:00 PM', 4)], 'Every day'),
 ]
 ROBOT_NAMES = {'Robot 1': 'Stationary', 'Robot 2': 'Mobile', 'Robot 3': 'franka-thor-02', 'Robot 4': 'jetson-thor-004'}
 SHIFTS = ['Morning', 'Afternoon', 'Night', 'Custom']
@@ -31,7 +31,7 @@ PAIRS = ['A', 'B', 'C', 'D']
 COLUMNS = [  # header, width, note
     ('Date', 13, 'The day of the shift. Type it like 11/17/2026.'),
     ('Lab', 20, 'Redmond Lab or Mountain View Lab. Operators only work at their home lab.'),
-    ('Shift', 12, 'Morning, Afternoon or Night (Redmond only). Pick Custom and fill in Start and End for other times.'),
+    ('Shift', 12, 'Morning, Afternoon or Night. Pick Custom and fill in Start and End for other times.'),
     ('Operator', 28, 'Pick from the list. One row per operator per shift.'),
     ('Email', 34, 'Fills in by itself from the Operator. Leave it.'),
     ('Pair', 8, 'Same letter = same pair. Two operators per pair, at least one experienced. Leave blank to pair by robot.'),
@@ -117,9 +117,8 @@ def build(ops, until, out):
     ]
     for dv in validations:
         ws.add_data_validation(dv)
-    # Gentle flags while filling in: Night at Mountain View, and Custom without times.
+    # Gentle flag while filling in: Custom without times.
     warn = PatternFill('solid', fgColor='FDE8E8')
-    ws.conditional_formatting.add(f'C2:C{end}', FormulaRule(formula=['AND($B2="Mountain View Lab",$C2="Night")'], fill=warn))
     ws.conditional_formatting.add(f'H2:I{end}', FormulaRule(formula=['AND($C2="Custom",H2="")'], fill=warn))
     ws.auto_filter.ref = f'A1:J{end}'
 

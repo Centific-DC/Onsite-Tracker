@@ -34,7 +34,9 @@ describe('Excel schedule import', () => {
       ['2026-11-16', 'Jordan Pike', '07:00', '12:30', 'RED-AM', ''],
       ['2026-11-16', 'Morgan Diaz', '17:00', '23:00', 'RED-PM', 'Robot 2'],
       ['2026-11-17', 'Avery Lin', '09:00', '15:00', '', ''],
-      ['2026-11-17', 'Sam Ortiz', '07:00', '12:30', 'MTV-AM', 'Robot 3'],
+      // Mountain View has a Night shift since the Master List's times (2026-11-10).
+      ['2026-11-17', 'Sam Ortiz', '17:30', '23:00', 'MTV-PM', ''],
+      ['2026-11-17', 'Sam Ortiz', '07:00', '12:00', 'MTV-AM', 'Robot 3'],
     ]);
     const [a, j, m] = plan.add;
     expect(a.pair).toMatch(/^P-/);
@@ -42,7 +44,7 @@ describe('Excel schedule import', () => {
     expect(m.pair).not.toBe(a.pair);
     expect(m.note).toBe('Covers for Avery');
     expect(plan.add[3]).toMatchObject({ pair: '', note: 'Training day' });
-    expect(plan.skip).toEqual([{ line: 6, name: 'Sam Ortiz', reason: 'Mountain View Lab has no Night shift' }]);
+    expect(plan.skip).toEqual([]);
   });
 
   it('updates rather than duplicates when the same file comes in again', async () => {
@@ -52,7 +54,7 @@ describe('Excel schedule import', () => {
     const again = planScheduleImport(rows, ops, saved);
     expect(again.add).toEqual([]);
     expect(again.update).toEqual([]);
-    expect(again.skip.filter((x) => x.reason === 'Already scheduled')).toHaveLength(5);
+    expect(again.skip.filter((x) => x.reason === 'Already scheduled')).toHaveLength(6);
   });
 });
 
@@ -64,12 +66,13 @@ describe('schedule import rules', () => {
     expect(plan.add).toHaveLength(2);
     expect(plan.skip.map((x) => x.reason)).toEqual(['Pair A already has two operators', "Robot 3 isn't at Redmond Lab", 'Unknown robot “Robot 9”']);
   });
-  it('skips rows repeated in the file and warns about closed days and past dates', () => {
+  it('skips rows repeated in the file and warns about past dates', () => {
+    // Both labs run every day now (the Master List has Mountain View weekends), so no closed-day warning.
     const csv = `${head}11/16/2026,Redmond Lab,Morning,Avery Lin,,\n11/16/2026,Redmond Lab,Morning,Avery Lin,,\n11/21/2026,Mountain View Lab,Morning,Sam Ortiz,,\n11/2/2026,Redmond Lab,Morning,Jordan Pike,,\n`;
     const plan = planScheduleImport(csv, ops, [], '2026-11-10');
     expect(plan.add).toHaveLength(3);
     expect(plan.skip[0].reason).toBe('Repeated in the file');
-    expect(plan.warn.map((x) => x.reason)).toEqual(['Mountain View Lab is usually closed on Saturdays', '2026-11-02 is in the past']);
+    expect(plan.warn.map((x) => x.reason)).toEqual(['2026-11-02 is in the past']);
   });
   it('finds the header under a title row and ignores blank template rows', () => {
     const plan = planScheduleImport([['Lotus schedule'], ['Date', 'Lab', 'Shift', 'Operator'], ['', '', '', ''], ['46342', 'Redmond Lab', 'Afternoon', 'Jordan Pike']], ops, []);
