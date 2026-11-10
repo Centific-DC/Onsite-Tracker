@@ -2,7 +2,8 @@
 // browser-kept stand-in answers instead, with the same contract. Mirrors the
 // Project Atlas sign-in: usernames and passwords that an admin hands out.
 
-import { AUTH_URL } from '../config.js';
+import { AUTH_URL, CFG } from '../config.js';
+import { authUrlFor } from '../routes.js';
 import { codeHash, hashPassword, resetCode, saltedHash } from './crypto.js';
 import { timed } from '../timing.js';
 import { errorText } from '../api.js';
@@ -50,7 +51,7 @@ async function call(req) {
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
     // text/plain: the flow's HTTP trigger answers no CORS preflight, which application/json would trigger.
-    const res = await timed(`Sign-in · ${req.op}`, fetch(AUTH_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ schemaVersion: 1, ...req }), signal: ctrl.signal, cache: 'no-store' }));
+    const res = await timed(`Sign-in · ${req.op}`, fetch(authUrlFor(req, CFG, AUTH_URL), { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ schemaVersion: 1, ...req }), signal: ctrl.signal, cache: 'no-store' }));
     let body = {};
     try { body = await res.json(); } catch { /* no body: go by the status */ }
     if (!res.ok) throw new AuthError(res.status, errorText(body, res.status));

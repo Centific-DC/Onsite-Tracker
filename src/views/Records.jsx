@@ -42,14 +42,14 @@ export function Records() {
     const rows = [['Date', 'Time', 'Operator ID', 'Name', 'Email', 'In/Out', 'Location', 'Robot', 'Shift ID', 'Grace minutes', 'Device', 'Note', 'Flag', 'Timestamp (UTC)']];
     for (const p of [...data.punches].sort((a, b) => a.ts.localeCompare(b.ts))) {
       const t = new Date(p.ts);
-      rows.push([dayKey(t), hhmm(t), opId(p.email), p.name, p.email, p.type.toUpperCase(), locationName(locOf(p)), p.station, p.shiftId, p.grace || '', p.source, p.note, p.flag ? 'Left early' : offIds.has(p.id) ? 'Not on the schedule' : '', p.ts]);
+      rows.push([dayKey(t), hhmm(t), opId(p.email), p.name, p.email, p.type.toUpperCase(), locationName(locOf(p)), p.station, p.shiftId, p.grace || '', p.source, p.note, p.flag === 'auto' ? 'Auto clock-out' : p.flag ? 'Left early' : offIds.has(p.id) ? 'Not on the schedule' : '', p.ts]);
     }
     download(`lotus-raw-checkins-${dayKey(new Date())}.csv`, rows);
   };
   const exportShifts = () => {
-    const rows = [['Date', 'Operator ID', 'Name', 'Email', 'Location', 'Robot', 'In', 'Out', 'Recorded hours', 'Left early', 'Note']];
+    const rows = [['Date', 'Operator ID', 'Name', 'Email', 'Location', 'Robot', 'In', 'Out', 'Recorded hours', 'Left early', 'Auto clock-out', 'Note']];
     for (const s of [...sessions].filter((x) => !x.live).sort((a, b) => a.start - b.start)) {
-      rows.push([s.day, opId(s.email), s.name, s.email, locationName(locOf(s)), s.station, hhmm(s.start), hhmm(s.end), s.hours.toFixed(2), s.early ? 'Yes' : '', s.note || '']);
+      rows.push([s.day, opId(s.email), s.name, s.email, locationName(locOf(s)), s.station, hhmm(s.start), hhmm(s.end), s.hours.toFixed(2), s.early ? 'Yes' : '', s.auto ? 'Yes' : '', s.note || '']);
     }
     download(`lotus-raw-sessions-${dayKey(new Date())}.csv`, rows);
   };
@@ -104,7 +104,7 @@ export function Records() {
             <Row
               key={it.p.id}
               leading={<span className={`row-icon icon-${it.p.type}`}>{it.p.type === 'in' ? <LogIn size={16} /> : <LogOut size={16} />}</span>}
-              title={<>{it.p.name}{it.p.flag && <Tag tone="bad">Left early</Tag>}{offIds.has(it.p.id) && <Tag tone="warn">Not on the schedule</Tag>}</>}
+              title={<>{it.p.name}{it.p.flag === 'auto' ? <Tag tone="warn">Auto clock-out</Tag> : it.p.flag && <Tag tone="bad">Left early</Tag>}{offIds.has(it.p.id) && <Tag tone="warn">Not on the schedule</Tag>}</>}
               subtitle={`${it.p.type === 'in' ? 'In' : 'Out'} · ${locationName(locOf(it.p))} · ${robotTitle(it.p.station)}${it.p.note ? ` · “${it.p.note}”` : ''}`}
               trailing={<span className="mono-num">{fmtTime(it.at)}</span>}
             />

@@ -149,7 +149,7 @@ export function Hours() {
                 key={+s.start}
                 title={`${fmtDay(s.start)} · ${robotTitle(s.station)}`}
                 subtitle={`${fmtTime(s.start)} – ${s.live ? 'now' : fmtTime(s.end)}${s.note ? ` · “${s.note}”` : ''}`}
-                trailing={<>{s.early && <Tag tone="bad">Left early</Tag>}<span className="mono-num">{fmtHrsU(s.hours)}</span></>}
+                trailing={<>{s.early && <Tag tone="bad">Left early</Tag>}{s.auto && <Tag tone="warn">Auto clock-out</Tag>}<span className="mono-num">{fmtHrsU(s.hours)}</span></>}
               />
             ))}
             {(person.issues || []).filter((i) => i.kind !== 'early').map((i) => (

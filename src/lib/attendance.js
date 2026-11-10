@@ -35,9 +35,10 @@ export function nextShift(schedule, punches, email, now = new Date()) {
 }
 
 // What a clock-in tap is allowed to do: block it before the window opens, warn
-// and record grace inside it, or go ahead. With no shift it goes through, flagged.
+// and record grace inside it, or go ahead. With no shift there's nothing to clock
+// into (user rule, 2026-11-06): an open spot books a shift first.
 export function clockInCheck(shift, now = new Date()) {
-  if (!shift) return { allowed: true, unscheduled: true, grace: 0 };
+  if (!shift) return { allowed: false, reason: 'no_shift' };
   const w = clockWindow(shift, now);
   if (w.state === 'early') return { allowed: false, reason: 'early', window: w };
   if (w.state === 'over') return { allowed: false, reason: 'over', window: w };
