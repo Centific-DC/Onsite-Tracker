@@ -88,7 +88,7 @@ export function Roster() {
           <Row title={`${stray.length} ${stray.length === 1 ? 'name has' : 'names have'} a number added by mistake`} subtitle="Nobody else on the roster has the plain name." trailing={<button type="button" className="btn btn-plain btn-sm" disabled={fixing} onClick={fixNames}>{fixing ? 'Fixing…' : 'Fix names'}</button>} className="row-wrap" />
         </Group>
       )}
-      <Group footer={`Every pair needs at least one experienced operator. Pick Experienced or New for anyone, or leave it on Auto, where fewer than ${CFG.pairingMinSessions} completed sessions means new. Your choice stays when the roster is re-imported. The weekly limit is ${CFG.weeklyHourCap} hrs.`}>
+      <Group footer={`Every pair needs at least one experienced operator. Pick Experienced or New for anyone, or leave it on Auto, where admins are experienced and anyone else with fewer than ${CFG.pairingMinSessions} completed sessions is new. Your choice stays when the roster is re-imported, unless the file has an Experience column. The weekly limit is ${CFG.weeklyHourCap} hrs.`}>
         {ops.map((o) => {
           const done = completedSessions(o, sessions);
           const x = experience(o, sessions);

@@ -64,7 +64,7 @@ export function ImportSheet({ open, onOpenChange, kinds = ['roster', 'schedule']
     );
     onOpenChange(false);
   };
-  const label = (x) => (kind === 'roster' ? `${x.name} · ${x.email}${x.changed ? ` · ${x.changed.join(', ')}` : ''}` : `${fmtDay(parseDay(x.date))} · ${x.name} · ${locationName(x.location)} · ${fmtTime(shiftTimes(x).start)}–${fmtTime(shiftTimes(x).end)}`);
+  const label = (x) => (kind === 'roster' ? `${x.name} · ${x.email}${x.changed ? ` · ${x.changed.join(', ')}` : ''}${x.matchedBy ? ' · matched by name' : ''}` : `${fmtDay(parseDay(x.date))} · ${x.name} · ${locationName(x.location)} · ${fmtTime(shiftTimes(x).start)}–${fmtTime(shiftTimes(x).end)}`);
   const sub = (x) => (kind === 'roster' ? `${x.id} · ${locationName(x.location) || 'No lab'}` : [robotTitle(x.station) || 'Any robot', x.template || 'Custom time', x.pair && 'Paired'].filter(Boolean).join(' · '));
   const count = plan ? plan.add.length + plan.update.length : 0;
   const scheduleOnly = kinds.length === 1 && kinds[0] === 'schedule';
@@ -81,7 +81,7 @@ export function ImportSheet({ open, onOpenChange, kinds = ['roster', 'schedule']
           <Segmented label="What to import" value={kind} onChange={(v) => { setKind(v); setSheet(null); setErr(''); }} options={[{ value: 'roster', label: 'Active Roster 2' }, { value: 'schedule', label: 'Schedule' }].filter((o) => kinds.includes(o.value))} />
         </div>
       )}
-      <Group footer={kind === 'roster' ? 'Uses Name, Email, Cohort, Sessions completed, Training status and Location. New operators get the next ID.' : 'Uses Date, Lab, Shift (Morning, Afternoon, Night, or Start and End), Operator or Email, Robot (blank is Any robot) and Pair (rows with the same date, shift and Pair letter are booked together). Re-importing updates what changed.'}>
+      <Group footer={kind === 'roster' ? 'Uses Name, Email, Cohort, Sessions completed, Training status, Location and Experience (Experienced, New or Auto). Rows with no email are skipped. An email Lotus doesn’t know is matched to an operator by name first; otherwise it’s a new operator with the next ID.' : 'Uses Date, Lab, Shift (Morning, Afternoon, Night, or Start and End), Operator or Email, Robot (blank is Any robot) and Pair (rows with the same date, shift and Pair letter are booked together). Re-importing updates what changed.'}>
         <label className="field-row"><span>File</span><input type="file" accept={kind === 'roster' ? '.csv,text/csv,text/plain' : '.xlsx,.csv,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'} onChange={file} /></label>
         {sheet
           ? <div className="empty-row">Reading the “{sheet.name}” sheet of {sheet.file}.</div>

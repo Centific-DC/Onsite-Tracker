@@ -12,7 +12,7 @@ export function ExperienceSelect({ op, sessions, className = 'sel-pill' }) {
     // Only the email and the mark: the flow changes just the fields it's sent.
     updateUsers([{ email: op.email, experience: v }], `${op.name}’s experience`);
     const now = experience({ ...op, experience: v }, sessions);
-    toast(`${op.name}: ${now.level === 'new' ? 'New' : 'Experienced'}`, { description: v ? 'Set by you. Re-importing the roster keeps it.' : `Decided by completed sessions (${x.done}).` });
+    toast(`${op.name}: ${now.level === 'new' ? 'New' : 'Experienced'}`, { description: v ? 'Set by you. Re-importing the roster keeps it, unless the file has an Experience column.' : x.admin ? 'Admins are always experienced.' : `Decided by completed sessions (${x.done}).` });
   };
   return (
     <Select
@@ -21,7 +21,7 @@ export function ExperienceSelect({ op, sessions, className = 'sel-pill' }) {
       value={op.experience || ''}
       onChange={save}
       options={[
-        { value: '', label: `Auto · ${x.marked ? experience({ ...op, experience: '' }, sessions).level : x.level}`, hint: `${x.done} sessions` },
+        { value: '', label: `Auto · ${x.marked ? experience({ ...op, experience: '' }, sessions).level : x.level}`, hint: x.admin ? 'Admin' : `${x.done} sessions` },
         { value: 'experienced', label: 'Experienced' },
         { value: 'new', label: 'New' },
       ]}

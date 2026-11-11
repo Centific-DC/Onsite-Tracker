@@ -38,6 +38,7 @@ const FIELDS = {
   completed: ['completed', 'sessionscompleted', 'completedsessions', 'sessionsdone', 'noofsessionscompleted'],
   scheduledCount: ['sessionsscheduled', 'scheduled', 'scheduledsessions'],
   training: ['training', 'trainingstatus', 'status', 'onboardingstatus'],
+  experience: ['experience', 'experiencelevel', 'level'],
   date: ['date', 'shiftdate', 'day', 'workdate'],
   start: ['start', 'starttime', 'shiftstart', 'from'],
   end: ['end', 'endtime', 'shiftend', 'to'],
@@ -97,8 +98,28 @@ export function nextOperatorId(operators) {
   return (k) => `OP-${String(n + k).padStart(4, '0')}`;
 }
 
+// Names compared loosely: case, accents, punctuation and middle names don't matter.
+const nameTokens = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter(Boolean);
+export function sameName(a, b) {
+  const x = nameTokens(a);
+  const y = nameTokens(b);
+  if (x.length < 2 || y.length < 2) return x.length > 0 && x.join(' ') === y.join(' ');
+  if (x.join(' ') === y.join(' ')) return true;
+  if (x[0] === y[0] && x[x.length - 1] === y[y.length - 1]) return true;
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  return short.every((t) => long.includes(t));
+}
+// The one known operator with this name, or null when none or several match.
+export function matchByName(name, operators) {
+  const hits = (operators || []).filter((o) => sameName(name, o.name));
+  return hits.length === 1 ? hits[0] : null;
+}
+const LEVELS = { experienced: 'experienced', exp: 'experienced', new: 'new', auto: '' };
+
 // Roster import: new emails get the next operator ID, known ones keep theirs and
-// update only the fields the sheet has.
+// update only the fields the sheet has. A row whose email Lotus doesn't know is
+// matched by name before it's added, so a different email spelling doesn't make a
+// second account. Rows with no email are skipped (not onboarded yet).
 export function planRosterImport(text, operators, today) {
   const [header = [], ...rows] = parseCsv(text);
   const map = mapHeaders(header);
@@ -116,13 +137,16 @@ export function planRosterImport(text, operators, today) {
       location: matchLocation(pick(r, map, 'location')) || undefined,
       completedSessions: map.completed != null && pick(r, map, 'completed') !== '' ? Number(pick(r, map, 'completed')) || 0 : undefined,
       training: pick(r, map, 'training') || undefined,
+      experience: map.experience != null && pick(r, map, 'experience').toLowerCase() in LEVELS ? LEVELS[pick(r, map, 'experience').toLowerCase()] : undefined,
     };
     Object.keys(fields).forEach((f) => fields[f] === undefined && delete fields[f]);
     if (fields.completedSessions != null) fields.completedAsOf = today;
-    const cur = byEmail.get(email);
+    const known = byEmail.get(email);
+    const cur = known || matchByName(name, operators);
     if (cur) {
+      if (!known) delete fields.name;
       const changed = Object.entries(fields).filter(([f, v]) => f !== 'completedAsOf' && String(cur[f] ?? '') !== String(v));
-      if (changed.length) plan.update.push({ ...cur, ...fields, changed: changed.map(([f]) => f) });
+      if (changed.length) plan.update.push({ ...cur, ...fields, changed: changed.map(([f]) => f), ...(known ? {} : { matchedBy: 'name' }) });
       else plan.skip.push({ line: i + 2, name: cur.name, reason: 'No changes' });
     } else {
       if (!fields.name) { plan.skip.push({ line: i + 2, name: email, reason: 'No name' }); continue; }

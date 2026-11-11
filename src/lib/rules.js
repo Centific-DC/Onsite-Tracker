@@ -20,8 +20,8 @@ export function completedSessions(op, sessions) {
 }
 
 // Experienced or new. An admin can mark an operator either way on Roster, and
-// that mark wins. Without one, fewer than `pairingMinSessions` completed sessions
-// means new.
+// that mark wins. Without one, admins are experienced, and otherwise fewer than
+// `pairingMinSessions` completed sessions means new.
 export const EXPERIENCE = {
   experienced: { label: 'Experienced', tone: 'on' },
   new: { label: 'New', tone: 'warn' },
@@ -29,7 +29,8 @@ export const EXPERIENCE = {
 export function experience(op, sessions, min = CFG.pairingMinSessions) {
   const done = completedSessions(op, sessions);
   const mark = op?.experience === 'experienced' || op?.experience === 'new' ? op.experience : '';
-  return { level: mark || (done < min ? 'new' : 'experienced'), marked: !!mark, done };
+  const admin = (op?.roles || []).includes('admin');
+  return { level: mark || (admin || done >= min ? 'experienced' : 'new'), marked: !!mark, done, admin };
 }
 export const isNew = (op, sessions, min) => !!op && experience(op, sessions, min).level === 'new';
 
