@@ -5,7 +5,7 @@ import { LOCATIONS } from '../src/lib/config.js';
 import { clockInCheck } from '../src/lib/attendance.js';
 import { buildSessions, delivered } from '../src/lib/hours.js';
 import { APPROVED_COLUMNS, approvedRows, reviewDays } from '../src/lib/review.js';
-import { checkNewShift, conflicts, pairingRisks, weeklyLoad } from '../src/lib/rules.js';
+import { checkNewShift, conflicts, experience, pairingRisks, weeklyLoad } from '../src/lib/rules.js';
 import { planRosterImport, planScheduleImport } from '../src/lib/importer.js';
 import { demo, punchFlag, setDemoActor } from '../src/lib/api.js';
 import { parseDay } from '../src/lib/time.js';
@@ -195,6 +195,24 @@ describe('scheduling', () => {
     const again = planRosterImport(csv, after, '2026-11-05');
     expect(again.add).toEqual([]);
     expect(again.update).toEqual([]);
+  });
+
+  it('13b. a roster row with an unknown email matches an operator by name, and Experience is read', () => {
+    const ops = [{ ...avery, id: 'OP-0001', name: 'Avery J. Lin' }, { email: 'sam@example.com', id: 'OP-0002', name: 'Sam Okafor', completedSessions: 0 }];
+    const csv = 'Name,Email,Sessions Completed,Experience\nÁvery Lin,avery.lin@other.example.com,3,\nSam Okafor,sam@example.com,0,Experienced\nNo Email Yet,,5,\n';
+    const plan = planRosterImport(csv, ops, '2026-11-10');
+    expect(plan.add).toEqual([]);
+    expect(plan.update.map((o) => [o.id, o.email, o.matchedBy || '', o.changed])).toEqual([
+      ['OP-0001', avery.email, 'name', ['completedSessions']],
+      ['OP-0002', 'sam@example.com', '', ['experience']],
+    ]);
+    expect(plan.skip.map((x) => x.reason)).toEqual(['No valid email']);
+  });
+
+  it('13c. admins are experienced on Auto; a mark still wins', () => {
+    expect(experience({ email: 'a@x.com', roles: ['admin'], completedSessions: 0 }, []).level).toBe('experienced');
+    expect(experience({ email: 'a@x.com', roles: ['operator'], completedSessions: 1 }, []).level).toBe('new');
+    expect(experience({ email: 'a@x.com', roles: ['admin'], experience: 'new' }, []).level).toBe('new');
   });
 
   it('imports a schedule tab, matching templates, and updates rather than duplicates on re-import', () => {
