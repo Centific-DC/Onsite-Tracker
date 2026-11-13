@@ -27,7 +27,8 @@ export const FIELDS = {
   tempPassword: { label: 'Temp password', secret: true },
   tempExpires: { label: 'Temp password expires' },
   // The password reset email: the link works once, so it is secret like a password.
-  resetLink: { label: 'Reset link', secret: true },
+  // Shown as the words "Choose a new password", never as the raw address.
+  resetLink: { label: 'Reset link', secret: true, linkText: 'Choose a new password' },
   resetExpires: { label: 'Reset link expires' },
 };
 export const FIELD_IDS = Object.keys(FIELDS);
@@ -35,6 +36,8 @@ export const FIELD_LABEL = Object.fromEntries(FIELD_IDS.map((id) => [id, FIELDS[
 export const isFieldId = (v) => typeof v === 'string' && Object.hasOwn(FIELDS, v);
 export const isBlockField = (id) => Boolean(FIELDS[id]?.block);
 export const isSecretField = (id) => Boolean(FIELDS[id]?.secret);
+/** Fields that hold a web address: they fill in as a link with words, never the bare URL. */
+export const fieldLinkText = (id) => FIELDS[id]?.linkText || '';
 
 /** Default styles for bare tags (from the editor's block menu or a paste). */
 export const TAG_STYLE = {

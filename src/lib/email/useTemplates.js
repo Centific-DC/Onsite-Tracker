@@ -3,6 +3,7 @@ import { useStore } from '../store.js';
 import { APP_URL } from '../config.js';
 import { DEFAULT_CONTENT } from './templates.js';
 import { buildEmail, sanitize, toTokens } from './render.js';
+import { hasOldAppLinks, hasRawLinkLine, tidySavedHtml } from './links.js';
 
 // The email templates everyone shares: the Lotus_Templates list (through the
 // Read flow), falling back to the defaults. Saving also stores `ready`, the
@@ -17,12 +18,15 @@ export function useTemplates() {
 
   const get = useCallback((id) => {
     const s = byId.get(id);
-    return s && typeof s.html === 'string' && typeof s.subject === 'string' ? { ...s, html: sanitize(s.html) } : DEFAULT_CONTENT[id];
+    return s && typeof s.html === 'string' && typeof s.subject === 'string' ? { ...s, html: sanitize(tidySavedHtml(s.html)) } : DEFAULT_CONTENT[id];
   }, [byId]);
+  // Saved templates (or their ready-to-send copy for the Monday flow) that still
+  // link to Lotus's old address or print a raw link.
+  const stale = useMemo(() => (saved || []).filter((t) => [t.html, t.ready].some((x) => hasOldAppLinks(x) || hasRawLinkLine(x))).map((t) => t.id), [saved]);
   const isEdited = useCallback((id) => byId.has(id) && !byId.get(id).original, [byId]);
 
   const save = useCallback((id, next) => {
-    const html = sanitize(next.html);
+    const html = sanitize(tidySavedHtml(next.html));
     return saveTemplate({ id, subject: next.subject.trim(), html, ready: buildEmail(toTokens(html), 'light', LOGO_URL) });
   }, [saveTemplate]);
 
@@ -31,5 +35,11 @@ export function useTemplates() {
     return saveTemplate({ id, subject: d.subject, html: d.html, ready: buildEmail(toTokens(d.html), 'light', LOGO_URL), original: true });
   }, [saveTemplate]);
 
-  return { get, isEdited, save, reset };
+  // Re-saves the stale templates as they read now, so the flows send the new links too.
+  const refreshLinks = useCallback(() => Promise.all(stale.map((id) => {
+    const t = get(id);
+    return byId.get(id)?.original ? reset(id) : save(id, t);
+  })), [stale, get, byId, reset, save]);
+
+  return { get, isEdited, save, reset, stale, refreshLinks };
 }

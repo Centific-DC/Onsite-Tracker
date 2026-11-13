@@ -426,7 +426,7 @@ Body `{ "shiftId", "missed": "in" | "out" | "both", "message", "source"?: "email
 - Find the `Lotus_Shifts` row (404 if missing). **An operator** can only ask about their own shift (`Email` = `callerEmail`, else 403 `That shift isn’t yours.`), and only once it has started. `source`, `email` and `requestedAt` are ignored for them: `Source` = `app`, `RequestedAt` = `utcNow()`.
 - **An admin** logging an email sends `source` = `email`, the operator's `email` (must match the shift) and `requestedAt` (when the email arrived; not after now).
 - If a row for that `ShiftID` exists with `Status` ≠ `declined`: 409 `There’s already a request for that shift.`
-- Add the `Lotus_Corrections` row (`Status` = `open`, names and IDs from the shift), then, for `app` requests, **send the request email** (respond first, send after): to every active `Lotus_Users` row with `admin` in `Roles`, CC the operator, subject `Missed clock-<in|out|in and out>: <Name>, <Date>`, body: name, operator ID, lab, robot, scheduled times, what they missed, their message, when it was sent, the partner names on that shift (as for Read's `partners`) and a link to `#/admin/review`. `EmailTestMode` sends it to the alias as usual. Add a `Lotus_Notices` row (`Kind` = `correction-request`).
+- Add the `Lotus_Corrections` row (`Status` = `open`, names and IDs from the shift), then, for `app` requests, **send the request email** (respond first, send after): to every active `Lotus_Users` row with `admin` in `Roles`, CC the operator, subject `Missed clock-<in|out|in and out>: <Name>, <Date>`, body: name, operator ID, lab, robot, scheduled times, what they missed, their message, when it was sent, the partner names on that shift (as for Read's `partners`) and an **Open Review** link to `https://centific-dc.github.io/Onsite-Tracker/#/admin/review` (see *Links in emails*). `EmailTestMode` sends it to the alias as usual. Add a `Lotus_Notices` row (`Kind` = `correction-request`).
 - Respond `{ "ok": true, "correction": { … } }`.
 
 ### `correction_resolve`: role `admin`
@@ -460,6 +460,8 @@ Up to 25 messages per call. For each message:
 2. `html` must be under 200 KB.
 3. Send it, *Is HTML* = Yes, *Reply To* = `project_lotus@centific.com`. While `EmailTestMode` is Yes, send to `project_lotus@centific.com` instead, with a first line `Test mode · intended for <to>` above the HTML.
 4. Add a `Lotus_Notices` row (`Test` = `EmailTestMode`, `Snapshot` = `string(snapshot)`).
+
+**Links in emails** (2026-11-13): the app lives at `https://centific-dc.github.io/Onsite-Tracker/` since the repo moved to the Centific-DC org; the old `dk-centific.github.io` address no longer works. Any email a flow builds itself (correction requests, strikes, early clock-out, shift reminders) links there, and only as words (a button or link text such as **Open Lotus** or **Open Review**), never as a bare address printed in the body.
 
 **Sending mailbox** (decided 2026-11-05): `project_lotus@centific.com` is a mail group, not a mailbox, so nothing can be sent *from* it. For now every Lotus email goes out with **Send an email (V2)** from the flow connection owner's own mailbox (David's). `Lotus_Settings.SendFrom` holds which mailbox is used; when a shared mailbox with *Send As* rights exists, switch the action to **Send an email from a shared mailbox (V2)** with that address and update `SendFrom`. The app doesn't change.
 
@@ -623,6 +625,6 @@ User rule, 2026-11-06: an operator who forgets to clock out is clocked out by th
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:
-- the three HTTP trigger URLs (Lotus Auth, Lotus Read, Lotus Write), in a private file only, never in chat or in the repo. David adds them as GitHub Actions secrets (`LOTUS_AUTH_URL`, `LOTUS_READ_URL`, `LOTUS_WRITE_URL`); the Pages deploy writes them into the built site, so the app calls the flows straight from people's browsers at https://dk-centific.github.io with the text/plain body. Every Response action must therefore send the header `Access-Control-Allow-Origin: https://dk-centific.github.io`, or the browser can't read the answer.
+- the three HTTP trigger URLs (Lotus Auth, Lotus Read, Lotus Write), in a private file only, never in chat or in the repo. David adds them as GitHub Actions secrets (`LOTUS_AUTH_URL`, `LOTUS_READ_URL`, `LOTUS_WRITE_URL`); the Pages deploy writes them into the built site, so the app calls the flows straight from people's browsers at https://centific-dc.github.io/Onsite-Tracker/ with the text/plain body. Every Response action must therefore send the header `Access-Control-Allow-Origin: https://centific-dc.github.io` (the site moved there from dk-centific.github.io when the repo moved to the Centific-DC org on 2026-11-10), or the browser can't read the answer.
 - the expression you used to parse the text/plain body
 - anything you couldn't build as specified

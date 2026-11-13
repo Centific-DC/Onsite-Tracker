@@ -64,6 +64,17 @@ export function Emails() {
   const content = store.get(meta.id);
   const editing = draft !== null;
 
+  // Templates saved before the repo moved to Centific-DC still link to the old
+  // github.io address. A scheduler opening this page re-saves them once, in the
+  // background, so the Monday flow's ready-to-send copies get the new links too.
+  const refreshed = useRef(false);
+  const { stale, refreshLinks } = store;
+  useEffect(() => {
+    if (!canEdit || !stale.length || refreshed.current) return;
+    refreshed.current = true;
+    background('Updating email links', refreshLinks).catch(() => { refreshed.current = false; });
+  }, [canEdit, stale, refreshLinks, background]);
+
   useEffect(() => {
     let live = true;
     Promise.all([tintedLogo(logoPng, LIGHT.logo), tintedLogo(logoPng, DARK.logo)]).then(([light, dark]) => { if (live) setLogos({ light, dark }); });
