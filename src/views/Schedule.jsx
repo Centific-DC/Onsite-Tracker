@@ -128,7 +128,7 @@ export function Schedule() {
               <Mail size={16} />{!phone && ' Email schedules'}{unsent + changedN > 0 && <span className="mail-count" aria-label={`${unsent + changedN} to send`}>{unsent + changedN}</span>}
             </button>
           )}
-          <button type="button" className="btn btn-plain btn-sm" aria-label={phone ? 'Import schedule' : undefined} onClick={() => setImporting(true)}><Upload size={16} />{!phone && ' Import'}</button>
+          <button type="button" className="btn btn-plain btn-sm" data-tour="sched-import" aria-label={phone ? 'Import schedule' : undefined} onClick={() => setImporting(true)}><Upload size={16} />{!phone && ' Import'}</button>
           <button type="button" className="btn btn-primary btn-sm" data-tour="sched-add" onClick={() => setAdding({ date: dayKey(thisWeek ? now : wk0) })}><Plus size={16} /> Add shift</button>
         </div>
       </header>

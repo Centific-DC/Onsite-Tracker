@@ -307,7 +307,7 @@ function Person({ person, onDone, laptop }) {
             {partnersOf(data, card).length > 0 && <Detail icon={<Users size={18} />}>With {andList(partnersOf(data, card))}</Detail>}
           </div>
         ) : (
-          <p className="op-body">Nothing booked for today. If your lead asked you to come in, you can still clock in and your manager will review it.</p>
+          <p className="op-body">Nothing booked for today. If your lead asked you to come in, ask your scheduler to book the shift so you can clock in.</p>
         )}
       </Card>
 
@@ -462,7 +462,8 @@ function MyTime({ person }) {
       </Well>
       <MyRequests email={person.email} now={now} />
       <div className="op-foot op-forgot">
-        <button type="button" className="op-link" onClick={() => setForgot(true)}>Forgot to clock in or out?</button>
+        <button type="button" className="op-link" data-tour="op-forgot" onClick={() => setForgot(true)}>Forgot to clock in or out?</button>
+        <a className="op-link" href="#/guide" data-tour="op-guide">How Lotus works: the guide</a>
       </div>
       <ForgotSheet open={forgot} onOpenChange={setForgot} person={person} now={now} />
       {upcoming.length > 0 && (

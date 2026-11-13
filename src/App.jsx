@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Toaster, toast } from 'sonner';
-import { Bot, CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, Eye, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
+import { BookOpen, Bot, CalendarDays, ChevronRight, CircleHelp, KeyRound, ChartColumn, ClipboardCheck, Clock, Mail, ExternalLink, Eye, FileSpreadsheet, IdCard, Laptop, List, LogOut, Monitor, Moon, RefreshCw, Search, Settings, Smartphone, Sun, Users } from 'lucide-react';
 import { useStore } from './lib/store.js';
 import { CFG, DEMO, DEMO_CHOSEN, LIVE_READY, PREVIEW } from './lib/config.js';
 import { useTimings } from './lib/timing.js';
@@ -21,6 +21,7 @@ import { Reports } from './views/Reports.jsx';
 import { Emails } from './views/Emails.jsx';
 import { Users as UsersView } from './views/Users.jsx';
 import { ResetPassword } from './views/ResetPassword.jsx';
+import { Guide } from './views/Guide.jsx';
 import { OperatorSheet, SearchSheet } from './components/Search.jsx';
 import centificMark from './assets/centific-mark.png';
 import { Tour } from './tour/Tour.jsx';
@@ -47,6 +48,8 @@ const ADMIN_NAV = [
   { id: 'admin/reports', label: 'Reports', icon: FileSpreadsheet, view: Reports, roles: ['approver', 'reporting'] },
   // Editing templates is desk work, so it stays off the phone tab bar.
   { id: 'admin/emails', label: 'Emails', icon: Mail, view: Emails, roles: ['scheduler', 'approver'], phone: false },
+  // Every feature, step by step, for operators and staff (src/lib/guide.js).
+  { id: 'admin/guide', label: 'Guide', icon: BookOpen, view: Guide, roles: ['scheduler', 'approver', 'reporting', 'admin'], phone: false },
   // Who can sign in, and with which roles: opened from Settings, not the sidebar.
   // The Lotus Auth flow checks the admin role too.
   { id: 'admin/users', label: 'Users', icon: KeyRound, view: UsersView, roles: ['admin'], phone: false, hidden: true },
@@ -55,6 +58,8 @@ const REFRESH_MS = 5 * 60 * 1000;
 const CHECKIN = { id: 'checkin', label: 'Clock in', icon: Clock, view: CheckIn };
 // A password reset link (#/reset?u=…&c=…) opens this, signed in or not.
 const RESET = { id: 'reset', label: 'Reset password', icon: KeyRound, view: ResetPassword };
+// The operator guide (#/guide), opened from the operator page, Settings and the tour.
+const GUIDE = { id: 'guide', label: 'Guide', icon: BookOpen, view: Guide };
 const NO_ACCESS = { id: 'admin/none', label: 'Admin', view: NoAccess };
 const LEGACY = { today: 'admin/today', schedule: 'admin/schedule', hours: 'admin/hours', records: 'admin/records', admin: 'admin/today' };
 
@@ -119,7 +124,7 @@ export default function App() {
   }, [route]);
   const isAdmin = route.startsWith('admin') || route in LEGACY;
   const nav = ADMIN_NAV.filter((n) => hasRole(session, ...n.roles));
-  const item = route === 'reset' ? RESET : isAdmin ? nav.find((n) => n.id === (LEGACY[route] || route)) || nav[0] || NO_ACCESS : CHECKIN;
+  const item = route === 'reset' ? RESET : route === 'guide' ? GUIDE : isAdmin ? nav.find((n) => n.id === (LEGACY[route] || route)) || nav[0] || NO_ACCESS : CHECKIN;
 
   // The page's large title folds into the phone top bar once it scrolls under it.
   const [collapsed, setCollapsed] = useState(false);
@@ -139,7 +144,7 @@ export default function App() {
   // The tour: the welcome tour on first sign-in, then each page's own tour on its
   // first visit. Seen tours are remembered per username in this browser.
   const tour = useTour();
-  const section = item === RESET ? 'reset' : isAdmin ? item.id : 'checkin';
+  const section = item === RESET ? 'reset' : item === GUIDE ? 'guide' : isAdmin ? item.id : 'checkin';
   const signedIn = authStage === 'signedIn';
   useEffect(() => { if (signedIn) tour.setWho(session.username || session.email, session.roles || []); }, [signedIn, session?.username, session?.email, (session?.roles || []).join()]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { useTour.getState().stop(); }, [section, authStage]);
@@ -396,6 +401,7 @@ function SettingsSheet({ open, onOpenChange, admin, onTour }) {
       {onTour && (
         <Group title="Help">
           <Row leading={<CircleHelp size={18} aria-hidden="true" />} title="Take the tour" subtitle={admin ? 'A short walk through Lotus admin' : 'A short walk through clocking in'} trailing={<ChevronRight size={18} aria-hidden="true" />} onClick={() => { onOpenChange(false); setTimeout(onTour, 250); }} />
+          <Row leading={<BookOpen size={18} aria-hidden="true" />} title="Open the guide" subtitle="Every feature, step by step" trailing={<ChevronRight size={18} aria-hidden="true" />} onClick={() => { onOpenChange(false); go(admin ? 'admin/guide' : 'guide'); }} />
         </Group>
       )}
       {hasRole(session, 'admin') && (
