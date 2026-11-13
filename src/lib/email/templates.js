@@ -86,7 +86,6 @@ const reset = [
     `${strong('It works once')} and stops working on ${strongField('resetExpires')}. Your current password keeps working until you choose a new one.`,
     `${strong('Didn’t expect this?')} You can ignore it, or reply to this email. Nobody from the team will ever ask you for your password.`,
   ]),
-  paragraph(`If the button doesn’t work, copy this link into your browser: ${fieldChip('resetLink')}`),
   sign('Thank you,'),
 ].join('');
 

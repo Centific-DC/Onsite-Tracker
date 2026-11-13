@@ -3,7 +3,7 @@ import { useStore } from '../store.js';
 import { APP_URL } from '../config.js';
 import { DEFAULT_CONTENT } from './templates.js';
 import { buildEmail, sanitize, toTokens } from './render.js';
-import { currentAppLinks, hasOldAppLinks } from './links.js';
+import { hasOldAppLinks, hasRawLinkLine, tidySavedHtml } from './links.js';
 
 // The email templates everyone shares: the Lotus_Templates list (through the
 // Read flow), falling back to the defaults. Saving also stores `ready`, the
@@ -18,15 +18,15 @@ export function useTemplates() {
 
   const get = useCallback((id) => {
     const s = byId.get(id);
-    return s && typeof s.html === 'string' && typeof s.subject === 'string' ? { ...s, html: sanitize(currentAppLinks(s.html)) } : DEFAULT_CONTENT[id];
+    return s && typeof s.html === 'string' && typeof s.subject === 'string' ? { ...s, html: sanitize(tidySavedHtml(s.html)) } : DEFAULT_CONTENT[id];
   }, [byId]);
   // Saved templates (or their ready-to-send copy for the Monday flow) that still
-  // link to Lotus's old address.
-  const stale = useMemo(() => (saved || []).filter((t) => hasOldAppLinks(t.html) || hasOldAppLinks(t.ready)).map((t) => t.id), [saved]);
+  // link to Lotus's old address or print a raw link.
+  const stale = useMemo(() => (saved || []).filter((t) => [t.html, t.ready].some((x) => hasOldAppLinks(x) || hasRawLinkLine(x))).map((t) => t.id), [saved]);
   const isEdited = useCallback((id) => byId.has(id) && !byId.get(id).original, [byId]);
 
   const save = useCallback((id, next) => {
-    const html = sanitize(currentAppLinks(next.html));
+    const html = sanitize(tidySavedHtml(next.html));
     return saveTemplate({ id, subject: next.subject.trim(), html, ready: buildEmail(toTokens(html), 'light', LOGO_URL) });
   }, [saveTemplate]);
 

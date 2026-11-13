@@ -20,3 +20,17 @@ describe('links to the app in emails', () => {
     expect(currentAppLinks(html)).toBe(html);
   });
 });
+
+describe('emails never show a raw link', async () => {
+  const { tidySavedHtml, hasRawLinkLine } = await import('../src/lib/email/links.js');
+  const { fieldChip } = await import('../src/lib/email/blocks.js');
+
+  it('the default reset email has only the button', () => {
+    expect(DEFAULT_CONTENT['operator-reset'].html).not.toContain('copy this link');
+  });
+  it('drops the copy-this-link line from templates saved before', () => {
+    const saved = `<p>Hi</p><p style="x">If the button doesn’t work, copy this link into your browser: ${fieldChip('resetLink')}</p><p>Thank you,</p>`;
+    expect(hasRawLinkLine(saved)).toBe(true);
+    expect(tidySavedHtml(saved)).toBe('<p>Hi</p><p>Thank you,</p>');
+  });
+});

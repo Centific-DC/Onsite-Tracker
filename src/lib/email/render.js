@@ -1,4 +1,4 @@
-import { FIELD_LABEL, FONT, TAG_STYLE, isBlockField, isFieldId, isSecretField } from './blocks.js';
+import { FIELD_LABEL, FONT, TAG_STYLE, isBlockField, isFieldId, isSecretField, fieldLinkText } from './blocks.js';
 import { LIGHT, toDark } from './palette.js';
 
 // Turning a template into an email, as in Project Atlas: clean what the editor
@@ -107,6 +107,18 @@ export function fillFields(html, values) {
       continue;
     }
     const text = String(value ?? '').trim();
+    const words = fieldLinkText(id);
+    if (words && /^https?:/i.test(text)) {
+      // Emails never show a raw address: the link reads as words.
+      const a = doc.createElement('a');
+      a.setAttribute('href', text);
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener');
+      a.setAttribute('style', TAG_STYLE.a);
+      a.textContent = words;
+      chip.replaceWith(a);
+      continue;
+    }
     chip.replaceWith(text ? doc.createTextNode(text) : missing(doc, id));
   }
   return doc.body.innerHTML;

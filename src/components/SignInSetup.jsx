@@ -129,7 +129,7 @@ export function TempReveal({ user, temp, onDone, emailed }) {
 
 const RESET_SENT = {
   sent: (u) => `Sent to ${u.email}. The link works once, for ${RESET_HOURS} hours. Their current password keeps working until they choose a new one.`,
-  test: () => 'Test mode is on, so the reset email went to project_lotus@centific.com, not to them. Forward it, or turn test mode off in Settings.',
+  test: () => 'Test mode is on, so the reset email went to project_lotus@centific.com, not to them. Forward it. Test mode is switched off in SharePoint (Lotus_Settings, EmailTestMode = No).',
   demo: () => 'Demo mode: no email leaves this browser. Open the link below to try the reset page.',
 };
 

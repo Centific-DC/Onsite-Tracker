@@ -17,3 +17,14 @@ export function currentAppLinks(text, base = APP_URL) {
   const to = base.endsWith('/') ? base : `${base}/`;
   return text.replace(OLD, () => to);
 }
+
+// The old reset template ended with "If the button doesn't work, copy this link into
+// your browser: <link>", which printed the raw address. Emails never show one, so
+// that line comes out of saved templates too (the button carries the link).
+const RAW_LINK_LINE = /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*copy this link into your browser(?:(?!<\/p>)[\s\S])*<\/p>/gi;
+
+/** True when a saved template still has the copy-this-link line. */
+export const hasRawLinkLine = (text) => typeof text === 'string' && new RegExp(RAW_LINK_LINE.source, 'i').test(text);
+
+/** A saved template as it should read now: current address, no raw-link line. */
+export const tidySavedHtml = (text) => (typeof text === 'string' ? currentAppLinks(text).replace(RAW_LINK_LINE, '') : text);
