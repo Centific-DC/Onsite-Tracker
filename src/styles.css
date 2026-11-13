@@ -908,3 +908,8 @@ p.err { text-align: center; margin: 0 0 12px; }
   .guide-table tbody th { width: 40%; }
 }
 @media (prefers-reduced-motion: reduce) { .guide-tile { transition: none; } .guide-tile:active { scale: none; } }
+
+/* Delete an operator added by mistake (Roster → Edit, admins). */
+.row-danger { width: 100%; justify-content: center; color: var(--red-text); font: inherit; font-weight: 600; }
+.row-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+@media (hover: hover) and (pointer: fine) { .row-danger:disabled:hover { background: none; } }

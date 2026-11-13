@@ -29,6 +29,7 @@ const SPLIT = {
   LOTUS_PUNCH_URL: 'punchUrl',
   LOTUS_SEND_EMAIL_URL: 'sendEmailUrl',
   LOTUS_RESET_PASSWORD_URL: 'resetPasswordUrl',
+  LOTUS_DELETE_USER_URL: 'deleteUserUrl',
 };
 
 const urls = { authUrl: https('LOTUS_AUTH_URL'), readUrl: https('LOTUS_READ_URL'), writeUrl: https('LOTUS_WRITE_URL'), correctionsUrl: https('LOTUS_CORRECTIONS_URL'), syncUrl: https('LOTUS_SCHEDULE_SYNC_URL') };

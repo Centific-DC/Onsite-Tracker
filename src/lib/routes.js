@@ -5,7 +5,7 @@
 // URLs come only from config.js, filled in at deploy time; never log or show one.
 
 // Config key → the flow it names (scripts/pages-config.mjs maps each secret to a key).
-export const SPLIT_KEYS = ['saveUserUrl', 'saveUsersUrl', 'saveShiftUrl', 'deleteShiftUrl', 'punchUrl', 'sendEmailUrl', 'resetPasswordUrl'];
+export const SPLIT_KEYS = ['saveUserUrl', 'saveUsersUrl', 'saveShiftUrl', 'deleteShiftUrl', 'punchUrl', 'sendEmailUrl', 'resetPasswordUrl', 'deleteUserUrl'];
 
 // Write actions → the one-job flow's config key. fill_in stays on Write (no Fill In
 // flow yet); undo_punch is test-only and never sent by the app.
@@ -15,6 +15,7 @@ const WRITE_ROUTES = {
   shift_delete: () => 'deleteShiftUrl',
   punch: () => 'punchUrl',
   email_send: () => 'sendEmailUrl',
+  user_delete: () => 'deleteUserUrl',
 };
 
 // Auth ops → the one-job flow's config key.
@@ -28,7 +29,7 @@ const AUTH_ROUTES = {
 const url = (cfg, key) => String((key && cfg[key]) || '').trim();
 
 // Names for the speed list in Settings (never the URL).
-const NAMES = { saveUserUrl: 'Save User', saveUsersUrl: 'Save Users', saveShiftUrl: 'Save Shift', deleteShiftUrl: 'Delete Shift', punchUrl: 'Punch', sendEmailUrl: 'Send Email', resetPasswordUrl: 'Reset Password' };
+const NAMES = { saveUserUrl: 'Save User', saveUsersUrl: 'Save Users', saveShiftUrl: 'Save Shift', deleteShiftUrl: 'Delete Shift', punchUrl: 'Punch', sendEmailUrl: 'Send Email', resetPasswordUrl: 'Reset Password', deleteUserUrl: 'Delete User' };
 
 /** Which flow a Write body goes to, by name: a one-job flow's, or 'Write'. */
 export function writeFlowName(body, cfg) {
