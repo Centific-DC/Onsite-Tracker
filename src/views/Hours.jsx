@@ -5,7 +5,7 @@ import { useStore } from '../lib/store.js';
 import { summarize } from '../lib/hours.js';
 import { addDays, dayKey, fmtDay, fmtHrs, fmtTime, mondayOf, weekLabel, fmtHrsU } from '../lib/time.js';
 import { useNow } from '../lib/hooks.js';
-import { shiftHours } from '../lib/schedule.js';
+import { bookedHours } from '../lib/schedule.js';
 import { Avatar, Group, Num, Row, Sheet, Tag } from '../components/ui.jsx';
 import { robotTitle } from '../lib/robots.js';
 
@@ -48,9 +48,10 @@ export function Hours() {
     // Scheduled hours too, so someone booked who never came still shows, at 0.
     for (const r of (data.schedule || []).filter((x) => x.date >= dayKey(wk0) && x.date < dayKey(wk1))) {
       if (!m.has(r.email)) m.set(r.email, { name: r.name, email: r.email, byDay: {}, total: 0, sessions: [] });
-      const p = m.get(r.email);
-      p.planned = (p.planned || 0) + shiftHours(r);
+      (m.get(r.email).booked ||= []).push(r);
     }
+    // A back-to-back double's handover overlap counts once.
+    for (const p of m.values()) if (p.booked) p.planned = bookedHours(p.booked);
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [sum, data.schedule, wkKey]);
   const max = Math.max(sum.deliveredWeek, succ || 0, 1);

@@ -1,5 +1,5 @@
 import { locOf, locationById, locationName } from '../config.js';
-import { shiftHours } from '../schedule.js';
+import { bookedHours } from '../schedule.js';
 import { addDays, dayKey, fmtHrsU, parseDay, weekLabel } from '../time.js';
 import { firstName } from '../time.js';
 import { bulletList, shiftTable } from './blocks.js';
@@ -59,7 +59,7 @@ export function noticeStatus(data, wk0, testMode) {
     if (!shifts.length && !last?.snapshot?.length) continue;
     const diff = last ? diffShifts(last.snapshot, shifts) : null;
     const status = !last ? 'unsent' : diff.any ? 'changed' : 'current';
-    out.push({ op, shifts, last, diff, status, hours: shifts.reduce((a, r) => a + shiftHours(r), 0) });
+    out.push({ op, shifts, last, diff, status, hours: bookedHours(shifts) });
   }
   return out.sort((a, b) => a.op.name.localeCompare(b.op.name));
 }

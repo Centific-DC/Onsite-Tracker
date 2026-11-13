@@ -14,7 +14,7 @@ import { SendSchedules } from '../components/SendSchedules.jsx';
 import { ImportSheet } from '../components/ImportSheet.jsx';
 import { SheetSyncLine } from '../components/SheetSync.jsx';
 import { noticeStatus } from '../lib/email/notices.js';
-import { STATUS, backfillStart, dayPlan, pairOf, robotLabel, shiftHours, shiftTimes } from '../lib/schedule.js';
+import { STATUS, backfillStart, bookedHours, dayPlan, pairOf, robotLabel, shiftTimes } from '../lib/schedule.js';
 import { robotTitle } from '../lib/robots.js';
 
 const PAIR = 2;
@@ -97,7 +97,7 @@ export function Schedule() {
   const futureDays = days.filter((d) => dayKey(d) >= dayKey(now));
   const openCount = labs.reduce((a, l) => a + l.templates.reduce((c, t) => c + futureDays.reduce((e, d) => e + free(l, { template: t }, d, cellRows(l, { template: t }, dayKey(d))), 0), 0), 0);
   const missing = [...status.values()].filter((r) => inLabs(r) && (r.status === 'late' || r.status === 'noshow'));
-  const booked = weekSched.reduce((a, r) => a + shiftHours(r), 0);
+  const booked = bookedHours(weekSched);
   const attention = [
     risks.length && { tone: 'bad', label: 'Pairing risk', text: [...new Map(risks.map((x) => [x.names.join('+'), `${x.names.map(stub).join(' + ')} (${[...new Set(risks.filter((y) => y.names.join('+') === x.names.join('+')).map((y) => wd(y.date)))].join(', ')})`])).values()].join(' · ') },
     over.length && { tone: 'bad', label: `Over ${CFG.weeklyHourCap} hrs`, text: over.map((x) => `${x.name} ${fmtHrsU(x.hours)}`).join(' · ') },

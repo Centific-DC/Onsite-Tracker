@@ -12,7 +12,9 @@ const at = (date, hm) => {
 };
 
 // A shift's start and end as Dates. An end at or before the start runs past midnight.
+// Review's day rows already carry them as Dates.
 export function shiftTimes(r) {
+  if (r.start instanceof Date) return { start: r.start, end: r.end };
   const start = at(r.date, r.start);
   let end = at(r.date, r.end);
   if (end <= start) end = new Date(end.getTime() + 864e5);
@@ -20,6 +22,58 @@ export function shiftTimes(r) {
 }
 
 export const shiftHours = (r) => { const { start, end } = shiftTimes(r); return (end - start) / 36e5; };
+
+// Booked hours for a set of shifts, each operator's overlapping shifts merged: a
+// back-to-back double on the overlapping Redmond templates (Morning 7:00–12:30, then
+// Afternoon 12:00–17:30) is 10.5 hrs, not 11.
+export function bookedHours(rows) {
+  const by = new Map();
+  for (const r of rows || []) {
+    const { start, end } = shiftTimes(r);
+    if (!by.has(r.email)) by.set(r.email, []);
+    by.get(r.email).push([+start, +end]);
+  }
+  let total = 0;
+  for (const iv of by.values()) {
+    iv.sort((a, b) => a[0] - b[0]);
+    let cur = null;
+    for (const [s, e] of iv) {
+      if (cur && s <= cur[1]) cur[1] = Math.max(cur[1], e);
+      else { if (cur) total += cur[1] - cur[0]; cur = [s, e]; }
+    }
+    if (cur) total += cur[1] - cur[0];
+  }
+  return total / 36e5;
+}
+
+// Back-to-back doubles (Kate Young and David, 2026-11-13). Doubles happen when the
+// scheduling team approves them. Each shift stays its own record so billing is
+// itemized by shift: the operator clocks out of the first shift and straight into
+// the next, and that handover is never flagged as leaving early or arriving late.
+// A shift is back to back with the operator's next one when that one starts no
+// more than SWITCH_GAP_MIN after this one ends (or overlaps it, as the Redmond
+// templates do by 30 minutes).
+export const SWITCH_GAP_MIN = 5;
+const isBackToBack = (a, b) => {
+  const x = shiftTimes(a), y = shiftTimes(b);
+  return y.start > x.start && y.start <= new Date(+x.end + SWITCH_GAP_MIN * 6e4);
+};
+/** The same operator's next shift, when it follows `shift` back to back. */
+export function nextBackToBack(schedule, shift) {
+  if (!shift?.id) return null;
+  const gone = replacedIds(schedule);
+  return (schedule || [])
+    .filter((r) => r.email === shift.email && r.id !== shift.id && !gone.has(r.id) && isBackToBack(shift, r))
+    .sort((a, b) => shiftTimes(a).start - shiftTimes(b).start)[0] || null;
+}
+/** The same operator's shift that `shift` follows back to back. */
+export function prevBackToBack(schedule, shift) {
+  if (!shift?.id) return null;
+  const gone = replacedIds(schedule);
+  return (schedule || [])
+    .filter((r) => r.email === shift.email && r.id !== shift.id && !gone.has(r.id) && isBackToBack(r, shift))
+    .sort((a, b) => shiftTimes(b).start - shiftTimes(a).start)[0] || null;
+}
 
 export const STATUS = {
   onsite: { label: 'On site', tone: 'on' },
@@ -35,16 +89,18 @@ export function dayPlan(schedule, sessions, issues, day, now = new Date()) {
   const k = dayKey(day);
   const shifts = (schedule || []).filter((r) => r.date === k);
   const daySessions = sessions.filter((s) => s.day === k);
-  // Someone who checked in and forgot to check out still arrived.
-  const arrived = new Set([
-    ...daySessions.map((s) => s.email),
-    ...issues.filter((i) => i.kind === 'noout' && dayKey(i.at) === k).map((i) => i.email),
-  ]);
+  const noouts = issues.filter((i) => i.kind === 'noout' && dayKey(i.at) === k);
+  // Each shift has its own status, so an operator on a double who works the first
+  // shift and skips the second shows as missing for the second. A clock-in names
+  // its shift; one from before shift ids (no shiftId) counts for the whole day.
+  const forShift = (x, r) => x.email === r.email && (x.shiftId ? x.shiftId === r.id : true);
   const rows = shifts.map((r) => {
     const { start, end } = shiftTimes(r);
-    const mine = daySessions.filter((s) => s.email === r.email);
+    const mine = daySessions.filter((s) => forShift(s, r));
+    // Someone who checked in and forgot to check out still arrived.
+    const arrived = mine.length > 0 || noouts.some((i) => forShift(i, r));
     let status;
-    if (arrived.has(r.email)) status = mine.some((s) => s.live) ? 'onsite' : 'done';
+    if (arrived) status = mine.some((s) => s.live) ? 'onsite' : 'done';
     else if (now < new Date(start.getTime() + GRACE_MIN * 6e4)) status = 'upcoming';
     else if (now < end) status = 'late';
     else status = 'noshow';
@@ -137,17 +193,20 @@ export function partnersOf(data, shift) {
 }
 
 // Open spots an operator could fill right now, in their home lab: a booked operator
-// hasn't clocked in by the end of the grace period, nobody has replaced them yet, and
+// hasn't clocked in to that shift by the end of the grace period, nobody has replaced them yet, and
 // there's still more than half an hour of the shift left. Live, the Read flow sends
 // these as `openSpots` (no names: only the lab, robot and times). The demo works them
 // out from its full schedule.
 export function openSpots(data, email, home, now = new Date(), graceMin = GRACE_MIN) {
   const k = dayKey(now);
   const gone = replacedIds(data.schedule);
-  const inToday = new Set((data.punches || []).filter((p) => p.type === 'in' && dayKey(new Date(p.ts)) === k).map((p) => p.email));
-  if (inToday.has(email)) return [];
+  const insToday = (data.punches || []).filter((p) => p.type === 'in' && dayKey(new Date(p.ts)) === k);
+  if (insToday.some((p) => p.email === email)) return [];
+  // Per shift: someone on a double who worked the first shift and skipped the second
+  // leaves the second open.
+  const cameFor = (r) => insToday.some((p) => p.email === r.email && (p.shiftId ? p.shiftId === r.id : true));
   return (data.schedule || [])
-    .filter((r) => r.date === k && r.email !== email && !gone.has(r.id) && !inToday.has(r.email) && (!home || (r.location || '') === home))
+    .filter((r) => r.date === k && r.email !== email && !gone.has(r.id) && !cameFor(r) && (!home || (r.location || '') === home))
     .filter((r) => { const t = shiftTimes(r); return now >= new Date(t.start.getTime() + graceMin * 6e4) && now < new Date(t.end.getTime() - 30 * 6e4); })
     .map((r) => ({ shiftId: r.id, location: r.location, station: r.station, start: r.start, end: r.end, template: r.template, date: r.date }));
 }
