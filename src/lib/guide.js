@@ -212,7 +212,10 @@ export const STAFF_GUIDE = [
       'Experience: Auto counts completed sessions. Pick Experienced or New to override it.',
       'Admins: press Set up sign-in to give an operator a username and temporary password.',
     ],
-    tips: ['Every pair needs at least one experienced operator.'],
+    tips: [
+      'Every pair needs at least one experienced operator.',
+      'Added someone by mistake, like a typo in the email? Admins can delete them from Edit, as long as they have no clock-ins or other records. Anyone who has worked is set Inactive instead, which keeps their history.',
+    ],
   },
   {
     id: 'review',

@@ -40,6 +40,7 @@ You are building the backend for **Lotus**, an on-site time-tracking web app use
         | `punch` (clock in and out) | Punch | `LOTUS_PUNCH_URL` | `punchUrl` |
         | `email_send` | Send Email | `LOTUS_SEND_EMAIL_URL` | `sendEmailUrl` |
         | `change-password`, `user.reset`, `user.reset_link`, `reset` (Auth ops) | Reset Password | `LOTUS_RESET_PASSWORD_URL` | `resetPasswordUrl` |
+        | `user_delete` (§4) | Delete User | `LOTUS_DELETE_USER_URL` | `deleteUserUrl` |
 
         Everything else (`fill_in`, `resolve_flag`, `approve_day`, `reopen_day`, `template_save`, `client`) stays on Write, and sign-in, accounts and activate/deactivate stay on Auth. The test-only `undo_punch` is never called by the app.
     - The app sends a roster import as `users_upsert` calls of at most 5 users, and a schedule import as `shift_upsert` calls of at most 25 shifts, one call after another, so no single call nears the flow's 2-minute limit. Each call must still be idempotent by email (users) or id (shifts).
@@ -230,7 +231,7 @@ The latest row per `DayKey` is the current state.
 | `Title` | text | `guid()` |
 | `RecordedAt` | text | `utcNow()`; returned as `at` |
 | `By` | text | `callerEmail` |
-| `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client`, `email_send`, `template_save`, `correction_request`, `correction_resolve`, `strike_add`, `strike_void`, `schedule_sync` |
+| `Action` | text | `punch`, `shift_upsert`, `shift_delete`, `users_upsert`, `resolve_flag`, `approve_day`, `reopen_day`, `client`, `email_send`, `template_save`, `correction_request`, `correction_resolve`, `strike_add`, `strike_void`, `schedule_sync`, `user_delete` |
 | `Target` | text | the row key it touched |
 | `Before` | multi-line text | JSON of the row before, or empty |
 | `After` | multi-line text | JSON of the row after |
@@ -401,6 +402,21 @@ Body `{ "users": [ { "id"?: "OP-…", "email", "name", "location", "cohort", "co
 - Ignore `roles`, `username` and every password and token column: roles and sign-ins are changed only through the Auth flow's `user.*` ops, by an admin. A new row gets `Roles` = `operator` and no password (so it can't sign in until an admin gives it one).
 
 Respond `{ "ok": true, "users": [ … ] }`.
+
+### Flow: **Lotus Delete User** (`user_delete`): role `admin`
+
+User rule, 2026-11-13: operators added from the Master List with a typo in their email got a Lotus row (and sometimes a sign-in) for an address that doesn't exist. Admins delete those from Roster → Edit. **Its own one-job flow** (Write is near the 500-step limit): same trigger (**Anyone**), same `text/plain` body and token check as Write, URL in the Actions secret **`LOTUS_DELETE_USER_URL`**. Until that secret is set, the app shows the Delete button greyed out with "needs the Lotus Delete User flow"; don't add `user_delete` to Write.
+
+Body `{ "action": "user_delete", "token", "email", "reason" }`.
+
+1. Token check, then the caller's roles must include `admin`, else **403** `Only admins can delete people.`
+2. `reason` must not be empty (400 `Add a reason.`). `email` is trimmed and lower-cased. It must not be `callerEmail` (400 `You can't delete yourself.`).
+3. Get the `Lotus_Users` row with `Title` = `email` (active or not). None: **404** `That person isn't in Lotus.`
+4. **Only someone with no records.** One `$top=1` *Get items* each on `Lotus_Punches`, `Lotus_Approvals`, `Lotus_Corrections` and `Lotus_Strikes` filtered on `Email` = `email` (any date). If any finds a row: **409** `{"error":"They already have records. Set them Inactive instead.","code":"has_records"}` and change nothing. (Inactive keeps their history and turns off their sign-in; that's the answer for anyone who has ever worked.)
+5. Delete their `Lotus_Shifts` rows (any date; with no punches, none were worked) and their `Lotus_FlagResolutions` rows (`Title` starts with `<email>|`). Don't add `Lotus_SheetSkips` rows: the Master List sync never books someone who isn't in `Lotus_Users`, so a deleted address can't come back that way.
+6. One `Lotus_Audit` row: `Action` = `user_delete`, `Target` = the row's `OperatorID` (or the email if none), `Before` = the row's name, email, operator ID, roles, home lab and `Active` (**never** the password, salt, hash, token or reset columns), `After` = `{ "reason", "removedShifts": n }`.
+7. Delete the `Lotus_Users` row last. That also ends any sign-in it had.
+8. Respond `{ "ok": true, "removedShifts": n }`. A second call for the same email answers 404, which the app shows as an error; it never retries a delete on its own.
 
 ### `resolve_flag`: role `approver` or `admin`
 
@@ -624,6 +640,8 @@ User rule, 2026-11-06: an operator who forgets to clock out is clocked out by th
 16j. Auto clock-out: clock A in on a shift that ends in a few minutes and don't clock out. 15 to 30 minutes after the end, `Lotus_Punches` has one `OUT` for A with `Timestamp` = the scheduled end, `Device` = `system`, `Flag` = `Auto clock-out`, and Read returns `flag` = `auto`. Let the flow run again: still one `OUT`. Clock B in and out by hand before end + 15: no auto row for B.
 16k. Robot names: `robot_names` as an admin with `{"Robot 4":"jetson-thor-004"}`, then Read as an operator: `robotNames` has it. As a scheduler without `admin`: 403. A key `Robot 99` or a 61-character name: 400.
 16s. Schedule sync (copy the workbook to a test file first and point the flow at the copy; never test against the live sheet): a row for tomorrow with a Lotus user creates a `sheet` shift with the right `SheetKey`, times and template; running again changes nothing. Change its `Time`: the shift updates. Change its name to another Lotus user: the old shift goes, a new one comes. Blank it: the shift is removed. A row for today: added by a run before 6:00 AM, untouched by a Sync now after 6:00 AM. Remove a synced shift in the app: it's in `Lotus_SheetSkips` and the next run doesn't bring it back. Add a shift in the app at the same time as a sheet row: the sync keeps the app's (`booked_in_lotus`). Rename the `Email` column in the copy: the run reports an error and removes nothing. Read as an operator: `scheduleSync` is `null`. `schedule_sync` as an operator: 403. As a scheduler: 202, and the next 30-minute check runs it; while it runs, Read shows the old counts with `runningSince`.
+16t. Delete User: as an admin, add an operator with a made-up email and book them one future shift, then `user_delete` with a reason: 200 `removedShifts` = 1, their `Lotus_Users` and `Lotus_Shifts` rows are gone, and one `user_delete` audit row has no password, hash or token in it. Again: 404. For an operator with any punch: 409 `has_records`, nothing deleted. As a scheduler without `admin`: 403. With an empty reason, or your own email: 400.
+16u. Open spots per shift: book A on Morning and Afternoon back to back. A clocks in to Morning only, out at its end, and doesn't clock in to Afternoon. 15 minutes after the Afternoon start, Read as C lists A's Afternoon shift in `openSpots`, and `fill_in` takes it.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:

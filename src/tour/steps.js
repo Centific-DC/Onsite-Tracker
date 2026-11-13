@@ -124,7 +124,7 @@ export const TOURS = {
     { target: T('roster-import'), title: 'Import from recruiting', body: 'Bring in Active Roster 2 or the scheduling sheet as a CSV. You check the changes before anything saves.' },
     { target: T('roster-add'), title: 'Add an operator', body: 'Adds one person. Admins also set their username and temp password here.' },
     { target: '.main .sel-pill', title: 'Experienced or new', body: 'Every pair needs at least one experienced operator. Auto decides from completed sessions; pick Experienced or New to override.' },
-    { target: '.main .group .row-btn', title: 'Operator profile', body: 'Tap an operator for their home lab, experience, sign-in and strike history. Admins can cancel a strike there, with a reason.' },
+    { target: '.main .group .row-btn', title: 'Operator profile', body: 'Tap an operator for their home lab, experience, sign-in and strike history. Admins can cancel a strike there, with a reason, and delete someone added by mistake (only while they have no records).' },
     { target: '.main .tag-btn', title: 'Set up sign-in', body: 'This operator can’t sign in yet. Press it to give them a username and a temp password.', roles: ['admin'] },
   ],
 

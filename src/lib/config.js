@@ -12,6 +12,10 @@ export const CORRECTIONS_URL = String(CFG.correctionsUrl || '').trim() || WRITE_
 // Lotus Schedule Sync: "Sync now" from the Master List workbook. The flow also runs by
 // itself every day; unset, the Schedule page shows the last sync but no button.
 export const SYNC_URL = String(CFG.syncUrl || '').trim();
+// Lotus Delete User: removes an operator added by mistake (a typo in the email), only
+// while they have no records. Its own flow because Write is near the step limit; unset,
+// the Delete button shows but says the flow isn't set up yet.
+export const DELETE_USER_URL = String(CFG.deleteUserUrl || '').trim();
 // Live once both data flow URLs are set. Until then the app always shows demo data.
 export const LIVE_READY = !!(READ_URL && WRITE_URL);
 // Operator preview tab (public/preview.js): demo data and demo sign-in, this tab only.

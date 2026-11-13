@@ -40,6 +40,7 @@ jobs:
           LOTUS_PUNCH_URL: ${{ secrets.LOTUS_PUNCH_URL }}
           LOTUS_SEND_EMAIL_URL: ${{ secrets.LOTUS_SEND_EMAIL_URL }}
           LOTUS_RESET_PASSWORD_URL: ${{ secrets.LOTUS_RESET_PASSWORD_URL }}
+          LOTUS_DELETE_USER_URL: ${{ secrets.LOTUS_DELETE_USER_URL }}
           LOTUS_CORRECTIONS_URL: ${{ secrets.LOTUS_CORRECTIONS_URL }}
           LOTUS_SCHEDULE_SYNC_URL: ${{ secrets.LOTUS_SCHEDULE_SYNC_URL }}
       - uses: actions/upload-pages-artifact@v3

@@ -257,6 +257,11 @@ export const api = {
     const out = await paPost(WRITE_URL, { action: 'users_upsert', users });
     return (out.users || []).map(normOperator);
   },
+  // Delete someone added by mistake (admins; only with no records). Lotus Delete User.
+  async deleteUser(email, reason) {
+    if (DEMO) return demo.deleteUser(email, reason);
+    return paPost(WRITE_URL, { action: 'user_delete', email, reason });
+  },
   async resolveFlag(r) {
     if (DEMO) return demo.resolveFlag(r);
     return (await paPost(WRITE_URL, { action: 'resolve_flag', ...r })).resolution;
@@ -415,6 +420,20 @@ export const demo = {
     });
     storage.set(this.KEY, d);
     return out;
+  },
+  deleteUser(email, reason) {
+    const d = this.load();
+    if (!String(reason || '').trim()) throw Object.assign(new Error('Add a reason.'), { status: 400 });
+    const o = d.operators.find((x) => x.email === email);
+    if (!o) throw Object.assign(new Error('That person isn’t in Lotus.'), { status: 404 });
+    const has = (list) => (list || []).some((r) => r.email === email);
+    if (has(d.punches) || has(d.approvals) || has(d.corrections) || has(d.strikes)) throw Object.assign(new Error('They already have records. Set them Inactive instead.'), { status: 409, code: 'has_records' });
+    const shifts = d.schedule.filter((r) => r.email === email).length;
+    d.schedule = d.schedule.filter((r) => r.email !== email);
+    d.resolutions = (d.resolutions || []).filter((r) => !String(r.key || '').startsWith(`${email}|`));
+    d.operators = d.operators.filter((x) => x.email !== email);
+    this.save(d, 'user_delete', o.id, o, { reason, removedShifts: shifts });
+    return { ok: true, removedShifts: shifts };
   },
   resolveFlag(r) {
     if (!String(r.reason || '').trim()) throw new Error('Add a reason');

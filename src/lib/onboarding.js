@@ -38,3 +38,17 @@ export function strayNumber(op, people) {
   const taken = people.some((p) => p.email !== op.email && p.active !== false && key(p.name) === key(base));
   return taken ? null : base;
 }
+
+// Deleting someone from Lotus is only for a person added by mistake (most often a
+// typo in the email), so it's refused once they have any record: a clock-in, an
+// approval, a missed clock-in request or a strike. Then they're set Inactive
+// instead, which keeps their history. Booked shifts go with them. Admins only, and
+// never yourself (the Delete User flow checks the same).
+export function deleteCheck(data, email, me) {
+  const mine = (list) => (list || []).filter((r) => r.email === email).length;
+  const records = mine(data.punches) + mine(data.approvals) + mine(data.corrections) + mine(data.strikes);
+  const shifts = mine(data.schedule);
+  if (email === me) return { ok: false, records, shifts, why: 'You can’t delete yourself.' };
+  if (records) return { ok: false, records, shifts, why: 'They already have clock-ins or other records, so they can’t be deleted. Set them Inactive instead: that keeps their history and stops their sign-in.' };
+  return { ok: true, records: 0, shifts };
+}

@@ -392,6 +392,18 @@ export const useStore = create((set, get) => ({
     return saved;
   },
 
+  // Delete someone added by mistake: can't be undone, so it waits for the flow's answer.
+  async deleteUser(email, reason) {
+    const out = await api.deleteUser(email, reason);
+    get().commit((d) => (d ? {
+      ...d,
+      operators: (d.operators || []).filter((o) => o.email !== email),
+      schedule: (d.schedule || []).filter((r) => r.email !== email),
+      resolutions: (d.resolutions || []).filter((r) => !String(r.key || '').startsWith(`${email}|`)),
+    } : d));
+    return out;
+  },
+
   // Missed clock-in or out requests: server-confirmed (the flow sends the email and
   // the admins' answer decides the hours), but they run in the background.
   requestCorrection(r) {
