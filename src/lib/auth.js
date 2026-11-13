@@ -17,4 +17,8 @@ export const ROLE_NOTE = {
   reporting: 'Approved-hours reports',
   admin: 'Sign-ins: adds people, sets roles, resets passwords',
 };
+/** The office roles. Anyone holding one of these is staff and is listed on Users. */
+export const STAFF_ROLES = ['scheduler', 'approver', 'reporting', 'admin'];
+/** Staff sign-ins only: operator-only sign-ins are managed on the Roster, not Users. */
+export const staffSignIns = (users = []) => users.filter((u) => (u.roles || []).some((r) => STAFF_ROLES.includes(r)));
 export const hasRole = (session, ...roles) => !!session && roles.some((r) => (session.roles || []).includes(r));

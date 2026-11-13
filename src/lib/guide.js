@@ -211,6 +211,7 @@ export const STAFF_GUIDE = [
       'Set each operator’s home lab. Operators only work at their home lab.',
       'Experience: Auto counts completed sessions. Pick Experienced or New to override it.',
       'Admins: press Set up sign-in to give an operator a username and temporary password.',
+      'Admins: the key button on a row opens that operator’s sign-in: email a reset link, set a temp password, or turn the sign-in off.',
     ],
     tips: [
       'Every pair needs at least one experienced operator.',
@@ -318,7 +319,7 @@ export const STAFF_GUIDE = [
     summary: 'Appearance, sign-ins and robot names.',
     steps: [
       'Settings (the gear) switches light and dark mode and replays the tour.',
-      'Admins: Users and sign-ins adds people, sets their roles, emails a reset link or turns off a sign-in.',
+      'Admins: Users and sign-ins lists staff only. It adds staff, sets their roles, emails a reset link or turns off a sign-in. Operators and their sign-ins are on the Roster.',
       'Admins: Robots names each robot. The robot’s number stays the same in every record.',
       'Search finds any operator or day from anywhere. Shortcut: Ctrl K (⌘K on a Mac).',
     ],

@@ -195,3 +195,29 @@ export function ResetLinkSheet({ user, op, onClose }) {
     </Sheet>
   );
 }
+
+/** Set a new temp password: signs them out everywhere. Used by Users and the Roster. */
+export function TempPasswordForm({ user, onReset }) {
+  const [temp, setTemp] = useState(tempPassword);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    const p = passwordProblem(temp, user.username);
+    if (p) return setError(`Temp password: ${p}`);
+    setBusy(true);
+    try { await onReset(temp); } catch (err) { setError(err.message || 'Couldn’t reset the password.'); setBusy(false); }
+  };
+  return (
+    <form onSubmit={submit} noValidate>
+      <p className="lede">This signs {user.name} out everywhere. They sign in with the temp password and choose a new one.</p>
+      <Group>
+        <SignInFields lockUsername value={{ username: user.username, temp }} onChange={(v) => { setTemp(v.temp); setError(''); }} />
+      </Group>
+      <p className="login-error" role="alert">{error}</p>
+      <div className="user-foot">
+        <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy || undefined}>{busy ? 'Saving…' : 'Set temp password'}</button>
+      </div>
+    </form>
+  );
+}

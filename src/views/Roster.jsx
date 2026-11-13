@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KeyRound, PencilLine, RotateCcwKey, Search, Upload, UserPlus } from 'lucide-react';
+import { KeyRound, Mail, PencilLine, Search, Upload, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS, locationName } from '../lib/config.js';
@@ -12,7 +12,7 @@ import { EditOperatorSheet } from '../components/EditOperator.jsx';
 import { dayKey, mondayOf, fmtHrsU } from '../lib/time.js';
 import { Avatar, Group, Row, Segmented, Select, Sheet, Tag } from '../components/ui.jsx';
 import * as auth from '../lib/auth/api.js';
-import { ResetLinkSheet, SignInFields, TempReveal, WelcomeSwitch, newSignIn, signInProblem, suggestUsername, useSignIns, useWelcome } from '../components/SignInSetup.jsx';
+import { ResetLinkSheet, SignInFields, TempPasswordForm, TempReveal, WelcomeSwitch, newSignIn, signInProblem, suggestUsername, useSignIns, useWelcome } from '../components/SignInSetup.jsx';
 
 // An operator's sign-in, as admins see it on the Roster.
 function signInTag(u) {
@@ -34,6 +34,7 @@ export function Roster() {
   const [adding, setAdding] = useState(false);
   const [settingUp, setSettingUp] = useState(null); // an operator without a sign-in
   const [resetting, setResetting] = useState(null); // { user, op }: emailing a reset link
+  const [managing, setManaging] = useState(null); // an operator whose sign-in is open
   const [editing, setEditing] = useState(null);
   const [fixing, setFixing] = useState(false);
   const signIns = useSignIns({ roster: true });
@@ -99,7 +100,7 @@ export function Roster() {
               leading={<Avatar name={o.name} tone={x.level === 'new' ? 'warn' : undefined} />}
               title={<><button type="button" className="name-link" onClick={() => openProfile(o.email)}>{o.name}</button> {x.level === 'new' && <Tag tone="warn">New</Tag>}{w?.over && <Tag tone="bad">Over {CFG.weeklyHourCap} hrs</Tag>}{o.active === false && <Tag tone="muted">Inactive</Tag>}{signIns.admin && signIns.users && (signInOf.has(o.email) ? signInTag(signInOf.get(o.email)) : o.active !== false && <button type="button" className="tag-btn" onClick={() => setSettingUp(o)}><KeyRound size={12} aria-hidden="true" /> Set up sign-in</button>)}</>}
               subtitle={`${o.id} · ${locationName(o.location) || 'No home lab'}${o.cohort ? ` · ${o.cohort}` : ''} · ${done} sessions completed · ${w ? fmtHrsU(w.hours) : '0 hrs'} this week`}
-              trailing={<span className="row-actions"><ExperienceSelect op={o} sessions={sessions} />{signIns.admin && signInOf.get(o.email)?.active && <button type="button" className="icon-btn" aria-label={`Send ${o.name} a password reset link`} title="Send a password reset link" onClick={() => setResetting({ user: signInOf.get(o.email), op: o })}><RotateCcwKey size={16} aria-hidden="true" /></button>}<button type="button" className="icon-btn" aria-label={`Edit ${o.name}`} onClick={() => setEditing(o)}><PencilLine size={16} aria-hidden="true" /></button></span>}
+              trailing={<span className="row-actions"><ExperienceSelect op={o} sessions={sessions} />{signIns.admin && signInOf.has(o.email) && <button type="button" className="icon-btn" aria-label={`${o.name}’s sign-in`} title="Sign-in: reset link, temp password, turn off" onClick={() => setManaging(o)}><KeyRound size={16} aria-hidden="true" /></button>}<button type="button" className="icon-btn" aria-label={`Edit ${o.name}`} onClick={() => setEditing(o)}><PencilLine size={16} aria-hidden="true" /></button></span>}
               className="row-wrap"
             />
           );
@@ -109,6 +110,7 @@ export function Roster() {
       <ImportSheet open={importing} onOpenChange={setImporting} />
       <AddOperatorSheet open={adding} onOpenChange={setAdding} signIns={signIns} />
       <SetUpSignInSheet op={settingUp} onClose={() => setSettingUp(null)} signIns={signIns} />
+      <ManageSignInSheet op={managing} user={managing && signInOf.get(managing.email)} signIns={signIns} onClose={() => setManaging(null)} onLink={(user, op) => { setManaging(null); setResetting({ user, op }); }} />
       <ResetLinkSheet user={resetting?.user} op={resetting?.op} onClose={() => { setResetting(null); signIns.load(); }} />
       <EditOperatorSheet op={editing} onClose={() => setEditing(null)} />
     </div>
@@ -240,6 +242,51 @@ function SetUpSignInSheet({ op, onClose, signIns }) {
         <Group footer={err ? <span className="err" role="alert">{err}</span> : 'They sign in with these, then choose their own password.'}>
           <SignInFields value={login} onChange={(v) => { setLogin(v); setErr(''); }} />
           <WelcomeSwitch on={mail} onChange={setMail} email={op?.email} />
+        </Group>
+      )}
+    </Sheet>
+  );
+}
+
+// An operator's sign-in, for admins: everything Users does for staff, so operators
+// never need to appear there. Email a reset link, set a temp password, or turn the
+// sign-in off and on. Roles stay operator; staff roles are given on Users.
+function ManageSignInSheet({ op, user, signIns, onClose, onLink }) {
+  const background = useStore((s) => s.background);
+  const [mode, setMode] = useState('menu'); // 'menu' | 'temp' | { temp }
+  useEffect(() => { if (op) setMode('menu'); }, [op]);
+  const open = !!op && !!user;
+  const toggle = () => {
+    const was = user;
+    onClose();
+    background(was.active ? `Turning off ${was.name}’s sign-in` : `Turning on ${was.name}’s sign-in`, () => auth.updateUser(signIns.token, was.username, { active: !was.active })).then(
+      () => { toast.success(was.active ? `${was.name} can no longer sign in` : `${was.name} can sign in again`); signIns.load(); },
+      (e) => toast.error(`${was.name}’s sign-in didn’t change`, { description: e.message, duration: 20000 }),
+    );
+  };
+  const reset = (temp) => {
+    const was = user;
+    setMode({ temp });
+    background(`Setting ${was.name}’s temp password`, () => auth.resetUser(signIns.token, was.username, temp)).then(
+      () => { toast.success(`${was.name}’s temp password is set`); signIns.load(); },
+      (e) => toast.error(`${was.name}’s temp password didn’t save`, { description: `${e.message} Their old password still works.`, duration: 20000 }),
+    );
+  };
+  const state = !user ? '' : !user.active ? 'Sign-in is off' : user.lockedUntil && Date.parse(user.lockedUntil) > Date.now() ? 'Locked for 15 minutes after wrong passwords' : user.mustChangePassword ? 'Waiting for them to choose a password' : 'Active';
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(o) => { if (!o) onClose(); }}
+      title={open ? (mode === 'temp' ? `Temp password for ${op.name}` : `${op.name}’s sign-in`) : ''}
+      description={open ? `Username ${user.username} · ${state}` : ''}
+    >
+      {open && typeof mode === 'object' && <TempReveal user={user} temp={mode.temp} onDone={onClose} />}
+      {open && mode === 'temp' && <TempPasswordForm user={user} onReset={reset} />}
+      {open && mode === 'menu' && (
+        <Group footer="Operators’ sign-ins are managed here. Users lists staff only.">
+          {user.active && <button type="button" className="row row-btn row-act" onClick={() => onLink(user, op)}><Mail size={16} aria-hidden="true" /> Email a reset link</button>}
+          <button type="button" className="row row-btn row-act" onClick={() => setMode('temp')}><KeyRound size={16} aria-hidden="true" /> Set a temp password</button>
+          <button type="button" className={user.active ? 'row row-btn row-danger' : 'row row-btn row-act'} onClick={toggle}>{user.active ? 'Turn off sign-in' : 'Turn sign-in back on'}</button>
         </Group>
       )}
     </Sheet>
