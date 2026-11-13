@@ -7,8 +7,8 @@ import { CFG, DEMO, LOCATIONS, locationName, locOf } from '../lib/config.js';
 import { hasRole } from '../lib/auth.js';
 import { SignIn } from './SignIn.jsx';
 import { statusOf } from '../lib/hours.js';
-import { myShiftsToday, nextShift } from '../lib/attendance.js';
-import { openSpots, partnersOf, robotLabel, shiftTimes } from '../lib/schedule.js';
+import { clockWindow, myShiftsToday, nextShift } from '../lib/attendance.js';
+import { nextBackToBack, openSpots, partnersOf, robotLabel, shiftTimes } from '../lib/schedule.js';
 import { FLAG, reviewDays } from '../lib/review.js';
 import { addDays, dayKey, firstName, fmtDay, fmtLongDay, fmtTime, greeting, initials, mondayOf, fmtHrsU } from '../lib/time.js';
 import { useNow } from '../lib/hooks.js';
@@ -122,7 +122,7 @@ function Person({ person, onDone, laptop }) {
 
   // The punch shows at once and the flow records it in the background with the
   // server's time. If the flow turns it down, the screen goes back and says why.
-  function doPunch(type, extra = {}) {
+  function doPunch(type, extra = {}, savedNote = '') {
     setErr('');
     const who = person.name;
     const { shown, saved } = punch({ type, name: person.name, email: person.email, operatorId: person.operatorId, device: laptop ? 'laptop' : 'phone', source: laptop ? 'laptop' : 'phone', ...extra });
@@ -135,7 +135,7 @@ function Person({ person, onDone, laptop }) {
     saved.then((p) => {
       const at = new Date(p.ts);
       toast.success(type === 'in' ? `${laptop ? `${who}: c` : 'C'}locked in at ${fmtTime(at)}` : `${laptop ? `${who}: c` : 'C'}locked out at ${fmtTime(at)}`, {
-        description: type === 'out' && extra.flag ? (DEMO ? 'Demo mode: no email was sent to your manager.' : 'Your manager has been told.') : p.grace ? `${p.grace} min before your shift, logged for review.` : 'Saved.',
+        description: type === 'out' && extra.flag ? (DEMO ? 'Demo mode: no email was sent to your manager.' : 'Your manager has been told.') : savedNote || (p.grace ? `${p.grace} min before your shift, logged for review.` : 'Saved.'),
       });
     }, (e) => {
       const why = e.code === 'early' || e.code === 'over' ? e.message : `${e.message}. Try again, or tell your lead the time.`;
@@ -143,6 +143,37 @@ function Person({ person, onDone, laptop }) {
       toast.error(e.code === 'early' ? `Too early to clock in${laptop ? `, ${firstName(who)}` : ''}` : `${laptop ? `${who}’s ` : 'Your '}${type === 'in' ? 'clock-in' : 'clock-out'} didn't save`, { description: why, duration: 15000 });
     });
   }
+
+  // A back-to-back double (2026-11-13): once the operator's next shift is open, one
+  // tap clocks them out of this shift and into the next, so each shift keeps its own
+  // record and the handover isn't flagged as leaving early or arriving late.
+  const robotsAt = (loc) => LOCATIONS.find((l) => l.id === loc)?.robots || [];
+  const following = shift ? nextBackToBack(data.schedule, shift) : null;
+  const followingWin = following ? clockWindow(following, now) : null;
+  const canSwitch = !!following && !open?.pending && (followingWin.state === 'grace' || followingWin.state === 'open')
+    && !data.punches.some((p) => p.email === person.email && p.type === 'in' && p.shiftId === following.id);
+  function switchTo(r, station) {
+    setErr('');
+    setRobotFor(null);
+    const from = fmtTime(times.start);
+    const { saved } = punch({ type: 'out', name: person.name, email: person.email, operatorId: person.operatorId, device: laptop ? 'laptop' : 'phone', source: laptop ? 'laptop' : 'phone' });
+    saved.catch((e) => {
+      setErr(`Didn't save: ${e.message}. Try again, or tell your lead the time.`);
+      toast.error(`${laptop ? `${person.name}’s ` : 'Your '}clock-out from the ${from} shift didn't save`, { description: e.message, duration: 15000 });
+    });
+    doPunch('in', { shiftId: r.id, location: locOf(r), station }, `Clocked out of your ${from} shift first. Each shift is recorded on its own.`);
+  }
+  const startSwitch = () => {
+    const r = following;
+    if (!r.station && robotsAt(locOf(r)).length > 1) return setRobotFor({ shift: r, switching: true });
+    switchTo(r, r.station || robotsAt(locOf(r))[0] || '');
+  };
+  const switchCard = canSwitch && (
+    <div className="op-switch">
+      <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={startSwitch}>Switch to your {fmtTime(shiftTimes(following).start)} shift</button>
+      <p className="op-hint">You're booked back to back. This clocks you out of this shift and into the next one, so each shift is recorded on its own.</p>
+    </div>
+  );
 
   const signOutLink = <button type="button" className="op-link" onClick={signOut}>{laptop ? `Not ${firstName(person.name)}? Sign out` : 'Sign out'}</button>;
 
@@ -161,7 +192,7 @@ function Person({ person, onDone, laptop }) {
               <Pill inset tone="red" className="op-plate-action">{busy ? 'Saving…' : 'Clock out'}</Pill>
             </Dial>
             <Card className="op-note is-red">
-              <p>Time after {fmtTime(times.end)} isn't counted unless your manager approves it. Clock out now, or tell your lead why you're staying.</p>
+              <p>{canSwitch ? `Your next shift has started. Switch to it below so your time counts on that shift.` : `Time after ${fmtTime(times.end)} isn't counted unless your manager approves it. Clock out now, or tell your lead why you're staying.`}</p>
             </Card>
           </>
         ) : (
@@ -189,8 +220,18 @@ function Person({ person, onDone, laptop }) {
             )}
           </>
         )}
+        {switchCard}
         {err && <p className="op-err" role="alert">{err}</p>}
         <div className="op-foot">{signOutLink}</div>
+        <RobotSheet
+          open={!!robotFor?.switching}
+          onOpenChange={(o) => !o && setRobotFor(null)}
+          busy={busy}
+          lab={robotFor?.switching ? locOf(robotFor.shift) : ''}
+          title="Which robot?"
+          description={`Your next shift isn't tied to a robot. Pick the one you're on${robotFor?.switching && partnersOf(data, robotFor.shift).length ? ` with ${andList(partnersOf(data, robotFor.shift))}` : ''}.`}
+          onConfirm={(station) => switchTo(robotFor.shift, station)}
+        />
         <Sheet
           open={askReason}
           onOpenChange={setAskReason}
@@ -224,7 +265,6 @@ function Person({ person, onDone, laptop }) {
   // Someone in this lab didn't show: an operator without a shift to clock into now can
   // take the spot. Live, the Read flow lists these (no names); the demo works them out.
   const spots = canClock ? [] : DEMO ? openSpots(data, person.email, home, now) : (data.openSpots || []);
-  const robotsAt = (loc) => LOCATIONS.find((l) => l.id === loc)?.robots || [];
   const clockInto = (r) => {
     if (!r.station && robotsAt(locOf(r)).length > 1) return setRobotFor({ shift: r });
     doPunch('in', { shiftId: r.id, location: locOf(r), station: r.station || robotsAt(locOf(r))[0] || '' });
@@ -267,7 +307,7 @@ function Person({ person, onDone, laptop }) {
             {partnersOf(data, card).length > 0 && <Detail icon={<Users size={18} />}>With {andList(partnersOf(data, card))}</Detail>}
           </div>
         ) : (
-          <p className="op-body">Nothing booked for today. If your lead asked you to come in, you can still clock in and your manager will review it.</p>
+          <p className="op-body">Nothing booked for today. If your lead asked you to come in, ask your scheduler to book the shift so you can clock in.</p>
         )}
       </Card>
 
@@ -323,7 +363,7 @@ function Person({ person, onDone, laptop }) {
         lab={robotFor ? (robotFor.shift ? locOf(robotFor.shift) : robotFor.spot.location) : ''}
         title={robotFor?.spot ? 'Take this spot' : 'Which robot?'}
         description={robotFor?.spot ? 'Pick the robot you’re working on. You’ll see your partner’s name once you’re in.' : `Your shift isn't tied to a robot. Pick the one you're on${partnersOf(data, robotFor?.shift).length ? ` with ${andList(partnersOf(data, robotFor.shift))}` : ''}.`}
-        onConfirm={(station) => (robotFor.spot ? takeSpot(robotFor.spot, station) : doPunch('in', { shiftId: robotFor.shift.id, location: locOf(robotFor.shift), station }).then(() => setRobotFor(null)))}
+        onConfirm={(station) => (robotFor.spot ? takeSpot(robotFor.spot, station) : (doPunch('in', { shiftId: robotFor.shift.id, location: locOf(robotFor.shift), station }), setRobotFor(null)))}
       />
     </div>
   );
@@ -394,7 +434,7 @@ function MyTime({ person }) {
           const future = k > dayKey(now);
           const hrs = day ? (day.approved ?? day.recorded) : 0;
           const st = day && !future ? DAY_STATUS[day.status] : null;
-          const robots = day ? [...new Set([...day.shifts.map((r) => r.station), ...day.sessions.map((s) => s.station)])].map(robotTitle).join(', ') : '';
+          const robots = day ? [...new Set([...day.shifts.map((r) => r.station), ...day.sessions.map((s) => s.station)].filter(Boolean))].map(robotTitle).join(', ') : '';
           return (
             <Card key={k} className={clsx('op-day', (!day || future) && 'is-off', 'op-rise')} style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}>
               <div className="op-day-col">
@@ -422,7 +462,8 @@ function MyTime({ person }) {
       </Well>
       <MyRequests email={person.email} now={now} />
       <div className="op-foot op-forgot">
-        <button type="button" className="op-link" onClick={() => setForgot(true)}>Forgot to clock in or out?</button>
+        <button type="button" className="op-link" data-tour="op-forgot" onClick={() => setForgot(true)}>Forgot to clock in or out?</button>
+        <a className="op-link" href="#/guide" data-tour="op-guide">How Lotus works: the guide</a>
       </div>
       <ForgotSheet open={forgot} onOpenChange={setForgot} person={person} now={now} />
       {upcoming.length > 0 && (

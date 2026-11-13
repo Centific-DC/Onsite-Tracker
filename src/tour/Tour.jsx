@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTour } from './tourStore.js';
+import { go } from '../lib/hooks.js';
 
 // The tour on screen, as in Project Atlas: the page dims, a spotlight with a soft
 // ring sits on the step's target, and a card explains it. On phones the card is a
@@ -157,6 +158,7 @@ export function Tour() {
           <div className="tour-actions">
             {!isLast && <button type="button" className="tour-skip" onClick={skip}>Skip</button>}
             {index > 0 && <button type="button" className="btn btn-plain btn-sm" onClick={back}>Back</button>}
+            {step.link && <button type="button" className="btn btn-plain btn-sm" onClick={() => { finish(); go(step.link.route); }}>{step.link.label}</button>}
             <button ref={nextRef} type="button" className="btn btn-primary btn-sm" onClick={next}>{isLast ? 'Done' : 'Next'}</button>
           </div>
         </div>

@@ -104,7 +104,7 @@ export function Review() {
       </div>
 
       {requests.length > 0 && (
-        <Group title={`Missed clock-in or out · ${requests.length} waiting`} footer={admin ? 'Check with the partner, then set the real times. Each counted miss is a warning or a strike.' : 'Only admins can correct hours. These wait for an admin.'}>
+        <Group tour="review-requests" title={`Missed clock-in or out · ${requests.length} waiting`} footer={admin ? 'Check with the partner, then set the real times. Each counted miss is a warning or a strike.' : 'Only admins can correct hours. These wait for an admin.'}>
           {requests.map((c) => {
             const shift = (data.schedule || []).find((r) => r.id === c.shiftId);
             return (

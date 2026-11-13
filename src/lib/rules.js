@@ -1,9 +1,8 @@
 import { CFG, LOCATIONS, locOf, locationById } from './config.js';
 import { addDays, dayKey } from './time.js';
-import { replacedIds, samePair, shiftTimes, shiftHours } from './schedule.js';
+import { bookedHours, replacedIds, samePair, shiftTimes } from './schedule.js';
 
 const PAIR = 2;
-const overlaps = (a, b) => a.start < b.end && b.start < a.end;
 // Two shifts on one robot are a pair when they share more than an hour: the
 // 30-minute handover between Afternoon and Night isn't a pairing.
 const HANDOVER_MIN = 60;
@@ -65,11 +64,12 @@ export function weeklyLoad(schedule, wk0, cap = CFG.weeklyHourCap) {
   const m = new Map();
   for (const r of schedule || []) {
     if (r.date < from || r.date >= to) continue;
-    const x = m.get(r.email) || { email: r.email, name: r.name, hours: 0 };
-    x.hours += shiftHours(r);
+    const x = m.get(r.email) || { email: r.email, name: r.name, rows: [] };
+    x.rows.push(r);
     m.set(r.email, x);
   }
-  return [...m.values()].map((x) => ({ ...x, over: x.hours > cap + 1e-9 }));
+  // A back-to-back double's handover overlap counts once.
+  return [...m.values()].map(({ rows, ...x }) => { const hours = bookedHours(rows); return { ...x, hours, over: hours > cap + 1e-9 }; });
 }
 
 // The same operator booked twice at once on different robots, or at two labs on one day.
@@ -85,9 +85,10 @@ export function conflicts(schedule) {
     for (let i = 0; i < rows.length; i++) {
       for (let j = i + 1; j < rows.length; j++) {
         const a = rows[i], b = rows[j];
-        // A double shift overlaps by the handover; that's fine, unless it's on two robots.
+        // A back-to-back double overlaps by the handover; that's fine, even on another
+        // robot: the operator clocks out of one shift and into the next (2026-11-13).
         const shared = (Math.min(a.end, b.end) - Math.max(a.start, b.start)) / 6e4;
-        if (shared > HANDOVER_MIN || (overlaps(a, b) && a.station && b.station && a.station !== b.station)) out.push({ kind: 'overlap', date: a.date, name: a.name, email: a.email, ids: [a.id, b.id] });
+        if (shared > HANDOVER_MIN) out.push({ kind: 'overlap', date: a.date, name: a.name, email: a.email, ids: [a.id, b.id] });
         else if (locOf(a) !== locOf(b)) out.push({ kind: 'two_labs', date: a.date, name: a.name, email: a.email, ids: [a.id, b.id] });
       }
     }

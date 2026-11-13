@@ -1,7 +1,8 @@
 import { CFG, locOf, locationName } from './config.js';
 import { addDays, dayKey, parseDay } from './time.js';
 import { buildSessions } from './hours.js';
-import { shiftTimes } from './schedule.js';
+import { SWITCH_GAP_MIN, bookedHours, nextBackToBack, prevBackToBack, shiftTimes } from './schedule.js';
+import { graceFor } from './rules.js';
 import { LATE_AFTER_MIN } from './attendance.js';
 
 // Raw check-ins are never treated as payable. Each operator-day is reviewed: its
@@ -84,6 +85,18 @@ export function reviewDays(data, from, to, now = new Date()) {
     const fixedShifts = d.shifts.filter((r) => fixes.has(r.id));
     const fixedAt = (t) => fixedShifts.some((r) => +t >= +r.start - 36e5 && +t <= +r.end + 3 * 36e5);
 
+    // A back-to-back double: the operator clocked out of one shift and into the next
+    // within a few minutes. That handover is neither leaving early nor arriving late.
+    const gapOk = (out, inAt) => Math.abs(+inAt - +out) <= SWITCH_GAP_MIN * 6e4;
+    const switchedOut = (s, r) => {
+      const n = r && nextBackToBack(data.schedule, r);
+      return !!n && +s.end >= +shiftTimes(n).start - graceFor(n) * 6e4 && d.sessions.some((x) => x.shiftId === n.id && gapOk(s.end, x.start));
+    };
+    const switchedIn = (s, r) => {
+      const p = r && prevBackToBack(data.schedule, r);
+      return !!p && d.sessions.some((x) => x !== s && x.shiftId === p.id && !x.live && gapOk(x.end, s.start));
+    };
+
     let inShift = 0;
     for (const s of d.sessions) {
       const r = shiftOf(s);
@@ -97,11 +110,11 @@ export function reviewDays(data, from, to, now = new Date()) {
       const before = clip(st, en, -Infinity, +r.start);
       const after = s.live ? 0 : clip(st, en, +r.end, Infinity);
       if (before >= MIN) flag('grace_used', `Clocked in ${Math.round(before * 60)} min before the shift`, { ref: +s.start, minutes: Math.round(before * 60) });
-      if ((st - r.start) / 6e4 >= LATE_AFTER_MIN && s === d.sessions.find((x) => shiftOf(x) === r)) flag('late', `Clocked in ${Math.round((st - r.start) / 6e4)} min after the start`, { ref: r.id });
+      if ((st - r.start) / 6e4 >= LATE_AFTER_MIN && s === d.sessions.find((x) => shiftOf(x) === r) && !switchedIn(s, r)) flag('late', `Clocked in ${Math.round((st - r.start) / 6e4)} min after the start`, { ref: r.id });
       // A few minutes to walk out aren't worth a review; they're still not counted.
       if (after * 60 >= (CFG.outsideToleranceMinutes ?? 5)) flag('outside_shift', `${Math.round(after * 60)} min after the scheduled end`, { ref: +s.start, minutes: Math.round(after * 60) });
       if (s.auto) flag('auto_clockout', 'Didn’t clock out. The system closed the shift', { ref: +s.start });
-      if (!s.live && !s.auto && (s.early || (r.end - en) / 6e4 > CFG.earlyGraceMinutes)) flag('left_early', `Left ${Math.round((r.end - en) / 6e4)} min before the end${s.note ? ` · “${s.note}”` : ''}`, { ref: +s.start });
+      if (!s.live && !s.auto && !switchedOut(s, r) && (s.early || (r.end - en) / 6e4 > CFG.earlyGraceMinutes)) flag('left_early', `Left ${Math.round((r.end - en) / 6e4)} min before the end${s.note ? ` · “${s.note}”` : ''}`, { ref: +s.start });
     }
     for (const i of d.noouts) {
       const r = d.shifts.find((x) => x.id === i.shiftId) || d.shifts.find((x) => +i.at < +x.end) || null;
@@ -136,7 +149,8 @@ export function reviewDays(data, from, to, now = new Date()) {
     }
     const recorded = d.sessions.filter((s) => !s.live).reduce((a, s) => a + s.hours, 0);
     const requests = asks.get(d.key) || [];
-    const scheduled = d.shifts.reduce((a, r) => a + (r.end - r.start) / 36e5, 0);
+    // A back-to-back double's handover overlap counts once.
+    const scheduled = bookedHours(d.shifts);
     const computed = inShift + extra;
     const a = appr.get(d.key);
     const approval = a && a.status === 'approved' ? a : null;

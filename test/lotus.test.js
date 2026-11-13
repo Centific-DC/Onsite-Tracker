@@ -175,14 +175,15 @@ describe('scheduling', () => {
   it('11. booking past 37 hours in a week warns', () => {
     const week = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'];
     const sched = week.flatMap((day) => [shift(morgan, '07:00', '12:30', 'Robot 1', day)]).concat(week.slice(0, 1).map((day) => shift(morgan, '12:00', '17:30', 'Robot 1', day)));
-    expect(weeklyLoad(sched, MON)[0]).toMatchObject({ hours: 33, over: false });
+    // The Monday double's 30-minute handover counts once: 5 × 5.5 + 5.
+    expect(weeklyLoad(sched, MON)[0]).toMatchObject({ hours: 32.5, over: false });
     const warn = checkNewShift(shift(morgan, '12:00', '17:30', 'Robot 1', '2026-11-03'), sched, [morgan], [], MON);
     expect(warn.map((w) => w.code)).toContain('over_cap');
   });
 
   it('12. the same operator at two labs at once is a conflict', () => {
     const warn = checkNewShift(shift(avery, '12:00', '17:30', 'Robot 3'), [shift(avery, '07:00', '12:30', 'Robot 1')], [avery], [], MON);
-    expect(warn.map((w) => w.code)).toContain('overlap');
+    expect(warn.map((w) => w.code)).toContain('two_labs');
   });
 
   it('13. importing Active Roster 2 gives new operators IDs and a re-import makes no duplicates', () => {

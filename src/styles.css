@@ -858,3 +858,53 @@ p.err { text-align: center; margin: 0 0 12px; }
 /* Operator page: open spots someone else didn't show for. */
 .op-spots { display: grid; gap: 12px; }
 .op-spot { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line, rgba(127,127,127,.18)); }
+
+/* The guide (#/guide, #/admin/guide): topic tiles, then one card per topic with
+   numbered steps, an optional table and "Good to know" notes. */
+.guide { max-width: 860px; }
+.guide-jump { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 32px; }
+.guide-tile {
+  display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 10px 12px; border: 0; border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); box-shadow: 0 0 0 0.5px var(--edge), var(--shadow-sm); font: inherit; font-size: 14px; font-weight: 600;
+  text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: background-color 200ms var(--ease-out), scale 150ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) { .guide-tile:hover { background: color-mix(in srgb, currentColor 7%, var(--surface)); } }
+.guide-tile:active { scale: 0.97; }
+.guide-tile:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.guide-tile-num { width: 18px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.guide-tile-title { flex: 1; min-width: 0; text-wrap: pretty; }
+.guide-tile-go { color: var(--ink-3); flex: none; }
+.guide-icon { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 10px; background: var(--blue-soft); color: var(--blue-text); }
+.guide-icon.is-lg { width: 44px; height: 44px; border-radius: 13px; }
+.guide-sec, .guide-end {
+  scroll-margin-top: 72px; margin-bottom: 20px; padding: 22px 22px 20px; border-radius: calc(var(--radius) + 4px);
+  background: var(--surface); box-shadow: 0 0 0 0.5px var(--edge), var(--shadow-sm);
+}
+.guide-sec-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+.guide-kicker { display: block; color: var(--ink-3); font-size: 12px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+.guide-title { margin: 2px 0 4px; font-family: var(--font-display); font-size: 20px; font-weight: 700; letter-spacing: -0.015em; color: var(--ink); }
+.guide-summary { margin: 0; color: var(--ink-2); font-size: 15px; line-height: 1.45; text-wrap: pretty; }
+.guide-steps { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 10px; }
+.guide-steps li { display: flex; gap: 12px; align-items: flex-start; font-size: 15px; line-height: 1.5; color: var(--ink); text-wrap: pretty; }
+.guide-step-num {
+  display: inline-grid; place-items: center; flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 50%;
+  background: var(--blue); color: var(--on-blue); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.guide-table { width: 100%; border-collapse: collapse; margin: 4px 0; font-size: 14px; }
+.guide-table th, .guide-table td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--sep); line-height: 1.45; }
+.guide-table thead th { color: var(--ink-3); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+.guide-table tbody th { width: 34%; color: var(--ink); font-weight: 600; }
+.guide-table td { color: var(--ink-2); }
+.guide-table tbody tr:last-child > * { border-bottom: 0; }
+.guide-tips { margin-top: 16px; padding: 12px 14px; border-radius: var(--radius); background: var(--yellow-soft); }
+.guide-tips-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--yellow-text); font-size: 13px; font-weight: 700; }
+.guide-tips ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.guide-tips li { color: var(--ink); font-size: 14px; line-height: 1.5; text-wrap: pretty; }
+.guide-end { display: grid; gap: 10px; justify-items: start; background: var(--surface-2); }
+@media (max-width: 640px) {
+  .guide-jump { grid-template-columns: 1fr; gap: 8px; }
+  .guide-sec, .guide-end { padding: 18px 16px; }
+  .guide-table tbody th { width: 40%; }
+}
+@media (prefers-reduced-motion: reduce) { .guide-tile { transition: none; } .guide-tile:active { scale: none; } }
