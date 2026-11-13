@@ -2,20 +2,22 @@ import { useCallback, useEffect, useState } from 'react';
 import { Check, KeyRound, Mail, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
-import { ROLES, ROLE_NOTE } from '../lib/auth.js';
+import { ROLES, ROLE_NOTE, STAFF_ROLES, staffSignIns } from '../lib/auth.js';
 import * as auth from '../lib/auth/api.js';
 import { tempPassword, passwordProblem } from '../lib/auth/crypto.js';
 import { Avatar, Group, Row, Select, Sheet, Tag } from '../components/ui.jsx';
-import { ResetLinkSheet, SignInFields, TempReveal, suggestUsername } from '../components/SignInSetup.jsx';
+import { ResetLinkSheet, SignInFields, TempPasswordForm, TempReveal, suggestUsername } from '../components/SignInSetup.jsx';
 
 // Users: who can sign in to Lotus, with which roles, as in Project Atlas. Adding
 // a person or resetting a password makes a temp password here in the browser and
 // shows it once; only its hash goes to SharePoint. The person picks their own
 // password the first time they sign in. Only admins see this page, and the Lotus
-// Auth flow refuses these calls from anyone else.
+// Auth flow refuses these calls from anyone else. Users lists staff only (anyone
+// with a scheduler, approver, reporting or admin role); operator-only sign-ins
+// are set up and managed on the Roster.
 
 const ROLE_IDS = Object.keys(ROLES);
-const empty = () => ({ name: '', email: '', username: '', temp: tempPassword(), roles: ['operator'], operatorId: '' });
+const empty = () => ({ name: '', email: '', username: '', temp: tempPassword(), roles: [], operatorId: '' });
 
 function stateOf(u) {
   if (!u.active) return { tone: 'bad', label: 'Turned off' };
@@ -57,10 +59,10 @@ export function Users() {
   useEffect(() => { load(); }, [load]);
 
   const editing = sheet?.mode === 'edit' || sheet?.mode === 'reset' ? users?.find((u) => u.username === sheet.username) : null;
-  const list = (users || []).slice().sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
-  // Operators on the Roster who can't sign in yet.
+  const list = staffSignIns(users || []).sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
+  // Roster people without a sign-in, for giving an operator who is also staff (a lead) one here.
   const withSignIn = new Set((users || []).map((u) => u.email));
-  const noSignIn = (data?.operators || []).filter((o) => o.active !== false && (o.roles || ['operator']).includes('operator') && !withSignIn.has(o.email));
+  const noSignIn = (data?.operators || []).filter((o) => o.active !== false && !withSignIn.has(o.email));
 
   return (
     <div className="view view-enter">
@@ -74,8 +76,9 @@ export function Users() {
         </div>
       </header>
       {loadError && <p className="login-error" role="alert">{loadError} <button type="button" className="link" onClick={load}>Try again</button></p>}
-      <Group footer={noSignIn.length ? `${noSignIn.length} operators on the Roster can’t sign in yet. Use Add person and pick them from the Roster.` : undefined}>
+      <Group footer={<>Staff only. Operators and their sign-ins are on the <a className="link" href="#/admin/roster">Roster</a>.</>}>
         {users === null && !loadError && <div className="empty-row">Loading…</div>}
+        {users !== null && !list.length && <div className="empty-row">No staff sign-ins yet.</div>}
         {list.map((u) => {
           const st = stateOf(u);
           return (
@@ -145,7 +148,7 @@ export function Users() {
           />
         )}
         {sheet?.mode === 'reset' && editing && (
-          <ResetForm
+          <TempPasswordForm
             user={editing}
             onReset={(temp) => {
               const was = editing;
@@ -192,6 +195,7 @@ function UserForm({ user, self, roster = [], taken, onSave, onReset, onLink, onT
     if (/\s/.test(username)) return setError('Usernames can’t have spaces.');
     if (taken.some((u) => u !== user && u.username.toLowerCase() === username.toLowerCase())) return setError('That username is taken.');
     if (!form.roles.length) return setError('Pick at least one role.');
+    if (adding && !form.roles.some((r) => STAFF_ROLES.includes(r))) return setError('Users is for staff. Give an operator a sign-in on the Roster with Set up sign-in.');
     if (adding) { const p = passwordProblem(form.temp, username); if (p) return setError(`Temp password: ${p}`); }
     run('save', () => onSave({ ...form, name, username, email: form.email.trim().toLowerCase() }))();
   };
@@ -199,7 +203,7 @@ function UserForm({ user, self, roster = [], taken, onSave, onReset, onLink, onT
   return (
     <form onSubmit={submit} noValidate>
       {adding && roster.length > 0 && (
-        <Group footer="Operators on the Roster who can’t sign in yet.">
+        <Group footer="For a lead or staff member who is also on the Roster.">
           <label className="field-row"><span>From Roster</span>
             <Select className="sel-field" label="From the Roster" value={roster.some((o) => o.email === form.email) ? form.email : ''} onChange={fromRoster} placeholder="Pick an operator" options={roster.map((o) => ({ value: o.email, label: o.name, hint: o.id }))} />
           </label>
@@ -214,7 +218,7 @@ function UserForm({ user, self, roster = [], taken, onSave, onReset, onLink, onT
         )}
         <SignInFields value={form} withTemp={adding} onChange={(v) => { setForm((f) => ({ ...f, username: v.username, temp: v.temp })); setError(''); }} />
       </Group>
-      <Group title="Roles" footer={self ? 'You can’t change your own roles.' : undefined}>
+      <Group title="Roles" footer={self ? 'You can’t change your own roles.' : adding ? 'Pick at least one staff role. Operators get their sign-in on the Roster.' : form.roles.some((r) => STAFF_ROLES.includes(r)) ? undefined : 'With no staff role they’re an operator only: after saving they leave this list and show on the Roster.'}>
         <RolePicker value={form.roles} onChange={set('roles')} disabled={self} />
       </Group>
       {!adding && !self && (
@@ -229,31 +233,6 @@ function UserForm({ user, self, roster = [], taken, onSave, onReset, onLink, onT
       <p className="login-error" role="alert">{error}</p>
       <div className="user-foot">
         <button type="submit" className="btn btn-primary" disabled={!!busy} aria-busy={busy === 'save' || undefined}>{busy === 'save' ? 'Saving…' : adding ? 'Add and make temp password' : 'Save changes'}</button>
-      </div>
-    </form>
-  );
-}
-
-function ResetForm({ user, onReset }) {
-  const [temp, setTemp] = useState(tempPassword);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = async (e) => {
-    e.preventDefault();
-    const p = passwordProblem(temp, user.username);
-    if (p) return setError(`Temp password: ${p}`);
-    setBusy(true);
-    try { await onReset(temp); } catch (err) { setError(err.message || 'Couldn’t reset the password.'); setBusy(false); }
-  };
-  return (
-    <form onSubmit={submit} noValidate>
-      <p className="lede">This signs {user.name} out everywhere. They sign in with the temp password and choose a new one.</p>
-      <Group>
-        <SignInFields lockUsername value={{ username: user.username, temp }} onChange={(v) => { setTemp(v.temp); setError(''); }} />
-      </Group>
-      <p className="login-error" role="alert">{error}</p>
-      <div className="user-foot">
-        <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy || undefined}>{busy ? 'Saving…' : 'Set temp password'}</button>
       </div>
     </form>
   );

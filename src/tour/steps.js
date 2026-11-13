@@ -125,6 +125,7 @@ export const TOURS = {
     { target: T('roster-add'), title: 'Add an operator', body: 'Adds one person. Admins also set their username and temp password here.' },
     { target: '.main .sel-pill', title: 'Experienced or new', body: 'Every pair needs at least one experienced operator. Auto decides from completed sessions; pick Experienced or New to override.' },
     { target: '.main .group .row-btn', title: 'Operator profile', body: 'Tap an operator for their home lab, experience, sign-in and strike history. Admins can cancel a strike there, with a reason, and delete someone added by mistake (only while they have no records).' },
+    { target: '.main .row-actions .icon-btn[title^="Sign-in"]', title: 'Their sign-in', body: 'Email a reset link, set a temp password or turn their sign-in off. Operators’ sign-ins live here, not on Users.', roles: ['admin'] },
     { target: '.main .tag-btn', title: 'Set up sign-in', body: 'This operator can’t sign in yet. Press it to give them a username and a temp password.', roles: ['admin'] },
   ],
 
@@ -158,8 +159,8 @@ export const TOURS = {
   ],
 
   'admin/users': [
-    { target: T('users-add'), title: 'Add a person', body: 'Give someone a username, a temp password and their roles. Operators can also be added from Roster.' },
-    { target: '.main .group', title: 'Everyone who can sign in', body: 'Tap a person to change their roles, reset their password or turn off their sign-in.' },
+    { target: T('users-add'), title: 'Add a person', body: 'Give a staff member a username, a temp password and their roles. Operators get their sign-in on the Roster instead.' },
+    { target: '.main .group', title: 'Staff who can sign in', body: 'Only staff are listed here; operators are on the Roster. Tap a person to change their roles, reset their password or turn off their sign-in.' },
   ],
 };
 

@@ -913,3 +913,4 @@ p.err { text-align: center; margin: 0 0 12px; }
 .row-danger { width: 100%; justify-content: center; color: var(--red-text); font: inherit; font-weight: 600; }
 .row-danger:disabled { opacity: 0.45; cursor: not-allowed; }
 @media (hover: hover) and (pointer: fine) { .row-danger:disabled:hover { background: none; } }
+.row-act { width: 100%; justify-content: flex-start; gap: 10px; font: inherit; color: var(--blue-text); text-align: left; }
