@@ -400,6 +400,7 @@ export const useStore = create((set, get) => ({
       operators: (d.operators || []).filter((o) => o.email !== email),
       schedule: (d.schedule || []).filter((r) => r.email !== email),
       resolutions: (d.resolutions || []).filter((r) => !String(r.key || '').startsWith(`${email}|`)),
+      notices: (d.notices || []).filter((n) => n.email !== email),
     } : d));
     return out;
   },

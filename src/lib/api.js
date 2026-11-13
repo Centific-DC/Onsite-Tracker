@@ -431,9 +431,11 @@ export const demo = {
     const shifts = d.schedule.filter((r) => r.email === email).length;
     d.schedule = d.schedule.filter((r) => r.email !== email);
     d.resolutions = (d.resolutions || []).filter((r) => !String(r.key || '').startsWith(`${email}|`));
+    const notices = (d.notices || []).filter((n) => n.email === email).length;
+    d.notices = (d.notices || []).filter((n) => n.email !== email);
     d.operators = d.operators.filter((x) => x.email !== email);
-    this.save(d, 'user_delete', o.id, o, { reason, removedShifts: shifts });
-    return { ok: true, removedShifts: shifts };
+    this.save(d, 'user_delete', o.id, o, { reason, removedShifts: shifts, removedNotices: notices });
+    return { ok: true, removedShifts: shifts, removedNotices: notices };
   },
   resolveFlag(r) {
     if (!String(r.reason || '').trim()) throw new Error('Add a reason');
