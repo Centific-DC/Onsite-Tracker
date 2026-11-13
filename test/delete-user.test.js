@@ -31,12 +31,14 @@ describe('demo delete', () => {
     const d = demo.load();
     d.operators.push({ email: typo, name: 'Jordan Pike 2', id: 'OP-0099', roles: ['operator'] });
     d.schedule.push({ id: 'S-typo', email: typo, name: 'Jordan Pike 2', date: '2026-11-16', start: '07:00', end: '12:30', location: 'RED', station: '' });
+    d.notices = [...(d.notices || []), { id: 'N-typo', email: typo, kind: 'welcome' }];
     localStorage.setItem(demo.KEY, JSON.stringify(d));
     expect(() => demo.deleteUser(typo, '')).toThrow(/reason/);
-    expect(demo.deleteUser(typo, 'Typo in the email')).toEqual({ ok: true, removedShifts: 1 });
+    expect(demo.deleteUser(typo, 'Typo in the email')).toEqual({ ok: true, removedShifts: 1, removedNotices: 1 });
     const after = demo.load();
     expect(after.operators.some((o) => o.email === typo)).toBe(false);
     expect(after.schedule.some((r) => r.email === typo)).toBe(false);
+    expect(after.notices.some((n) => n.email === typo)).toBe(false);
     expect(after.audit.at(-1)).toMatchObject({ action: 'user_delete', target: 'OP-0099' });
     const withRecords = after.punches[0].email;
     expect(() => demo.deleteUser(withRecords, 'test')).toThrow(/Inactive/);
