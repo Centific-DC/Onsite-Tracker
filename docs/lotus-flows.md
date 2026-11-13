@@ -623,6 +623,6 @@ User rule, 2026-11-06: an operator who forgets to clock out is clocked out by th
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 
 When done, reply with:
-- the three HTTP trigger URLs (Lotus Auth, Lotus Read, Lotus Write), in a private file only, never in chat or in the repo. David adds them as GitHub Actions secrets (`LOTUS_AUTH_URL`, `LOTUS_READ_URL`, `LOTUS_WRITE_URL`); the Pages deploy writes them into the built site, so the app calls the flows straight from people's browsers at https://dk-centific.github.io with the text/plain body. Every Response action must therefore send the header `Access-Control-Allow-Origin: https://dk-centific.github.io`, or the browser can't read the answer.
+- the three HTTP trigger URLs (Lotus Auth, Lotus Read, Lotus Write), in a private file only, never in chat or in the repo. David adds them as GitHub Actions secrets (`LOTUS_AUTH_URL`, `LOTUS_READ_URL`, `LOTUS_WRITE_URL`); the Pages deploy writes them into the built site, so the app calls the flows straight from people's browsers at https://centific-dc.github.io/Onsite-Tracker/ with the text/plain body. Every Response action must therefore send the header `Access-Control-Allow-Origin: https://centific-dc.github.io` (the site moved there from dk-centific.github.io when the repo moved to the Centific-DC org on 2026-11-10), or the browser can't read the answer.
 - the expression you used to parse the text/plain body
 - anything you couldn't build as specified
