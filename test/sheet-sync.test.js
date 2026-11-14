@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normScheduleSync, samePerson, syncTrouble, parseSheetTime, planSheetSync, sheetDate, sheetKey, syncIncludesToday } from '../src/lib/sheetSync.js';
+import { cleanSheetUrl, normScheduleSync, samePerson, syncTrouble, parseSheetTime, planSheetSync, sheetDate, sheetKey, syncIncludesToday } from '../src/lib/sheetSync.js';
 
 // Synthetic people and rows only (demo data); the real workbook never goes in the repo.
 const users = [
@@ -169,5 +169,21 @@ describe('loose ends found 2026-11-14', () => {
     expect(syncTrouble(one)).toMatchObject({ partial: true, labs: ['MTV'] });
     expect(syncTrouble(normScheduleSync({ at: '2026-11-14T19:00:00Z', error: 'Saving shifts failed' }))).toMatchObject({ partial: false });
     expect(syncTrouble(normScheduleSync({ at: '2026-11-14T19:00:00Z' }))).toBe(null);
+  });
+});
+
+describe('the Master List link', () => {
+  it('keeps only the document id and file name of a SharePoint link', () => {
+    const shared = 'https://example.sharepoint.com/:x:/r/sites/Demo/_layouts/15/Doc.aspx?sourcedoc=%7BABC%7D&file=Demo%20List.xlsx&fromShare=true&ovuser=x%2Csomeone%40example.com&clickparams=abc&web=1';
+    const out = cleanSheetUrl(shared);
+    expect(out).toContain('sourcedoc=%7BABC%7D');
+    expect(out).toContain('file=Demo+List.xlsx');
+    expect(out).not.toMatch(/ovuser|clickparams|someone|fromShare/);
+  });
+  it('refuses anything that isn’t an https SharePoint link', () => {
+    expect(cleanSheetUrl('http://example.sharepoint.com/x')).toBe('');
+    expect(cleanSheetUrl('https://evil.example.com/sharepoint.com')).toBe('');
+    expect(cleanSheetUrl('javascript:alert(1)')).toBe('');
+    expect(cleanSheetUrl('')).toBe('');
   });
 });

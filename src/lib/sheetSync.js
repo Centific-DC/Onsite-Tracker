@@ -237,8 +237,24 @@ export function normScheduleSync(s) {
 /** Did the last run fail outright (nothing synced), only for one lab, or not at all? */
 export function syncTrouble(s) {
   if (!s) return null;
-  const labs = s.errors.map((e) => e.lab).filter(Boolean);
-  if (s.errors.length && labs.length === s.errors.length && labs.length < 2) return { partial: true, labs, text: s.errors.map((e) => e.error).join(' ') };
-  if (s.error || s.errors.length) return { partial: false, labs, text: s.error || s.errors.map((e) => e.error).join(' ') };
+  // Data cached by an older build has no `errors`.
+  const errors = Array.isArray(s.errors) ? s.errors : [];
+  const labs = errors.map((e) => e.lab).filter(Boolean);
+  if (errors.length && labs.length === errors.length && labs.length < 2) return { partial: true, labs, text: errors.map((e) => e.error).join(' ') };
+  if (s.error || errors.length) return { partial: false, labs, text: s.error || errors.map((e) => e.error).join(' ') };
   return null;
+}
+
+// The Master List link (Read `masterListUrl`, staff only, from Lotus_Settings.MasterListUrl).
+// It is never in the repo or the built site. Only a SharePoint https link is used, and
+// it is rebuilt with just the document id and file name: share links carry the
+// sharer's email and tracking (ovuser, clickparams), which must not travel on.
+export function cleanSheetUrl(raw) {
+  let u;
+  try { u = new URL(String(raw || '').trim()); } catch { return ''; }
+  if (u.protocol !== 'https:' || !/(^|\.)sharepoint\.com$/i.test(u.hostname)) return '';
+  const out = new URL(u.origin + u.pathname);
+  for (const k of ['sourcedoc', 'file']) { const v = u.searchParams.get(k); if (v) out.searchParams.set(k, v); }
+  if (out.searchParams.has('sourcedoc')) { out.searchParams.set('action', 'default'); out.searchParams.set('web', '1'); }
+  return out.toString();
 }
