@@ -6,7 +6,7 @@ import { clockInCheck } from './attendance.js';
 import { openSpots, samePair, shiftTimes } from './schedule.js';
 import { writeFlowName, writeUrlFor } from './routes.js';
 import { mustEmail, normCorrection, normStrike, reasonsFor, standing } from './strikes.js';
-import { SHEET_SOURCE, normScheduleSync, planSheetSync, sheetKey, syncIncludesToday, syncSummary } from './sheetSync.js';
+import { SHEET_SOURCE, cleanSheetUrl, normScheduleSync, planSheetSync, sheetKey, syncIncludesToday, syncSummary } from './sheetSync.js';
 
 export const storage = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -186,6 +186,8 @@ const normAll = (d) => ({
   robotNames: d.robotNames && typeof d.robotNames === 'object' ? d.robotNames : {},
   // Staff only: the last Master List sync (sheetSync.js), or null if it never ran.
   scheduleSync: normScheduleSync(d.scheduleSync),
+  // Staff only: the Master List workbook link (never built into the site).
+  masterListUrl: cleanSheetUrl(d.masterListUrl),
 });
 
 export const normNotice = (n) => {

@@ -259,15 +259,22 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .sync.is-saving .sync-glyph { opacity: 0; scale: 0.6; }
 .sync.is-saving .dots { opacity: 1; scale: 1; }
 /* The Master List sync line on Schedule: one quiet row, the summary, details, Sync now. */
-.sheet-sync { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -12px 0 20px; font-size: 0.875rem; color: var(--ink-2); }
+.sheet-sync { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -12px 0 20px; font-size: 0.875rem; line-height: 20px; color: var(--ink-2); }
 .sheet-sync-icon { display: inline-grid; place-items: center; color: var(--ink-3, var(--ink-2)); }
-.sheet-sync-text { display: inline-flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.sheet-sync-text { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+/* One row, one size: name, refresh, status and links all sit on the same 20px line. */
+.sheet-sync-text > *, .sheet-sync > .link { font-size: 0.875rem; line-height: 20px; }
+.sheet-sync-name { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); font-weight: 600; text-decoration: none; }
+a.sheet-sync-name { border-radius: 4px; transition: color 200ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { a.sheet-sync-name:hover { color: var(--blue-text); text-decoration: underline; text-underline-offset: 3px; } }
+a.sheet-sync-name svg { color: var(--ink-2); }
 .sheet-sync-text strong { color: var(--ink); font-weight: 600; }
 .sheet-sync.is-bad .sheet-sync-text .status-line { color: var(--red-text); }
-.sheet-sync .link { font-size: 0.875rem; }
+.sheet-sync .link { font-size: 0.875rem; line-height: 20px; padding: 0; }
+.sheet-sync > .sync { font-size: 0.875rem; }
 .sheet-sync .sync-mini { width: 28px; height: 28px; padding: 0; justify-content: center; align-self: center; }
 .sheet-sync .sync-mini .sync-icon { width: 14px; height: 14px; }
-@media (max-width: 767px) { .sheet-sync { margin-top: -4px; gap: 4px 10px; } .sheet-sync-icon { display: none; } .sheet-sync .sync { margin-left: auto; } }
+@media (max-width: 767px) { .sheet-sync { margin-top: -4px; gap: 4px 10px; } .sheet-sync-icon { display: none; } .sheet-sync > .sync { margin-left: auto; } }
 .sync-text { min-width: 0; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 767px) { .sync-compact .sr-only-sm { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } }
 .status-line { display: inline-block; animation: statusLine 240ms var(--ease-out) both; }

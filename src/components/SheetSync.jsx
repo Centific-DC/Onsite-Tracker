@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { FileSpreadsheet, RefreshCw, RotateCw } from 'lucide-react';
+import { ExternalLink, FileSpreadsheet, RefreshCw, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { DEMO, SYNC_URL, locationName } from '../lib/config.js';
-import { SYNC_CHECKS, SYNC_REASONS, syncTrouble } from '../lib/sheetSync.js';
+import { SYNC_CHECKS, SYNC_REASONS, cleanSheetUrl, syncTrouble } from '../lib/sheetSync.js';
 import { fmtDay, fmtTime, parseDay } from '../lib/time.js';
 import { Group, Row, Sheet, StatusLine, Tag } from './ui.jsx';
 
@@ -21,6 +21,7 @@ export function SheetSyncLine() {
   const { data, session, syncSchedule, sync, syncing } = useStore();
   const s = data.scheduleSync;
   const trouble = syncTrouble(s);
+  const sheetUrl = cleanSheetUrl(data.masterListUrl);
   const canRun = (DEMO || !!SYNC_URL) && (session?.roles || []).some((r) => r === 'scheduler' || r === 'admin');
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -78,7 +79,9 @@ export function SheetSyncLine() {
     <div className={clsx('sheet-sync', trouble && 'is-bad')} data-tour="sched-sync">
       <span className="sheet-sync-icon" aria-hidden="true"><FileSpreadsheet size={16} /></span>
       <span className="sheet-sync-text" role="status" aria-live="polite">
-        <strong>Master List{DEMO ? ' (demo)' : ''}</strong>
+        {sheetUrl
+          ? <a className="sheet-sync-name" href={sheetUrl} target="_blank" rel="noopener noreferrer" title="Open the Master List in SharePoint (Centific sign-in)">Master List<ExternalLink size={12} aria-hidden="true" /></a>
+          : <strong className="sheet-sync-name">Master List{DEMO ? ' (demo)' : ''}</strong>}
         <button type="button" className={clsx('sync sync-mini', syncing && 'is-busy')} onClick={refresh} disabled={syncing} aria-busy={syncing} aria-label="Refresh the Master List status" title="Refresh: reload the schedule and this status (doesn’t run a sync)">
           <span className="sync-icon" aria-hidden="true">
             <RotateCw size={14} className="sync-glyph" />
@@ -109,7 +112,7 @@ export function SheetSyncLine() {
 function SyncDetails({ open, onOpenChange, s }) {
   if (!s) return null;
   const trouble = syncTrouble(s);
-  const problems = s.errors.length ? s.errors : s.error ? [{ lab: '', error: s.error }] : [];
+  const problems = s.errors?.length ? s.errors : s.error ? [{ lab: '', error: s.error }] : [];
   const item = (r, i) => (
     <Row
       key={`${r.date}-${r.lab}-${r.shift}-${r.name}-${i}`}
