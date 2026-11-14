@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normScheduleSync, parseSheetTime, planSheetSync, sheetDate, sheetKey, syncIncludesToday } from '../src/lib/sheetSync.js';
+import { normScheduleSync, samePerson, syncTrouble, parseSheetTime, planSheetSync, sheetDate, sheetKey, syncIncludesToday } from '../src/lib/sheetSync.js';
 
 // Synthetic people and rows only (demo data); the real workbook never goes in the repo.
 const users = [
@@ -145,5 +145,29 @@ describe('the daily sync', () => {
     expect(shifts[0].template).toBe('MTV-AM');
     const p = planSheetSync({ rows: [row('2026-11-12', 'Night', PM, 'sam')], shifts, users, today, labs });
     expect(p.remove).toEqual([]);
+  });
+});
+
+describe('loose ends found 2026-11-14', () => {
+  it('reports a filled row whose date can’t be read instead of dropping it', () => {
+    const p = plan([row('Mon 11/16', 'Morning', AM, 'avery')]);
+    expect(p.add).toEqual([]);
+    expect(p.skipped).toMatchObject([{ reason: 'bad_date', name: 'Avery Lin' }]);
+  });
+  it('skips a row whose email belongs to someone else (an Email cell copied down)', () => {
+    const p = plan([row('2026-11-12', 'Morning', AM, 'avery', { name: 'Sam Okafor' }), row('2026-11-12', 'Night', PM, 'jordan', { name: 'Jordan P.' })]);
+    expect(p.skipped).toMatchObject([{ reason: 'name_mismatch', name: 'Sam Okafor' }]);
+    expect(p.add.map((s) => s.name)).toEqual(['Jordan Pike']);
+  });
+  it('matches names loosely', () => {
+    expect(samePerson('Bri Leong', 'Brian Leong')).toBe(true);
+    expect(samePerson('Eswar', 'Eswar Chand Edara')).toBe(true);
+    expect(samePerson('Sam Okafor', 'Avery Lin')).toBe(false);
+  });
+  it('tells a one-lab problem from a failed run', () => {
+    const one = normScheduleSync({ at: '2026-11-14T19:00:00Z', added: 3, errors: [{ lab: 'MTV', error: 'MV Schedule: no Email column' }] });
+    expect(syncTrouble(one)).toMatchObject({ partial: true, labs: ['MTV'] });
+    expect(syncTrouble(normScheduleSync({ at: '2026-11-14T19:00:00Z', error: 'Saving shifts failed' }))).toMatchObject({ partial: false });
+    expect(syncTrouble(normScheduleSync({ at: '2026-11-14T19:00:00Z' }))).toBe(null);
   });
 });
