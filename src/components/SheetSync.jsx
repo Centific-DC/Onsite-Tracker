@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { FileSpreadsheet, RefreshCw, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { DEMO, SYNC_URL, locationName } from '../lib/config.js';
-import { SYNC_CHECKS, SYNC_REASONS } from '../lib/sheetSync.js';
+import { SYNC_CHECKS, SYNC_REASONS, syncTrouble } from '../lib/sheetSync.js';
 import { fmtDay, fmtTime, parseDay } from '../lib/time.js';
 import { Group, Row, Sheet, StatusLine, Tag } from './ui.jsx';
 
@@ -18,8 +18,9 @@ const when = (iso) => {
 // rows it couldn't book, and "Sync now" for schedulers. The flow runs by itself each
 // morning at 5:30 AM (that run includes today); a Sync now later starts from tomorrow.
 export function SheetSyncLine() {
-  const { data, session, syncSchedule } = useStore();
+  const { data, session, syncSchedule, sync, syncing } = useStore();
   const s = data.scheduleSync;
+  const trouble = syncTrouble(s);
   const canRun = (DEMO || !!SYNC_URL) && (session?.roles || []).some((r) => r === 'scheduler' || r === 'admin');
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -41,15 +42,22 @@ export function SheetSyncLine() {
     s.removed && `${s.removed} removed`,
     !s.added && !s.changed && !s.removed && 'no changes',
   ].filter(Boolean) : [];
-  const last = !s?.at ? 'Not synced yet'
-    : s.error ? `Last sync failed ${when(s.at)}`
-    : `Last sync ${when(s.at)} · ${parts.join(' · ')}`;
+  // A failure for one lab still synced the other: show its counts and name the lab.
+  const last = !s?.at ? (trouble ? 'Sync failed' : 'Not synced yet')
+    : trouble && !trouble.partial ? `Last sync failed ${when(s.at)}`
+    : `Last sync ${when(s.at)} · ${parts.join(' · ')}${trouble ? ` · ${trouble.labs.map(locationName).join(', ')} didn’t sync` : ''}`;
   // A run under way, or a Sync now waiting for the flow's next check. A request older
   // than the last finished run has been done.
   const queued = s?.requestedAt && !s.runningSince && (!s.at || s.requestedAt > s.at);
   const summary = s?.runningSince ? `${last} · running since ${fmtTime(new Date(s.runningSince))}`
     : queued ? `${last} · Sync queued, runs at the next check (${SYNC_CHECKS})`
     : last;
+
+  // Reload the schedule and this line without asking the flow to sync.
+  const refresh = () => sync({ manual: true }).then(
+    () => toast.success('Refreshed', { description: 'The schedule and the Master List status are up to date.' }),
+    (e) => toast.error('Couldn’t refresh', { description: e.message }),
+  );
 
   const run = async () => {
     if (busy) return;
@@ -67,15 +75,21 @@ export function SheetSyncLine() {
   };
 
   return (
-    <div className={clsx('sheet-sync', s?.error && 'is-bad')} data-tour="sched-sync">
+    <div className={clsx('sheet-sync', trouble && 'is-bad')} data-tour="sched-sync">
       <span className="sheet-sync-icon" aria-hidden="true"><FileSpreadsheet size={16} /></span>
       <span className="sheet-sync-text" role="status" aria-live="polite">
         <strong>Master List{DEMO ? ' (demo)' : ''}</strong>
-        <StatusLine text={summary} title={s?.error || (s?.from ? `Days from ${fmtDay(parseDay(s.from))} on follow the sheet. Earlier days are only changed here in Lotus.` : '')} />
+        <button type="button" className={clsx('sync sync-mini', syncing && 'is-busy')} onClick={refresh} disabled={syncing} aria-busy={syncing} aria-label="Refresh the Master List status" title="Refresh: reload the schedule and this status (doesn’t run a sync)">
+          <span className="sync-icon" aria-hidden="true">
+            <RotateCw size={14} className="sync-glyph" />
+            <span className="dots"><i /><i /><i /><i /></span>
+          </span>
+        </button>
+        <StatusLine text={summary} title={trouble?.text || (s?.from ? `Days from ${fmtDay(parseDay(s.from))} on follow the sheet. Earlier days are only changed here in Lotus.` : '')} />
       </span>
-      {s && (attention > 0 || s.kept.length > 0 || s.held > 0) && (
+      {s && (trouble || attention > 0 || s.kept.length > 0 || s.held > 0) && (
         <button type="button" className="link" onClick={() => setOpen(true)}>
-          {attention > 0 ? `${attention} to check` : 'Details'}
+          {trouble ? 'What went wrong' : attention > 0 ? `${attention} to check` : 'Details'}
         </button>
       )}
       {canRun && (
@@ -94,11 +108,13 @@ export function SheetSyncLine() {
 
 function SyncDetails({ open, onOpenChange, s }) {
   if (!s) return null;
+  const trouble = syncTrouble(s);
+  const problems = s.errors.length ? s.errors : s.error ? [{ lab: '', error: s.error }] : [];
   const item = (r, i) => (
     <Row
       key={`${r.date}-${r.lab}-${r.shift}-${r.name}-${i}`}
       title={<>{r.name || 'No name'} <Tag tone="muted">{SYNC_REASONS[r.reason] || r.reason}</Tag></>}
-      subtitle={`${r.date ? fmtDay(parseDay(r.date)) : ''} · ${locationName(r.lab)} · ${r.shift}`}
+      subtitle={[r.date && fmtDay(parseDay(r.date)), locationName(r.lab), r.shift].filter(Boolean).join(' · ')}
     />
   );
   return (
@@ -108,6 +124,11 @@ function SyncDetails({ open, onOpenChange, s }) {
       title="Master List sync"
       description={`${s.at ? `Last run ${when(s.at)}` : 'No run has finished yet'}.${s.from ? ` Days from ${fmtDay(parseDay(s.from))} on follow the sheet;` : ''} Shifts added or changed here in Lotus stay as they are.`}
     >
+      {trouble && (
+        <Group title={trouble.partial ? 'Not synced' : 'The sync failed'} className="group-urgent" footer={trouble.partial ? 'The other lab synced as usual. Shifts already in Lotus for this lab stay as they are.' : 'Nothing changed in Lotus. Shifts already booked stay as they are.'}>
+          {problems.map((e, i) => <Row key={i} title={e.lab ? locationName(e.lab) : 'Master List'} subtitle={e.error} />)}
+        </Group>
+      )}
       {s.held > 0 && (
         <Group title="Removals held back" className="group-urgent">
           <p className="hint">{s.held} shifts are gone from the sheet at once, which usually means a renamed column or table. The sync removed none of them. Check the sheet, then sync again.</p>

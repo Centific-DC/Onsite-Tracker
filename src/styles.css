@@ -265,6 +265,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .sheet-sync-text strong { color: var(--ink); font-weight: 600; }
 .sheet-sync.is-bad .sheet-sync-text .status-line { color: var(--red-text); }
 .sheet-sync .link { font-size: 0.875rem; }
+.sheet-sync .sync-mini { width: 28px; height: 28px; padding: 0; justify-content: center; align-self: center; }
+.sheet-sync .sync-mini .sync-icon { width: 14px; height: 14px; }
 @media (max-width: 767px) { .sheet-sync { margin-top: -4px; gap: 4px 10px; } .sheet-sync-icon { display: none; } .sheet-sync .sync { margin-left: auto; } }
 .sync-text { min-width: 0; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 767px) { .sync-compact .sr-only-sm { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } }

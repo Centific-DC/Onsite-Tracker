@@ -57,6 +57,16 @@ const overlaps = (x, y) => { const [a1, b1] = span(x); const [a2, b2] = span(y);
 export const SYNC_TODAY_BEFORE = '06:00';
 export const syncIncludesToday = (now = new Date()) => `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` < SYNC_TODAY_BEFORE;
 
+// Loose name check: any word of 2+ letters in common ("Bri Leong" and "Brian Leong",
+// "Eswar" and "Eswar Chand Edara"), or one name starting the other.
+const words = (n) => String(n || '').toLowerCase().normalize('NFKD').replace(/[^a-z\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 2);
+export function samePerson(a, b) {
+  const x = words(a);
+  const y = words(b);
+  if (!x.length || !y.length) return true;
+  return x.some((w) => y.some((v) => v === w || (w.length >= 3 && v.startsWith(w)) || (v.length >= 3 && w.startsWith(v))));
+}
+
 const nextDay = (k) => { const [y, m, d] = k.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1, d + 1)); return t.toISOString().slice(0, 10); };
 
 // The pair id the sync gives a shift: from the sheet's optional Pair column (A, B…),
@@ -89,7 +99,10 @@ export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], 
     const lab = raw.lab || labOfTable(raw.table);
     const date = sheetDate(raw.date);
     const name = String(raw.name || '').trim();
-    if (!lab || !date || date < first || !name) continue; // past, today (later in the day), or an open slot
+    if (!lab || !name) continue; // an open slot
+    // A filled row whose date can't be read used to vanish without a word.
+    if (!date) { if (String(raw.date ?? '').trim()) skipped.push({ lab, date: '', shift: String(raw.shift || '').trim(), name, reason: 'bad_date' }); continue; }
+    if (date < first) continue; // past, or today later in the day
     const email = String(raw.email || '').trim().toLowerCase();
     const shift = String(raw.shift || '').trim();
     const info = { lab, date, shift, name };
@@ -100,6 +113,9 @@ export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], 
     if (!t) { skipped.push({ ...info, reason: 'bad_time' }); continue; }
     const user = byEmail.get(email);
     if (!user) { skipped.push({ ...info, reason: 'not_in_lotus' }); continue; }
+    // A copied-down Email cell books the wrong person under the right name: the name in
+    // the sheet must share a word with the Lotus name for that email.
+    if (!samePerson(name, user.name)) { skipped.push({ ...info, reason: 'name_mismatch' }); continue; }
     if (user.location && user.location !== lab) { skipped.push({ ...info, name: user.name || name, reason: 'other_lab' }); continue; }
     if (seen.has(key)) { skipped.push({ ...info, reason: 'duplicate' }); continue; }
     seen.add(key);
@@ -184,6 +200,8 @@ export const SYNC_REASONS = {
   not_in_lotus: 'Not a Lotus user yet (add them on Roster)',
   other_lab: 'Home lab is the other lab',
   bad_time: 'The Time cell couldn’t be read',
+  bad_date: 'The Date cell couldn’t be read',
+  name_mismatch: 'The email belongs to someone else in Lotus',
   duplicate: 'Listed twice for the same shift',
   removed_in_lotus: 'Removed in Lotus, so the sync leaves it out',
   changed_in_lotus: 'Changed in Lotus, so Lotus’s version stays',
@@ -210,5 +228,17 @@ export function normScheduleSync(s) {
     kept: list(x.kept),
     skipped: list(x.skipped),
     error: String(x.error ?? ''),
+    // Per-table problems (a missing table or column): that lab was left alone, the
+    // other lab still synced. Older runs only set `error`.
+    errors: (Array.isArray(x.errors) ? x.errors : []).map((e) => ({ lab: String(e.lab ?? ''), error: String(e.error ?? '') })).filter((e) => e.error),
   };
+}
+
+/** Did the last run fail outright (nothing synced), only for one lab, or not at all? */
+export function syncTrouble(s) {
+  if (!s) return null;
+  const labs = s.errors.map((e) => e.lab).filter(Boolean);
+  if (s.errors.length && labs.length === s.errors.length && labs.length < 2) return { partial: true, labs, text: s.errors.map((e) => e.error).join(' ') };
+  if (s.error || s.errors.length) return { partial: false, labs, text: s.error || s.errors.map((e) => e.error).join(' ') };
+  return null;
 }
