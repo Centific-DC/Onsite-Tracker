@@ -1,5 +1,6 @@
 import { dayKey, parseDay } from './time.js';
 import { robotTitle } from './robots.js';
+import { isTracked, trackingFrom } from './config.js';
 
 // Minutes after a shift's start before a missing person counts as "not here yet".
 export const GRACE_MIN = 15;
@@ -81,12 +82,15 @@ export const STATUS = {
   upcoming: { label: 'Due', tone: 'muted' },
   late: { label: 'Not here yet', tone: 'warn' },
   noshow: { label: 'No-show', tone: 'bad' },
+  // Before Lotus went live: booked, but nobody was clocking in yet (config TRACKING_START).
+  untracked: { label: 'Not tracked', tone: 'muted' },
 };
 
 // One day's plan against what happened: every scheduled shift with a status, plus
 // check-ins that nobody scheduled.
-export function dayPlan(schedule, sessions, issues, day, now = new Date()) {
+export function dayPlan(schedule, sessions, issues, day, now = new Date(), { trackFrom = trackingFrom() } = {}) {
   const k = dayKey(day);
+  const tracked = isTracked(k, trackFrom);
   const shifts = (schedule || []).filter((r) => r.date === k);
   const daySessions = sessions.filter((s) => s.day === k);
   const noouts = issues.filter((i) => i.kind === 'noout' && dayKey(i.at) === k);
@@ -101,6 +105,7 @@ export function dayPlan(schedule, sessions, issues, day, now = new Date()) {
     const arrived = mine.length > 0 || noouts.some((i) => forShift(i, r));
     let status;
     if (arrived) status = mine.some((s) => s.live) ? 'onsite' : 'done';
+    else if (!tracked) status = 'untracked';
     else if (now < new Date(start.getTime() + GRACE_MIN * 6e4)) status = 'upcoming';
     else if (now < end) status = 'late';
     else status = 'noshow';

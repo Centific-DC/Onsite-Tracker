@@ -56,3 +56,11 @@ export const locationOfRobot = (robot) => LOCATIONS.find((l) => l.robots.include
 export const locationName = (id) => locationById(id)?.name || id || '';
 // A shift's or punch's lab: its own field, or the lab its robot belongs to.
 export const locOf = (x) => x?.location || locationOfRobot(x?.station)?.id || '';
+
+// Lotus goes live on this site-local day (David, 2026-11-14: operators start using it
+// Monday 2026-11-16). Shifts before it were booked but nobody was clocking in yet, so
+// they are "Not tracked", never a no-show, a missing flag or a day to review. Demo data
+// is always tracked. ONSITE_CONFIG.trackingStart can move it.
+export const TRACKING_START = String(CFG.trackingStart || '2026-11-16');
+export const trackingFrom = () => (DEMO ? '' : TRACKING_START);
+export const isTracked = (dayK, from = trackingFrom()) => !from || String(dayK) >= from;

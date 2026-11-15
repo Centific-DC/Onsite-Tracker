@@ -17,6 +17,7 @@ export const ISSUE = {
   noin: { label: 'No check-in', tone: 'warn', icon: <TriangleAlert size={12} /> },
   late: { label: 'Not here yet', tone: 'warn', icon: <UserX size={12} /> },
   noshow: { label: 'No-show', tone: 'bad', icon: <UserX size={12} /> },
+  untracked: { label: 'Not tracked', tone: 'muted', icon: <UserX size={12} /> },
   unscheduled: { label: 'Not on the schedule', tone: 'warn', icon: <CalendarX size={12} /> },
 };
 

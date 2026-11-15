@@ -71,3 +71,7 @@ No real check-in data yet. Demo data is synthetic and must stay labelled as demo
 ## Accessibility & Inclusion
 
 Large touch targets for use at the door, and readable on a shared tablet at arm's length. UX and motion follow `ux-behavior-spec.md`, including reduced motion.
+
+## Go-live (2026-11-16)
+
+Operators start clocking in on Monday 2026-11-16 (`TRACKING_START` in src/lib/config.js; `ONSITE_CONFIG.trackingStart` can move it). A shift booked before that day that nobody clocked into shows as **Not tracked**, not a no-show. It raises no Missing alert and no no-show flag, and it makes no day to review. Real punches before go-live still show as they are. Demo data is always tracked.
