@@ -116,7 +116,7 @@ export function RobotLanes({ day, sessions, planned = [], stations, now, pairSiz
         <div className="lane-tip" data-below={tip.below || undefined} style={{ left: tip.left, top: tip.top }} role="tooltip">
           <strong>{tip.plan.name}</strong>
           <span>Due {fmtTime(tip.plan.startAt)} – {fmtTime(tip.plan.endAt)}</span>
-          <span className="tip-early">{tip.plan.status === 'upcoming' ? 'Shift not started' : tip.plan.status === 'late' ? 'Not here yet' : 'No-show'}</span>
+          <span className="tip-early">{tip.plan.status === 'upcoming' ? 'Shift not started' : tip.plan.status === 'late' ? 'Not here yet' : tip.plan.status === 'untracked' ? 'Not tracked (before go-live)' : 'No-show'}</span>
         </div>
       )}
       {tip?.s && (

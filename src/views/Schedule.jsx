@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { ChevronLeft, ChevronRight, Mail, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
-import { CFG, LOCATIONS, locOf } from '../lib/config.js';
+import { CFG, LOCATIONS, TRACKING_START, isTracked, locOf } from '../lib/config.js';
 import { conflicts, isNew as isNewOp, pairingRisks, weeklyLoad, wrongLab } from '../lib/rules.js';
 import { buildSessions } from '../lib/hours.js';
 import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, mondayOf, parseDay, weekLabel, fmtHrsU, shortName } from '../lib/time.js';
@@ -237,6 +237,7 @@ export function Schedule() {
         <span data-status="upcoming"><i /> Booked</span>
         <span data-status="late"><i /> Not here yet</span>
         <span data-status="noshow"><i /> No-show</span>
+        {!isTracked(dayKey(wk0)) && <span data-status="untracked"><i /> Not tracked (before Lotus went live {fmtDay(parseDay(TRACKING_START))})</span>}
         {robots.length > 1 && <span><span className="slot-robot">R1</span> robot</span>}
         <span>{robots.length > 1 && <span className="slot-robot is-new">R2</span>}{LOCATIONS.some((l) => l.robots.length === 1 && labs.includes(l)) && <span className="chip-new">new</span>} new operator (set on Roster)</span>
         <span className="legend-risk">Red outline: two new operators paired on one robot</span>

@@ -1,4 +1,4 @@
-import { CFG, locOf, locationName } from './config.js';
+import { CFG, isTracked, locOf, locationName, trackingFrom } from './config.js';
 import { addDays, dayKey, parseDay } from './time.js';
 import { buildSessions } from './hours.js';
 import { SWITCH_GAP_MIN, bookedHours, nextBackToBack, prevBackToBack, shiftTimes } from './schedule.js';
@@ -38,7 +38,7 @@ const latest = (list, key) => {
   return m;
 };
 
-export function reviewDays(data, from, to, now = new Date()) {
+export function reviewDays(data, from, to, now = new Date(), { trackFrom = trackingFrom() } = {}) {
   const { sessions, issues } = buildSessions(data.punches, now);
   const fromK = dayKey(from), toK = dayKey(to);
   const inRange = (k) => k >= fromK && k < toK;
@@ -60,7 +60,8 @@ export function reviewDays(data, from, to, now = new Date()) {
     if (!days.has(k)) days.set(k, { key: k, email, day, name, shifts: [], sessions: [], noouts: [], noins: [] });
     return days.get(k);
   };
-  for (const r of data.schedule || []) if (inRange(r.date)) get(r.email, r.date, r.name).shifts.push({ ...r, startHM: r.start, endHM: r.end, ...shiftTimes(r) });
+  // Shifts before go-live were never clocked: they make no review day and no flags.
+  for (const r of data.schedule || []) if (inRange(r.date) && isTracked(r.date, trackFrom)) get(r.email, r.date, r.name).shifts.push({ ...r, startHM: r.start, endHM: r.end, ...shiftTimes(r) });
   for (const s of sessions) if (inRange(s.day)) get(s.email, s.day, s.name).sessions.push(s);
   for (const i of issues) {
     const k = dayKey(i.at);
