@@ -1,5 +1,5 @@
-import { CFG, isTracked, locOf, locationName, trackingFrom } from './config.js';
-import { addDays, dayKey, parseDay } from './time.js';
+import { CFG, LOCATIONS, isTracked, locOf, locationName, trackingFrom } from './config.js';
+import { addDays, dayKey, fmtTime, parseDay } from './time.js';
 import { buildSessions } from './hours.js';
 import { SWITCH_GAP_MIN, bookedHours, nextBackToBack, prevBackToBack, shiftTimes } from './schedule.js';
 import { graceFor } from './rules.js';
@@ -242,4 +242,37 @@ export function clockSpan(d) {
     time_in: ins.length ? hm(new Date(Math.min(...ins))) : '',
     time_out: outs.length ? hm(new Date(Math.max(...outs))) : '',
   };
+}
+
+/** Does this operator-day belong to the lab? ('all' keeps everything.) */
+export const dayInLab = (d, lab) => lab === 'all' || String(d.location || '').split(';').includes(lab);
+
+/**
+ * One day's operator-days grouped by their scheduled shift, earliest first, so an
+ * admin finds people the way the schedule lists them. A double sits under its first
+ * shift. Days with nothing booked come last, under "Not on the schedule". Names
+ * sort A to Z inside a group.
+ * @returns [{ key, label, start, list }]
+ */
+export function shiftGroups(days, { showLab = false } = {}) {
+  const groups = new Map();
+  for (const d of days) {
+    const r = (d.shifts || []).slice().sort((a, b) => +a.start - +b.start)[0];
+    let key = '~none';
+    let label = 'Not on the schedule';
+    let start = Infinity;
+    if (r) {
+      const lab = locOf(r);
+      const t = LOCATIONS.find((l) => l.id === lab)?.templates.find((x) => x.id === r.template);
+      const span = r.start instanceof Date ? `${fmtTime(r.start)}–${fmtTime(r.end)}` : `${r.startHM || r.start}–${r.endHM || r.end}`;
+      start = r.start instanceof Date ? r.start.getHours() * 60 + r.start.getMinutes() : 0;
+      key = `${showLab ? lab : ''}|${r.startHM || ''}|${r.endHM || ''}`;
+      label = [showLab && locationName(lab), t?.label, span].filter(Boolean).join(' · ');
+    }
+    if (!groups.has(key)) groups.set(key, { key, label, start, lab: r ? locOf(r) : '', list: [] });
+    groups.get(key).list.push(d);
+  }
+  return [...groups.values()]
+    .sort((a, b) => a.start - b.start || a.lab.localeCompare(b.lab) || a.label.localeCompare(b.label))
+    .map((g) => ({ ...g, list: g.list.sort((a, b) => String(a.name).localeCompare(String(b.name))) }));
 }

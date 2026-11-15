@@ -26,3 +26,24 @@ describe('before Lotus went live', () => {
     expect(isTracked('2026-11-01', '')).toBe(true);
   });
 });
+
+import { dayInLab, shiftGroups } from '../src/lib/review.js';
+describe('review list by shift', () => {
+  const at = (h, m) => new Date(2026, 10, 15, h, m);
+  const day = (name, loc, s, e, sHM, eHM) => ({ name, location: loc, shifts: s ? [{ location: loc, start: s, end: e, startHM: sHM, endHM: eHM }] : [] });
+  it('groups by scheduled time, earliest first, names A to Z, unscheduled last', () => {
+    const g = shiftGroups([
+      day('Sam Okafor', 'RED', at(17, 0), at(23, 0), '17:00', '23:00'),
+      day('Riley Chen', 'RED', at(7, 0), at(12, 30), '07:00', '12:30'),
+      day('Avery Lin', 'RED', at(7, 0), at(12, 30), '07:00', '12:30'),
+      day('Jordan Pike', 'RED'),
+    ]);
+    expect(g.map((x) => x.list.map((d) => d.name))).toEqual([['Avery Lin', 'Riley Chen'], ['Sam Okafor'], ['Jordan Pike']]);
+    expect(g[2].label).toBe('Not on the schedule');
+  });
+  it('filters by lab, keeping days that touch it', () => {
+    expect(dayInLab({ location: 'RED;MTV' }, 'MTV')).toBe(true);
+    expect(dayInLab({ location: 'RED' }, 'MTV')).toBe(false);
+    expect(dayInLab({ location: '' }, 'all')).toBe(true);
+  });
+});
