@@ -926,3 +926,7 @@ p.err { text-align: center; margin: 0 0 12px; }
 .row-danger:disabled { opacity: 0.45; cursor: not-allowed; }
 @media (hover: hover) and (pointer: fine) { .row-danger:disabled:hover { background: none; } }
 .row-act { width: 100%; justify-content: flex-start; gap: 10px; font: inherit; color: var(--blue-text); text-align: left; }
+
+/* Review: each day, then its shifts in schedule order. */
+.review-day { display: grid; gap: 0; }
+.review-day-head { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); margin: 20px 4px 8px; }

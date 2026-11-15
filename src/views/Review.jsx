@@ -3,7 +3,8 @@ import { ChevronLeft, ChevronRight, LogIn, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { buildSessions } from '../lib/hours.js';
-import { FLAG, reviewDays } from '../lib/review.js';
+import { FLAG, dayInLab, reviewDays, shiftGroups } from '../lib/review.js';
+import { LOCATIONS } from '../lib/config.js';
 import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, mondayOf, parseDay, weekLabel, fmtHrsU } from '../lib/time.js';
 import { useHashQuery, useNow } from '../lib/hooks.js';
 import { Avatar, Group, Row, Segmented, Sheet, Tag } from '../components/ui.jsx';
@@ -28,11 +29,12 @@ export function Review() {
   const admin = hasRole(session, 'admin');
   const [req, setReq] = useState(null); // a request, or { draft: { email, shiftId } }
   // Missed clock-in or out requests from every week, oldest first: they hold up the day.
-  const requests = sortRequests(data.corrections || []).filter((c) => c.status === 'open');
+  const allRequests = sortRequests(data.corrections || []).filter((c) => c.status === 'open');
   const now = useNow(60000);
   // Monday's review covers last week, so that's where it opens.
   const [wk0, setWk0] = useState(() => addDays(mondayOf(new Date()), -7));
   const [show, setShow] = useState('todo');
+  const [lab, setLab] = useState('all');
   const [open, setOpen] = useState(null);
   // A link from search (?day=…&op=…) opens that week, and that operator's day.
   const hq = useHashQuery();
@@ -45,10 +47,15 @@ export function Review() {
     const op = p.get('op');
     if (op) setOpen(`${op.toLowerCase()}|${day}`);
   }, [hq]);
-  const days = useMemo(() => reviewDays(data, wk0, addDays(wk0, 7), now), [data, dayKey(wk0), now]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allDays = useMemo(() => reviewDays(data, wk0, addDays(wk0, 7), now), [data, dayKey(wk0), now]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The lab filter, as on Schedule: counts, Approve ready and the list follow it.
+  const days = allDays.filter((d) => dayInLab(d, lab));
+  const shiftLab = (c) => (data.schedule || []).find((r) => r.id === c.shiftId)?.location || '';
+  const requests = allRequests.filter((c) => lab === 'all' || !shiftLab(c) || shiftLab(c) === lab);
   const count = (st) => days.filter((d) => d.status === st).length;
   const shown = days.filter((d) => (show === 'todo' ? d.status === 'needs_review' || d.status === 'ready' : show === 'all' ? true : d.status === show));
-  const byDay = [...new Set(shown.map((d) => d.day))].map((k) => [k, shown.filter((d) => d.day === k)]);
+  // Each day, then its shifts in schedule order (earliest first), names A to Z.
+  const byDay = [...new Set(shown.map((d) => d.day))].sort().map((k) => [k, shiftGroups(shown.filter((d) => d.day === k), { showLab: lab === 'all' && LOCATIONS.length > 1 })]);
   const ready = days.filter((d) => d.status === 'ready' && !approving[d.key]);
   const current = open ? days.find((d) => d.key === open) : null;
 
@@ -86,6 +93,7 @@ export function Review() {
       </header>
 
       <div className="toolbar">
+        {LOCATIONS.length > 1 && <Segmented label="Lab" value={lab} onChange={setLab} options={[{ value: 'all', label: 'All labs' }, ...LOCATIONS.map((l) => ({ value: l.id, label: l.name }))]} />}
         <Segmented
           label="Show"
           value={show}
@@ -121,9 +129,12 @@ export function Review() {
       )}
 
       {byDay.length === 0 && <Group><div className="empty-row">{show === 'todo' ? 'Nothing to review this week.' : 'Nothing here.'}</div></Group>}
-      {byDay.map(([k, list]) => (
-        <Group key={k} title={fmtLongDay(parseDay(k))}>
-          {list.map((d) => (
+      {byDay.map(([k, groups]) => (
+        <section key={k} className="review-day" aria-label={fmtLongDay(parseDay(k))}>
+          <h2 className="review-day-head">{fmtLongDay(parseDay(k))}</h2>
+          {groups.map((g) => (
+        <Group key={g.key} title={`${g.label} · ${g.list.length}`}>
+          {g.list.map((d) => (
             <Row
               key={d.key}
               onClick={() => setOpen(d.key)}
@@ -134,6 +145,8 @@ export function Review() {
             />
           ))}
         </Group>
+          ))}
+        </section>
       ))}
 
       <DaySheet day={current} pending={current && approving[current.key]} onClose={() => setOpen(null)} onRequest={(r) => { setOpen(null); setReq(r); }} />
