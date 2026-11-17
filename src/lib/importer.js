@@ -1,6 +1,6 @@
 import { LOCATIONS, ROBOTS, locationOfRobot } from './config.js';
 import { robotName } from './robots.js';
-import { newPairId } from './schedule.js';
+import { newPairId, shiftTimes } from './schedule.js';
 
 // Recruiting's sheets (Active Roster 2, the scheduling tracker) come in as CSV,
 // pasted or uploaded, or (the schedule) as the Schedulers' Excel template. Columns are matched by header name, so their order and
@@ -178,6 +178,15 @@ function table(input) {
 // re-importing the same week updates rather than duplicates. Rows that share a date,
 // lab, start and Pair label (A, B…) are booked as one pair; a blank Pair leaves it to
 // the robot, as Add shift does. A blank Robot is Any robot.
+//
+// The Master List sync lives beside this (sheetSync.js), so an import never doubles
+// a person: a row whose times overlap a shift they already have that day (from the
+// sheet, Add shift or an earlier row) is skipped, not booked twice. Changing a shift
+// the sync made marks it `import`, so the next sync keeps the change instead of
+// putting the sheet's version back (owner, 2026-11-17: the tracker sets the week,
+// changes during the week are made in Lotus and stick).
+const clash = (a, b) => { const x = shiftTimes(a); const y = shiftTimes(b); return Math.min(x.end, y.end) > Math.max(x.start, y.start); };
+
 export function planScheduleImport(input, operators, schedule, today = '') {
   const { header, rows, first } = table(input);
   const map = mapHeaders(header);
@@ -225,6 +234,10 @@ export function planScheduleImport(input, operators, schedule, today = '') {
     seen.add(key);
     const template = L.templates.find((t) => t.start === start && t.end === end)?.id || '';
     const cur = existing.get(key);
+    if (!cur) {
+      const other = [...(schedule || []), ...plan.add].find((x) => x.email === op.email && x.date === date && clash(x, { date, start, end }));
+      if (other) { plan.skip.push({ line, name: op.name, reason: `Already booked ${other.start}–${other.end} that day` }); continue; }
+    }
     const label = pick(r, map, 'pair');
     let pair = cur?.pair || '';
     if (label) {
@@ -239,9 +252,12 @@ export function planScheduleImport(input, operators, schedule, today = '') {
     if (!L.days.includes(new Date(`${date}T12:00:00`).getDay())) plan.warn.push({ line, name: op.name, reason: `${L.name} is usually closed on ${new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })}s` });
     if (today && date < today) plan.warn.push({ line, name: op.name, reason: `${date} is in the past` });
     const note = pick(r, map, 'note');
-    const shift = { date, name: op.name, email: op.email, operatorId: op.id, location: loc, station: robot, start, end, template, pair, note: note || 'Imported' };
+    const shift = { date, name: op.name, email: op.email, operatorId: op.id, location: loc, station: robot, start, end, template, pair, note: note || 'Imported', source: 'import' };
     if (cur) {
-      if (cur.end !== end || (cur.station || '') !== robot || (cur.location || '') !== loc || (cur.pair || '') !== pair || (note && note !== cur.note)) plan.update.push({ ...cur, ...shift, id: cur.id, note: note || cur.note });
+      // A changed end time on a synced shift would be put back by the next sync unless
+      // it stops being the sheet's. A robot, pair or note the sync never changes.
+      const source = cur.source === 'sheet' && cur.end !== end ? 'import' : cur.source;
+      if (cur.end !== end || (cur.station || '') !== robot || (cur.location || '') !== loc || (cur.pair || '') !== pair || (note && note !== cur.note)) plan.update.push({ ...cur, ...shift, id: cur.id, note: note || cur.note, source });
       else plan.skip.push({ line, name: op.name, reason: 'Already scheduled' });
     } else plan.add.push(shift);
   }
