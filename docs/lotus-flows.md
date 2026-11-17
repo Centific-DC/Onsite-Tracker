@@ -589,6 +589,8 @@ Both tables have the headers `Date, Day, Shift, Time, Team Member, Email, Notes`
 
 **Speed and limits:** the two tables are about 900 rows through Dec 31 and grow as the team adds weeks. Filter in memory; never one *Get items* per row. Aim for under 60 seconds for a normal day's changes.
 
+**Both ways (owner, 2026-11-17, as told to recruiting):** the tracker sets the week; changes during the week are made in Lotus and must stick. That already holds with the rules above, because Lotus never edits a synced shift in place: a move or swap in Lotus is a remove (Delete Shift records the `Lotus_SheetSkips` key, so the sync leaves that row out) plus a new `app` shift (the sync never changes or removes it, and won't book the same person over it: `booked_in_lotus`). A Schedule → Import that changes a synced shift's end time sends `source` = `import`, so the sync keeps Lotus's version (`changed_in_lotus`); an import row that overlaps a shift the person already has that day is skipped, never booked twice. Save Shift must keep saving `source` as sent. Tests: `test/sync-both-ways.test.js`.
+
 **Not this flow's job:** emails. Reminders (§5) and the Thursday schedule emails (Schedule → Email schedules in the app) pick up the synced shifts; the app shows who's "changed since" their last email.
 
 ## 7. Flow: **Lotus Auto Clock-out** (scheduled)
