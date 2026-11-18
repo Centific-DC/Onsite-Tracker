@@ -7,6 +7,7 @@ import { CFG, DEMO, LOCATIONS, locationName, locOf } from '../lib/config.js';
 import { hasRole } from '../lib/auth.js';
 import { SignIn } from './SignIn.jsx';
 import { statusOf } from '../lib/hours.js';
+import { alreadyClockedIn } from '../lib/api.js';
 import { clockWindow, myShiftsToday, nextShift } from '../lib/attendance.js';
 import { nextBackToBack, openSpots, partnersOf, robotLabel, shiftTimes } from '../lib/schedule.js';
 import { FLAG, reviewDays } from '../lib/review.js';
@@ -96,7 +97,15 @@ function WeekWell({ hours }) {
 }
 
 function Person({ person, onDone, laptop }) {
-  const { data, punch, signOut, fillIn } = useStore();
+  const { data, punch, signOut, fillIn, error: syncError, loadedAt, sync, syncing } = useStore();
+  // A failed refresh used to show only as a red icon; say it in words, with the time of
+  // the copy on screen, so nobody trusts an old page (2026-11-17).
+  const stale = syncError && !DEMO ? (
+    <p className="op-stale" role="status" title={syncError}>
+      Couldn’t refresh{loadedAt ? `: showing what Lotus had at ${fmtTime(loadedAt)}` : ''}.{' '}
+      <button type="button" className="link" disabled={syncing} onClick={() => sync({ manual: true }).catch(() => {})}>{syncing ? 'Refreshing…' : 'Try again'}</button>
+    </p>
+  ) : null;
   const now = useNow(1000);
   const st = statusOf(data.punches, person.email, now);
   const open = st.open;
@@ -138,6 +147,11 @@ function Person({ person, onDone, laptop }) {
         description: type === 'out' && extra.flag ? (DEMO ? 'Demo mode: no email was sent to your manager.' : 'Your manager has been told.') : savedNote || (p.grace ? `${p.grace} min before your shift, logged for review.` : 'Saved.'),
       });
     }, (e) => {
+      // Already clocked in on the server: the screen switches to Clock out by itself.
+      if (type === 'in' && alreadyClockedIn(e)) {
+        toast(`${laptop ? `${firstName(who)} is` : 'You’re'} already clocked in`, { description: 'Lotus has your earlier clock-in. Clock out when you’re done.', duration: 10000 });
+        return;
+      }
       const why = e.code === 'early' || e.code === 'over' ? e.message : `${e.message}. Try again, or tell your lead the time.`;
       setErr(`Didn't save: ${why}`);
       toast.error(e.code === 'early' ? `Too early to clock in${laptop ? `, ${firstName(who)}` : ''}` : `${laptop ? `${who}’s ` : 'Your '}${type === 'in' ? 'clock-in' : 'clock-out'} didn't save`, { description: why, duration: 15000 });
@@ -178,7 +192,8 @@ function Person({ person, onDone, laptop }) {
   const signOutLink = <button type="button" className="op-link" onClick={signOut}>{laptop ? `Not ${firstName(person.name)}? Sign out` : 'Sign out'}</button>;
 
   if (open) {
-    const [main, sec] = clockParts(past ? now - times.end : elapsedMs);
+    // The server said we're clocked in, but this screen hasn't loaded that clock-in yet.
+    const [main, sec] = open.unknownTime ? ['–:––', ''] : clockParts(past ? now - times.end : elapsedMs);
     const clockOut = () => (early ? setAskReason(true) : doPunch('out'));
     return (
       <div className="op op-screen op-enter" key="on">
@@ -198,8 +213,8 @@ function Person({ person, onDone, laptop }) {
         ) : (
           <>
             <Pill tone="green" className="op-badge"><span className="op-dot is-green op-pulse" />Clocked in</Pill>
-            <Label className="op-center">{open.pending ? 'Saving your clock-in · ' : ''}On the clock since {fmtTime(since)} · {robotTitle(open.station)}{shift && partnersOf(data, shift).length ? ` · with ${andList(partnersOf(data, shift))}` : ''}</Label>
-            <Dial value={shift ? elapsedMs / lengthMs : 0} tone="green" onClick={clockOut} busy={busy} label={`Clock out. ${main} on the clock`}>
+            <Label className="op-center">{open.unknownTime ? 'You clocked in earlier · loading the time' : <>{open.pending ? 'Saving your clock-in · ' : ''}On the clock since {fmtTime(since)}</>} · {robotTitle(open.station)}{shift && partnersOf(data, shift).length ? ` · with ${andList(partnersOf(data, shift))}` : ''}</Label>
+            <Dial value={shift && !open.unknownTime ? elapsedMs / lengthMs : 0} tone="green" onClick={clockOut} busy={busy} label={`Clock out. ${main} on the clock`}>
               <div className="op-timer op-num" aria-live="off">{main}<span className="op-timer-sec">{sec}</span></div>
               <Label>{shift ? `of ${clockParts(lengthMs)[0]} shift` : 'Not on the schedule'}</Label>
               <Pill inset tone="coral" className="op-plate-action">{busy ? 'Saving…' : 'Clock out'}</Pill>
@@ -222,6 +237,7 @@ function Person({ person, onDone, laptop }) {
         )}
         {switchCard}
         {err && <p className="op-err" role="alert">{err}</p>}
+        {stale}
         <div className="op-foot">{signOutLink}</div>
         <RobotSheet
           open={!!robotFor?.switching}
@@ -352,6 +368,7 @@ function Person({ person, onDone, laptop }) {
         {note && <p className={clsx('op-hint', next && w.state !== 'early' && 'is-warn')} role="status">{note}</p>}
         {!note && <p className="op-hint">{next ? 'The time comes from the server, not your phone.' : spots.length ? 'You can clock in by taking an open spot above.' : 'You can clock in once you’re booked on a shift. Ask your scheduler.'}</p>}
         {err && <p className="op-err" role="alert">{err}</p>}
+        {stale}
       </div>
 
       <WeekWell hours={week.recorded} />

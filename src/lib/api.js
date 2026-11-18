@@ -70,7 +70,7 @@ async function paPostRaw(url, body) {
       cache: 'no-store',
     });
     const out = await r.json().catch(() => ({}));
-    if (!r.ok || out?.error) { const e = new Error(errorText(out, r.status)); e.code = typeof out?.code === 'string' ? out.code : out?.error?.code; e.status = r.status; throw e; }
+    if (!r.ok || out?.error) { const e = new Error(errorText(out, r.status)); e.code = typeof out?.code === 'string' ? out.code : out?.error?.code; e.status = r.status; e.body = out; throw e; }
     return out;
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('The flow took longer than 110 seconds to answer.');
@@ -82,6 +82,9 @@ async function paPostRaw(url, body) {
 }
 
 // Excel and SharePoint rows can come back with odd casing, numbers as text, or dates as serials.
+/** The flow refused a clock-in because one is already open (code "open"; older flows only say so). */
+export const alreadyClockedIn = (e) => e?.code === 'open' || /already clocked in/i.test(String(e?.message || ''));
+
 export function normPunch(p) {
   let ts = p.ts ?? p.Timestamp;
   if (typeof ts === 'number' || /^\d+(\.\d+)?$/.test(String(ts))) ts = new Date(Math.round((Number(ts) - 25569) * 864e5)).toISOString();

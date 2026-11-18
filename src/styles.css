@@ -930,3 +930,7 @@ p.err { text-align: center; margin: 0 0 12px; }
 /* Review: each day, then its shifts in schedule order. */
 .review-day { display: grid; gap: 0; }
 .review-day-head { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); margin: 20px 4px 8px; }
+
+/* Operator page: the copy on screen is old because a refresh failed. */
+.op-stale { text-align: center; font-size: 0.875rem; line-height: 20px; color: var(--yellow-text); margin: 8px 16px 0; }
+.op-stale .link { font-size: 0.875rem; }
