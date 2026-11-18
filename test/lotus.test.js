@@ -44,7 +44,7 @@ describe('operator clock-in', () => {
     expect(clockInCheck(null, at('09:00'))).toMatchObject({ allowed: false, reason: 'no_shift' });
   });
 
-  it('1c. a shift the system closed 15 minutes after its end shows as Auto clock-out, not Left early', () => {
+  it('1c. a shift the system closed 30 minutes after its end shows as Auto clock-out, not Left early', () => {
     expect(punchFlag('Auto clock-out')).toBe('auto');
     expect(punchFlag('Left early')).toBe('early');
     expect(punchFlag('')).toBe('');

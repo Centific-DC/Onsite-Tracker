@@ -17,7 +17,7 @@ export const FLAG = {
   left_early: { label: 'Left early', tone: 'bad', time: false },
   outside_shift: { label: 'Outside shift', tone: 'warn', time: true },
   no_clockout: { label: 'No clock-out', tone: 'warn', time: true },
-  // The Auto Clock-out flow closed the shift 15 minutes after its end: the operator
+  // The Auto Clock-out flow closed the shift 30 minutes after its end: the operator
   // forgot. Kept for performance reviews; the approver checks the end is right.
   auto_clockout: { label: 'Auto clock-out', tone: 'warn', time: false },
   no_clockin: { label: 'No clock-in', tone: 'warn', time: false },
