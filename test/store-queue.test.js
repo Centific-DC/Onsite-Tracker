@@ -20,7 +20,7 @@ vi.mock('../src/lib/api.js', async (orig) => {
   };
 });
 
-const { useStore } = await import('../src/lib/store.js');
+const { useStore, keepOpenMarkers } = await import('../src/lib/store.js');
 const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
 const shift = { email: 'a@x.com', name: 'A', date: '2026-11-09', start: '07:00', end: '12:30', location: 'RED' };
 
@@ -136,5 +136,34 @@ describe('store save queue', () => {
     await expect(saved).rejects.toThrow('Clock-in opens');
     await tick();
     expect(useStore.getState().data.punches).toHaveLength(0);
+  });
+
+  it('trusts the server when a clock-in is refused as already clocked in (2026-11-17)', async () => {
+    useStore.setState({ base: { schedule: [], operators: [], punches: [] }, data: { schedule: [], operators: [], punches: [] } });
+    flow.answer = () => Promise.reject(Object.assign(new Error("You're already clocked in"), { code: 'open', status: 409, body: { error: "You're already clocked in", code: 'open' } }));
+    const { saved } = useStore.getState().punch({ type: 'in', email: 'a@x.com', name: 'A', shiftId: 'S-1' });
+    await saved.catch(() => {});
+    const p = useStore.getState().data.punches;
+    expect(p).toHaveLength(1);
+    expect(p[0]).toMatchObject({ type: 'in', email: 'a@x.com', shiftId: 'S-1', unknownTime: true });
+  });
+
+  it('keeps that open clock-in through a read that lacks it, and drops it once the read has it', () => {
+    const marker = { id: 'open-1', ts: '2026-11-17T20:21:00.000Z', type: 'in', email: 'a@x.com', unknownTime: true };
+    expect(keepOpenMarkers([marker], [])).toEqual([marker]);
+    const real = { id: 'P-1', ts: '2026-11-17T15:00:00.000Z', type: 'in', email: 'a@x.com' };
+    expect(keepOpenMarkers([marker], [real])).toEqual([real]);
+    expect(keepOpenMarkers([], [real])).toEqual([real]);
+  });
+
+  it('uses the server’s open clock-in when the refusal carries it', async () => {
+    useStore.setState({ base: { schedule: [], operators: [], punches: [] }, data: { schedule: [], operators: [], punches: [] } });
+    const realSync = useStore.getState().sync;
+    useStore.setState({ sync: async () => {} }); // the read is a stand-in here; it isn't what's tested
+    flow.answer = () => Promise.reject(Object.assign(new Error("You're already clocked in"), { code: 'open', status: 409, body: { code: 'open', punch: { ID: 'P-7', Timestamp: '2026-11-17T15:00:00Z', InOut: 'IN', Email: 'a@x.com', ShiftID: 'S-1' } } }));
+    const { saved } = useStore.getState().punch({ type: 'in', email: 'a@x.com', name: 'A', shiftId: 'S-1' });
+    await saved.catch(() => {});
+    expect(useStore.getState().data.punches).toMatchObject([{ id: 'P-7', ts: '2026-11-17T15:00:00.000Z', type: 'in' }]);
+    useStore.setState({ sync: realSync });
   });
 });

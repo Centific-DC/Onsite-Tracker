@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
-import { api, demo, normNotice, setDemoActor, storage, whenSignedOut } from './api.js';
+import { alreadyClockedIn, api, demo, normNotice, normPunch, setDemoActor, storage, whenSignedOut } from './api.js';
 import { AUTH_URL, DEMO, setDemo } from './config.js';
 import * as auth from './auth/api.js';
 import { getAuth, setAuth } from './auth/session.js';
@@ -54,6 +54,13 @@ const SEND = {
 // doesn't briefly undo them.
 let recent = [];
 const RECENT_MS = 3 * 60 * 1000;
+/** Clock-ins the server said are open (see punch) that a read didn't return yet stay
+ *  shown until the read has a punch of that person's from that day. */
+export const keepOpenMarkers = (before = [], after = []) => {
+  const held = (before || []).filter((p) => p.unknownTime && !(after || []).some((x) => x.email === p.email && x.ts >= p.ts.slice(0, 10)));
+  return held.length ? [...(after || []), ...held] : after;
+};
+
 const reSettle = (base) => {
   recent = recent.filter((r) => Date.now() - r.at < RECENT_MS);
   return recent.reduce((d, r) => KINDS[r.job.kind].settle(d, r.job.body, r.result), base);
@@ -106,6 +113,9 @@ export const useStore = create((set, get) => ({
       if (DEMO !== wasDemo) return;
       const at = new Date();
       if (!DEMO) storage.set('onsite-cache', { data, at: at.toISOString() });
+      // A clock-in the server says is open but this read didn't return (see punch):
+      // keep showing it until the read has that person's clock-in or clock-out.
+      data.punches = keepOpenMarkers(get().base?.punches, data.punches);
       const base = reSettle(data);
       const patch = { base, data: overlay(base, get().jobs), loadedAt: at, error: '' };
       if (data.me?.email && get().session && !get().session.demoPicker) patch.session = { ...get().session, ...data.me, roles: data.me.roles || get().session.roles };
@@ -190,7 +200,21 @@ export const useStore = create((set, get) => ({
     punchChain.set(body.email, run.catch(() => {}));
     run.then(
       (p) => get().commit((d) => (d ? { ...d, punches: d.punches.filter((x) => x.id !== tmp.id).concat(p) } : d)),
-      () => get().commit((d) => (d ? { ...d, punches: d.punches.filter((x) => x.id !== tmp.id) } : d)),
+      (e) => {
+        // The server already has an open clock-in that this screen didn't know about
+        // (an old copy, a second phone). Trust the server: show it as clocked in, so
+        // the person can clock out, and refresh to get the real time.
+        if (body.type === 'in' && alreadyClockedIn(e)) {
+          const known = e.body?.punch ? normPunch(e.body.punch) : null;
+          const open = known && known.id ? known : { ...tmp, id: `open-${tmp.id}`, pending: false, unknownTime: true };
+          get().commit((d) => (d ? { ...d, punches: d.punches.filter((x) => x.id !== tmp.id && x.id !== open.id).concat(open) } : d));
+          get().sync().catch(() => {});
+          return;
+        }
+        get().commit((d) => (d ? { ...d, punches: d.punches.filter((x) => x.id !== tmp.id) } : d));
+        // Told "not clocked in" on a clock-out: this screen was behind. Refresh it.
+        if (body.type === 'out' && e.code === 'not_in') get().sync().catch(() => {});
+      },
     );
     return { shown: tmp, saved: run };
   },
@@ -222,6 +246,10 @@ export const useStore = create((set, get) => ({
   commit(fn) {
     set((s) => {
       const base = fn(s.base ?? s.data);
+      // Keep the saved copy in step with what the server confirmed (2026-11-17: an
+      // operator's 7 AM clock-in was confirmed, then every refresh failed, and a
+      // reload brought back the copy from before it, showing Clock in again).
+      if (!DEMO && base) storage.set('onsite-cache', { data: base, at: (s.loadedAt || new Date()).toISOString() });
       return { base, data: overlay(base, s.jobs) };
     });
   },
