@@ -595,19 +595,20 @@ Both tables have the headers `Date, Day, Shift, Time, Team Member, Email, Notes`
 
 ## 7. Flow: **Lotus Auto Clock-out** (scheduled)
 
-User rule, 2026-11-06: an operator who forgets to clock out is clocked out by the system 15 minutes after their shift's scheduled end, and the punch is labelled `Auto clock-out` so approvers can use it in performance reviews. The approver still reviews the day; the app flags it as "Auto clock-out".
+User rule, 2026-11-06, changed 2026-11-18 from 15 to **30 minutes**: an operator who forgets to clock out is clocked out by the system 30 minutes after their shift's scheduled end, and the punch is labelled `Auto clock-out` so approvers can use it in performance reviews. The approver still reviews the day; the app flags it as "Auto clock-out".
 
 - **Trigger:** recurrence, every 15 minutes. Concurrency 1, so two runs never overlap.
 - No email, no app call: it only adds rows.
+- **It only closes a clock-in.** An operator who never clocked in gets nothing from this flow (no OUT row, no hours): the operator must clock in for Auto clock-out to work (David, 2026-11-18).
 
 1. Get `Lotus_Punches` with `InOut` = `IN` from today and yesterday (site-local `Date`), indexed filter, newest first.
 2. For each `Email`, take the latest punch overall. If it is an `IN` with a non-empty `ShiftID`, get that shift. Skip it if the shift is missing.
-3. Compute the shift's end as a site-local time on its `Date` (an end at or before the start runs past midnight), then in UTC. If `utcNow()` is at least end + 15 minutes, add one `Lotus_Punches` row:
+3. Compute the shift's end as a site-local time on its `Date` (an end at or before the start runs past midnight), then in UTC. If `utcNow()` is at least end + 30 minutes, add one `Lotus_Punches` row:
     - `InOut` = `OUT`, `Timestamp` = **the scheduled end** (in UTC), `Date` = the shift's `Date`.
     - Copy `Email`, `Name`, `OperatorID`, `ShiftID`, `Location` and `Robot` from the `IN`.
     - `Device` = `system`, `Flag` = `Auto clock-out`, `Note` empty, `GraceMinutes` 0, `DeviceTime` empty.
 4. Add a `Lotus_Audit` row: actor `system`, action `auto_clockout`, the punch ID.
-5. **Safe to run twice:** step 2 re-reads the latest punch first, so a person already clocked out (by hand or by an earlier run) is skipped. A clock-out by hand during the 15 minutes wins.
+5. **Safe to run twice:** step 2 re-reads the latest punch first, so a person already clocked out (by hand or by an earlier run) is skipped. A clock-out by hand during the 30 minutes wins.
 6. An `IN` with an empty `ShiftID` (rows from before this rule) is left alone: the approver sees "No clock-out" as before.
 
 ## 8. Tests to run before handing over
@@ -640,7 +641,7 @@ User rule, 2026-11-06: an operator who forgets to clock out is clocked out by th
 16f. Password reset: as an admin, `user.reset_link` for an operator, then `email_send` kind `password-reset`: it arrives (at the alias in test mode) and the notice row has no HTML. Their old password still signs in. `reset` with the right `codeHash` sets the new password, signs them out (old token gets 401) and the old password no longer works. The same link again: 400. A wrong `codeHash` five times locks the account for 15 minutes.
 16g. Set `ResetExpires` to yesterday by hand: `reset` gets 400. `email_send` kind `password-reset` for someone with no `ResetHash`: 400, no email. `user.reset_link` as a scheduler without `admin`: 403.
 16i. No shift: as an operator with no shift today, `punch` `in` with no `shiftId` (through Punch and through Write): 403 `no_shift`, no row added.
-16j. Auto clock-out: clock A in on a shift that ends in a few minutes and don't clock out. 15 to 30 minutes after the end, `Lotus_Punches` has one `OUT` for A with `Timestamp` = the scheduled end, `Device` = `system`, `Flag` = `Auto clock-out`, and Read returns `flag` = `auto`. Let the flow run again: still one `OUT`. Clock B in and out by hand before end + 15: no auto row for B.
+16j. Auto clock-out: clock A in on a shift that ends in a few minutes and don't clock out. 30 to 45 minutes after the end, `Lotus_Punches` has one `OUT` for A with `Timestamp` = the scheduled end, `Device` = `system`, `Flag` = `Auto clock-out`, and Read returns `flag` = `auto`. Let the flow run again: still one `OUT`. Clock B in and out by hand before end + 30: no auto row for B. Book C and don't clock C in: no auto row for C.
 16k. Robot names: `robot_names` as an admin with `{"Robot 4":"jetson-thor-004"}`, then Read as an operator: `robotNames` has it. As a scheduler without `admin`: 403. A key `Robot 99` or a 61-character name: 400.
 16s. Schedule sync (copy the workbook to a test file first and point the flow at the copy; never test against the live sheet): a row for tomorrow with a Lotus user creates a `sheet` shift with the right `SheetKey`, times and template; running again changes nothing. Change its `Time`: the shift updates. Change its name to another Lotus user: the old shift goes, a new one comes. Blank it: the shift is removed. A row for today: added by a run before 6:00 AM, untouched by a Sync now after 6:00 AM. Remove a synced shift in the app: it's in `Lotus_SheetSkips` and the next run doesn't bring it back. Add a shift in the app at the same time as a sheet row: the sync keeps the app's (`booked_in_lotus`). Rename the `Email` column in the copy: the run reports an error and removes nothing. Read as an operator: `scheduleSync` is `null`. `schedule_sync` as an operator: 403. As a scheduler: 202, and the next 30-minute check runs it; while it runs, Read shows the old counts with `runningSince`.
 16t. Delete User: as an admin, add an operator with a made-up email and book them one future shift, then `user_delete` with a reason: 200 `removedShifts` = 1 and `removedNotices` = the number of `Lotus_Notices` rows they had, their `Lotus_Users`, `Lotus_Shifts` and `Lotus_Notices` rows are gone, and one `user_delete` audit row has no password, hash or token in it. Again: 404. For an operator with any punch: 409 `has_records`, nothing deleted. As a scheduler without `admin`: 403. With an empty reason, or your own email: 400.

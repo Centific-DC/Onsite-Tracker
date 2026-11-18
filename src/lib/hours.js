@@ -3,7 +3,7 @@ import { dayKey, hoursBetween } from './time.js';
 // A clock-in stays open (the person is on the clock) for up to this long, whatever the
 // date: a night shift runs past midnight (2026-11-17: an operator clocked in on an
 // evening shift and after midnight the page forgot it and offered Clock in again).
-// Auto clock-out closes a forgotten shift 15 minutes after its end, long before this.
+// Auto clock-out closes a forgotten shift 30 minutes after its end, long before this.
 export const OPEN_MAX_HOURS = 18;
 const stillOpen = (p, now) => +now - Date.parse(p.ts) < OPEN_MAX_HOURS * 36e5;
 

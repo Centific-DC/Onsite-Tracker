@@ -103,7 +103,7 @@ export function normPunch(p) {
     source: String(p.source ?? p.Device ?? ''),
     note: String(p.note ?? p.Note ?? ''),
     // `Left early` (the operator's own clock-out) or `Auto clock-out` (the flow closed
-    // a shift nobody clocked out of, 15 minutes after its end).
+    // a shift nobody clocked out of, 30 minutes after its end).
     flag: punchFlag(p.flag ?? p.Flag),
   };
 }

@@ -56,7 +56,7 @@ export const OPERATOR_GUIDE = [
       'Leaving more than 15 minutes early? Lotus asks why, and your manager is told.',
       'Staying past the end? The ring turns red. Extra time only counts if your manager approves it.',
     ],
-    tips: ['Forgot to clock out? Lotus clocks you out automatically 15 minutes after your shift ends, and marks the day "Auto clock-out" for your manager to review.'],
+    tips: ['Forgot to clock out? Lotus clocks you out automatically 30 minutes after your shift ends (only if you clocked in), and marks the day "Auto clock-out" for your manager to review.'],
   },
   {
     id: 'double',
