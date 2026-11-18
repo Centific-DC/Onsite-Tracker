@@ -1,8 +1,15 @@
 import { dayKey, hoursBetween } from './time.js';
 
-// Pair each person's IN with their next OUT. An IN followed by another IN, or still
-// open from an earlier day, is a missing check-out and counts no hours. Today's open
-// INs are people on site now; they count up to `now`.
+// A clock-in stays open (the person is on the clock) for up to this long, whatever the
+// date: a night shift runs past midnight (2026-11-17: an operator clocked in on an
+// evening shift and after midnight the page forgot it and offered Clock in again).
+// Auto clock-out closes a forgotten shift 15 minutes after its end, long before this.
+export const OPEN_MAX_HOURS = 18;
+const stillOpen = (p, now) => +now - Date.parse(p.ts) < OPEN_MAX_HOURS * 36e5;
+
+// Pair each person's IN with their next OUT. An IN followed by another IN, or one
+// open longer than OPEN_MAX_HOURS, is a missing check-out and counts no hours. Open
+// INs are people on site now; they count up to `now`, on the day they clocked in.
 export function buildSessions(punches, now = new Date()) {
   const byEmail = new Map();
   for (const p of [...punches].sort((a, b) => a.ts.localeCompare(b.ts))) {
@@ -11,7 +18,6 @@ export function buildSessions(punches, now = new Date()) {
   }
   const sessions = [];
   const issues = [];
-  const todayK = dayKey(now);
   const noout = (p) => ({ kind: 'noout', at: new Date(p.ts), name: p.name, email: p.email, station: p.station, location: p.location || '', shiftId: p.shiftId || '' });
   const make = (inP, end, extra) => {
     const start = new Date(inP.ts);
@@ -34,7 +40,7 @@ export function buildSessions(punches, now = new Date()) {
     }
     if (cur) {
       // A check-in stamped by the server a moment ahead of this device's clock is still zero-length, never negative.
-      if (dayKey(new Date(cur.ts)) === todayK) sessions.push(make(cur, new Date(Math.max(+now, Date.parse(cur.ts))), { live: true }));
+      if (stillOpen(cur, now)) sessions.push(make(cur, new Date(Math.max(+now, Date.parse(cur.ts))), { live: true }));
       else issues.push(noout(cur));
     }
   }
@@ -101,6 +107,6 @@ export function roster(punches) {
 export function statusOf(punches, email, now = new Date()) {
   const mine = punches.filter((p) => p.email === email).sort((a, b) => a.ts.localeCompare(b.ts));
   const last = mine[mine.length - 1] || null;
-  const open = last && last.type === 'in' && dayKey(new Date(last.ts)) === dayKey(now) ? last : null;
+  const open = last && last.type === 'in' && stillOpen(last, now) ? last : null;
   return { last, open };
 }

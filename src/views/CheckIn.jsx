@@ -118,6 +118,10 @@ function Person({ person, onDone, laptop }) {
   const [err, setErr] = useState('');
   // A shift with no robot set asks which robot at clock-in, so hours merge per robot.
   const [robotFor, setRobotFor] = useState(null); // { shift } or { spot }
+  const [forgot, setForgot] = useState(false);
+  // Lotus clocked them out at the end of the shift (Auto clock-out). Say so, instead of
+  // a bare Clock in and 0 hours, so someone who stayed on knows how to add the time.
+  const autoOut = !st.open && st.last?.type === 'out' && st.last.flag === 'auto' && now - Date.parse(st.last.ts) < 12 * 36e5 ? st.last : null;
   const home = (data.operators || []).find((o) => o.email === person.email)?.location || data.me?.location || '';
 
   const shift = open ? (data.schedule || []).find((r) => r.id === open.shiftId) : null;
@@ -367,12 +371,19 @@ function Person({ person, onDone, laptop }) {
         )}
         {note && <p className={clsx('op-hint', next && w.state !== 'early' && 'is-warn')} role="status">{note}</p>}
         {!note && <p className="op-hint">{next ? 'The time comes from the server, not your phone.' : spots.length ? 'You can clock in by taking an open spot above.' : 'You can clock in once you’re booked on a shift. Ask your scheduler.'}</p>}
+        {autoOut && (
+          <p className="op-hint is-warn" role="status">
+            Lotus clocked you out at {fmtTime(new Date(autoOut.ts))} when your shift ended. Worked later?{' '}
+            <button type="button" className="link" onClick={() => setForgot(true)}>Tell your manager the time</button>
+          </p>
+        )}
         {err && <p className="op-err" role="alert">{err}</p>}
         {stale}
       </div>
 
       <WeekWell hours={week.recorded} />
       <div className="op-foot">{signOutLink}</div>
+      <ForgotSheet open={forgot} onOpenChange={setForgot} person={person} now={now} />
       <RobotSheet
         open={!!robotFor}
         onOpenChange={(o) => !o && setRobotFor(null)}
