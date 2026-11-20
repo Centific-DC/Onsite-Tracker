@@ -224,7 +224,7 @@ export const STAFF_GUIDE = [
     title: 'Review and approve hours',
     summary: 'Check each operator’s day, decide on flags, then approve.',
     steps: [
-      'Review opens on last week. Hours are due by Monday.',
+      'Review opens on this week. Tap Last week for Monday’s review: hours are due by Monday.',
       'Open a day to see the shift, the clock-ins and any flags.',
       'Decide each flag with a reason: accept the time, decline it, or note it.',
       'Approve the suggested hours. Admins can change them, with a note.',

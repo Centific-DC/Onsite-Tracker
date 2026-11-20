@@ -31,8 +31,10 @@ export function Review() {
   // Missed clock-in or out requests from every week, oldest first: they hold up the day.
   const allRequests = sortRequests(data.corrections || []).filter((c) => c.status === 'open');
   const now = useNow(60000);
-  // Monday's review covers last week, so that's where it opens.
-  const [wk0, setWk0] = useState(() => addDays(mondayOf(new Date()), -7));
+  // Opens on the current week, like Schedule and Hours (David, 2026-11-19: opening on
+  // last week read as "nothing after the 15th"). Last week is one tap away for Monday's review.
+  const [wk0, setWk0] = useState(() => mondayOf(new Date()));
+  const onThisWeek = dayKey(wk0) === dayKey(mondayOf(now));
   const [show, setShow] = useState('todo');
   const [lab, setLab] = useState('all');
   const [open, setOpen] = useState(null);
@@ -87,7 +89,7 @@ export function Review() {
         </div>
         <div className="stepper" role="group" aria-label="Week">
           <button type="button" className="icon-btn" aria-label="Previous week" onClick={() => setWk0(addDays(wk0, -7))}><ChevronLeft size={18} /></button>
-          <button type="button" className="btn btn-plain btn-sm" onClick={() => setWk0(addDays(mondayOf(new Date()), -7))}>Last week</button>
+          <button type="button" className="btn btn-plain btn-sm" onClick={() => setWk0(onThisWeek ? addDays(mondayOf(now), -7) : mondayOf(now))}>{onThisWeek ? 'Last week' : 'This week'}</button>
           <button type="button" className="icon-btn" aria-label="Next week" disabled={dayKey(wk0) >= dayKey(mondayOf(now))} onClick={() => setWk0(addDays(wk0, 7))}><ChevronRight size={18} /></button>
         </div>
       </header>
