@@ -130,7 +130,7 @@ export const TOURS = {
   ],
 
   'admin/review': [
-    { target: '.main .page-head', title: 'Which week', body: 'Review opens on last week. Hours are due by Monday.' },
+    { target: '.main .page-head', title: 'Which week', body: 'Review opens on this week. Tap Last week for Monday’s review: hours are due by Monday.' },
     { target: T('review-requests'), title: 'Missed clock-in requests', body: 'Operators who forgot to clock in or out ask here. Check with the partner, then set the real times. Each counted miss is a warning or a strike.' },
     { target: T('review-approve-all'), title: 'Approve in one go', body: 'Approves every day with no open flags, at the hours Lotus suggests.' },
     { target: '.main .group .row-btn', title: 'Check a day', body: 'Open an operator’s day to see their clock-ins, decide on any flags, then approve or change the hours.' },
