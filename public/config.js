@@ -54,9 +54,11 @@ window.ONSITE_CONFIG = {
       name: 'Mountain View Lab',
       robots: ['Robot 3', 'Robot 4'],
       // The times in the Master List's MV Schedule tab (2026-11-10), every day of the week.
+      // Every shift is a pair on both robots: the afternoon needed 2 until 2026-11-20, which
+      // showed the scheduling team's 4 bookings as "2 more than needed".
       templates: [
         { id: 'MTV-AM', label: 'Morning', start: '07:00', end: '12:00', seats: 4 },
-        { id: 'MTV-MID', label: 'Afternoon', start: '12:30', end: '17:00', seats: 2 },
+        { id: 'MTV-MID', label: 'Afternoon', start: '12:30', end: '17:00', seats: 4 },
         { id: 'MTV-PM', label: 'Night', start: '17:30', end: '23:00', seats: 4 },
       ],
       days: [0, 1, 2, 3, 4, 5, 6],
