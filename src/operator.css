@@ -234,3 +234,9 @@
   .op-big, .op-dial-plate, .op-btn, .op-dial, .op-dial-sweep, .op-bar-fill { transition: none; }
   .op-big:active:not(:disabled), .op-dial-plate.is-button:active:not(:disabled), .op-btn:active { scale: none; }
 }
+
+/* Approaching 40 hours (2026-11-23) and shift swaps */
+.op-ot { text-align: left; margin-top: 10px; }
+.op-small.is-warn { color: var(--op-yellow-text); }
+.op-small.is-red { color: var(--op-red-text, var(--op-red)); }
+.op-swap-link { padding: 6px 10px; font-size: 13px; }

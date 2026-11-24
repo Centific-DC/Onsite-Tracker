@@ -17,6 +17,8 @@ import { Group, Segmented, Sheet } from '../components/ui.jsx';
 import { Bar, BigButton, Card, Detail, Dial, Label, Pill, Well } from '../components/Soft.jsx';
 import { robotName, robotTitle } from '../lib/robots.js';
 import { MISSED, RESET_DAYS, standing } from '../lib/strikes.js';
+import { SWAP_CUTOFF_HOURS, SWAP_STATUS, TOO_LATE_TEXT, swapCheck } from '../lib/swaps.js';
+import { OVERTIME_HOURS, weekOutlook, wouldReach } from '../lib/overtime.js';
 
 // The operator's page. Everyone signs in as themselves, on their phone or on the
 // lab laptop; the laptop signs the operator out again after each clock-in or out.
@@ -83,7 +85,7 @@ function useMyWeek(email, now) {
   }, [data, email, dayKey(now), Math.floor(now / 6e4)]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-function WeekWell({ hours }) {
+function WeekWell({ hours, outlook }) {
   const cap = CFG.weeklyHourCap;
   return (
     <Well className="op-week">
@@ -92,7 +94,22 @@ function WeekWell({ hours }) {
         <Label className="is-coral op-num">{(Math.round(hours * 10) / 10).toFixed(1)} / {cap}h</Label>
       </div>
       <Bar value={hours / cap} tone={hours > cap ? 'red' : 'coral'} label="Your hours this week" />
+      <OvertimeNote outlook={outlook} />
     </Well>
+  );
+}
+
+// Approaching 40 hours (2026-11-23): what they've clocked plus what's still booked.
+function OvertimeNote({ outlook }) {
+  if (!outlook?.level) return null;
+  const ot = OVERTIME_HOURS();
+  const t = fmtHrsU(outlook.total);
+  return (
+    <p className={clsx('op-small op-ot', outlook.level === 'over' ? 'is-red' : 'is-warn')} role="status">
+      {outlook.level === 'over'
+        ? `With your booked shifts you'd reach ${t} this week, at or over ${ot} hrs (overtime). Check with your lead before working more.`
+        : `You're on track for ${t} this week (${fmtHrsU(outlook.worked)} clocked, ${fmtHrsU(outlook.ahead)} booked). ${ot} hrs is overtime, so check with your lead before taking more.`}
+    </p>
   );
 }
 
@@ -112,6 +129,7 @@ function Person({ person, onDone, laptop }) {
   const today = useMemo(() => myShiftsToday(data.schedule, data.punches, person.email, now), [data.schedule, data.punches, person.email, now]);
   const next = nextShift(data.schedule, data.punches, person.email, now);
   const week = useMyWeek(person.email, now);
+  const outlook = useMemo(() => weekOutlook(data, person.email, mondayOf(now), now), [data, person.email, Math.floor(now / 6e4)]); // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false);
   const [askReason, setAskReason] = useState(false);
   const [reason, setReason] = useState('');
@@ -403,10 +421,10 @@ function Person({ person, onDone, laptop }) {
         {stale}
       </div>
 
-      <WeekWell hours={week.recorded} />
+      <WeekWell hours={week.recorded} outlook={outlook} />
       <div className="op-foot">{signOutLink}</div>
       <ForgotSheet open={forgot} onOpenChange={setForgot} person={person} now={now} />
-      <ProvisionalSheet open={askProvisional} onOpenChange={setAskProvisional} home={home} now={now} busy={busy} onConfirm={clockInProvisional} />
+      <ProvisionalSheet open={askProvisional} onOpenChange={setAskProvisional} home={home} now={now} busy={busy} outlook={outlook} onConfirm={clockInProvisional} />
       <RobotSheet
         open={!!robotFor}
         onOpenChange={(o) => !o && setRobotFor(null)}
@@ -422,7 +440,7 @@ function Person({ person, onDone, laptop }) {
 
 // Clock in with no shift booked: which robot, and why. The reason goes to the approvers
 // with the clock-in, and the time counts only once one of them accepts it.
-function ProvisionalSheet({ open, onOpenChange, onConfirm, busy, home, now }) {
+function ProvisionalSheet({ open, onOpenChange, onConfirm, busy, home, now, outlook }) {
   const labs = home ? LOCATIONS.filter((l) => l.id === home) : LOCATIONS;
   const [pick, setPick] = useState('');
   const [why, setWhy] = useState('');
@@ -438,6 +456,7 @@ function ProvisionalSheet({ open, onOpenChange, onConfirm, busy, home, now }) {
       footer={<button type="button" className="btn btn-primary btn-block" disabled={!ok || busy} onClick={() => onConfirm({ station: pick, reason: why.trim() })}>{busy ? 'Saving…' : 'Clock in for review'}</button>}
     >
       {slot && <p className="op-small op-prov-slot">Counts as the {slot.template.label} shift, {fmtTime(slot.start)}–{fmtTime(slot.end)}. If you forget to clock out, Lotus does it at {fmtTime(slot.end)}.</p>}
+      {slot && outlook && wouldReach(outlook, (slot.end - Math.max(+now, +slot.start)) / 36e5) === 'over' && <p className="op-small op-prov-slot is-red" role="status">This would take you to {OVERTIME_HOURS()} hrs or more this week (overtime). Check with your lead first.</p>}
       {labs.map((L) => (
         <Group key={L.id} title={L.name}>
           <div className="robots" role="radiogroup" aria-label={`Robot at ${L.name}`}>
@@ -453,6 +472,51 @@ function ProvisionalSheet({ open, onOpenChange, onConfirm, busy, home, now }) {
       <Group title="Why are you here without a shift?">
         <textarea className="reason" rows={3} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="For example: swapped with Sam for today, Kate asked me to cover" aria-label="Why you're clocking in without a shift" />
       </Group>
+    </Sheet>
+  );
+}
+
+// Ask for a swap on a booked shift (2026-11-23). At least 24 hours ahead; after that
+// the operator talks to their lead. They type who's taking it: Lotus never lists other
+// operators to an operator.
+function SwapSheet({ shift, onClose, now }) {
+  const { data, requestSwap } = useStore();
+  const [taker, setTaker] = useState('');
+  const [why, setWhy] = useState('');
+  const [err, setErr] = useState('');
+  useEffect(() => { if (shift) { setTaker(''); setWhy(''); setErr(''); } }, [shift]);
+  const check = shift ? swapCheck(shift, data.swaps, now) : null;
+  const t = shift ? shiftTimes(shift) : null;
+  const send = () => {
+    setErr('');
+    requestSwap({ shiftId: shift.id, taker: taker.trim(), message: why.trim() }).then(
+      () => toast.success('Swap request sent', { description: `A scheduler checks it and makes the change.${DEMO ? ' Demo mode: no email was sent.' : ''}` }),
+      (e) => toast.error('Your swap request didn’t send', { description: e.message, duration: 15000 }),
+    );
+    onClose();
+  };
+  return (
+    <Sheet
+      open={!!shift}
+      onOpenChange={(o) => !o && onClose()}
+      title="Swap this shift"
+      description={t ? `${fmtLongDay(t.start)} · ${shiftLabel(shift)} ${fmtTime(t.start)}–${fmtTime(t.end)} · ${locationName(locOf(shift))}` : ''}
+      footer={check?.allowed ? <button type="button" className="btn btn-primary btn-block" disabled={!taker.trim()} onClick={send}>Send swap request</button> : null}
+    >
+      {check && !check.allowed ? (
+        <p className="op-body" role="status">{check.reason === 'too_late' ? TOO_LATE_TEXT : 'You already asked to swap this shift. A scheduler will make the change or tell you why not.'}</p>
+      ) : (
+        <>
+          <p className="op-small op-prov-slot">Agree it with a teammate first. A scheduler checks it and moves the shift to them; you're booked until then. Swaps close {SWAP_CUTOFF_HOURS} hours before the shift.</p>
+          <Group title="Who is taking it?">
+            <input className="reason" value={taker} onChange={(e) => setTaker(e.target.value)} placeholder="Their name" aria-label="Who is taking the shift" autoComplete="off" />
+          </Group>
+          <Group title="Anything the scheduler should know?">
+            <textarea className="reason" rows={2} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Optional" aria-label="Note for the scheduler" />
+          </Group>
+          {err && <p className="op-err" role="alert">{err}</p>}
+        </>
+      )}
     </Sheet>
   );
 }
@@ -497,6 +561,7 @@ function MyTime({ person }) {
   const { data } = useStore();
   const now = useNow(60000);
   const [forgot, setForgot] = useState(false);
+  const [swapFor, setSwapFor] = useState(null);
   const { wk0, days } = useMyWeek(person.email, now);
   const upcoming = (data.schedule || []).filter((r) => r.email === person.email && r.date > dayKey(now) && r.date < dayKey(addDays(now, 8))).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
   const byDay = new Map(days.map((d) => [d.day, d]));
@@ -554,6 +619,7 @@ function MyTime({ person }) {
         <a className="op-link" href="#/guide" data-tour="op-guide">How Lotus works: the guide</a>
       </div>
       <ForgotSheet open={forgot} onOpenChange={setForgot} person={person} now={now} />
+      <SwapSheet shift={swapFor} onClose={() => setSwapFor(null)} now={now} />
       {upcoming.length > 0 && (
         <>
           <Label className="op-section">Coming up</Label>
@@ -567,7 +633,12 @@ function MyTime({ person }) {
                     <Label>{fmtDay(t.start).split(', ').slice(1).join(', ')} · {locationName(locOf(r))} · {robotLabel(r)}</Label>
                     {partnersOf(data, r).length > 0 && <span className="op-day-with">With {andList(partnersOf(data, r))}</span>}
                   </div>
-                  <div className="op-day-right"><span className="op-upcoming-time op-num">{shiftLabel(r)} · {fmtTime(t.start)}</span></div>
+                  <div className="op-day-right">
+                    <span className="op-upcoming-time op-num">{shiftLabel(r)} · {fmtTime(t.start)}</span>
+                    {(data.swaps || []).some((x) => x.shiftId === r.id && x.status === 'open')
+                      ? <span className="op-flag">Swap asked</span>
+                      : <button type="button" className="op-link op-swap-link" onClick={() => setSwapFor(r)}>Swap</button>}
+                  </div>
                 </Card>
               );
             })}
@@ -692,14 +763,26 @@ function ForgotSheet({ open, onOpenChange, person, now }) {
 
 // The operator's own missed clock-in or out requests from the last two weeks.
 function MyRequests({ email, now }) {
-  const { data } = useStore();
+  const { data, cancelSwap } = useStore();
   const list = (data.corrections || []).filter((c) => c.email === email && c.date >= dayKey(addDays(now, -14))).sort((a, b) => b.date.localeCompare(a.date));
-  if (!list.length) return null;
+  const swaps = (data.swaps || []).filter((x) => x.email === email && x.date >= dayKey(addDays(now, -14)) && x.status !== 'cancelled').sort((a, b) => a.date.localeCompare(b.date));
+  if (!list.length && !swaps.length) return null;
   const label = { open: ['Sent to admins', 'yellow'], approved: ['Corrected', 'green'], declined: ['Declined', 'red'] };
   return (
     <>
       <Label className="op-section">Your requests</Label>
       <div className="op-days">
+        {swaps.map((x) => (
+          <Card key={x.id} className="op-day">
+            <div className="op-day-col">
+              <span className="op-day-name">{fmtDay(new Date(`${x.date}T12:00`))}</span>
+              <Label>Swap · {x.taker ? `to ${x.taker}` : 'shift swap'}</Label>
+              {x.status !== 'open' && x.note && <span className="op-day-with">“{x.note}”</span>}
+              {x.status === 'open' && <button type="button" className="op-link op-swap-link" onClick={() => cancelSwap(x.id).then(() => toast.success('Swap request cancelled'), (e) => toast.error('Couldn’t cancel the swap request', { description: e.message }))}>Cancel request</button>}
+            </div>
+            <div className="op-day-right"><Pill inset tone={SWAP_STATUS[x.status].tone} className="op-pill-sm">{SWAP_STATUS[x.status].label}</Pill></div>
+          </Card>
+        ))}
         {list.map((c) => (
           <Card key={c.id} className="op-day">
             <div className="op-day-col">

@@ -101,6 +101,19 @@ export const OPERATOR_GUIDE = [
     tips: ['If someone booked in your lab didn’t show, take their open spot instead: that books the shift for you.', 'Not allowed as a third shift in one day.'],
   },
   {
+    id: 'swap',
+    icon: 'Repeat',
+    title: 'Swapping a shift',
+    summary: 'Can’t make a booked shift? Agree a swap with a teammate and ask at least 24 hours ahead.',
+    steps: [
+      'Agree it with a teammate first.',
+      'Under Coming up on your page, press Swap next to the shift, type who is taking it, and send.',
+      'A scheduler checks it and moves the shift to them, or tells you why not. You stay booked until then.',
+      'Your request shows under Your requests. You can cancel it while it’s waiting.',
+    ],
+    tips: ['Swaps close 24 hours before the shift. After that, talk to your lead: whoever covers can clock in without a shift for review.'],
+  },
+  {
     id: 'forgot',
     icon: 'MessageSquareWarning',
     title: 'Forgot to clock in or out?',
@@ -268,6 +281,19 @@ export const STAFF_GUIDE = [
       ],
     },
     tips: ['Switching straight from one shift to the next is never flagged as late or leaving early.'],
+  },
+  {
+    id: 'swaps-40',
+    icon: 'Repeat',
+    title: 'Swap requests and 40 hours',
+    summary: 'Operators ask for swaps 24 hours ahead or more. Lotus warns as anyone nears 40 hours in a week.',
+    steps: [
+      'Swap requests wait at the top of Schedule (and on Today). Open one, check who is taking it, and press Move the shift. The shift moves to them; send them the updated schedule email.',
+      'Decline with a reason if it doesn’t work. The operator sees the reason.',
+      'Near 40 hrs (on Today and Schedule) counts what someone has clocked this week plus their booked shifts still ahead. Over 37 is near; 40 or more is overtime.',
+      'Operators see the same on their page, and the Hours Watch flow emails them (and sends approvers a summary) once per level per week.',
+    ],
+    tips: ['Requests later than 24 hours before the shift are refused, so a last-minute change is your call: book it yourself, or the cover clocks in without a shift for review.'],
   },
   {
     id: 'requests',

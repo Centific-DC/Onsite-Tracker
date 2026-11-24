@@ -1,7 +1,7 @@
 // public/config.js sets window.ONSITE_CONFIG, so the site can be reconfigured
 // on GitHub Pages without rebuilding.
 export const CFG = Object.assign(
-  { readUrl: '', writeUrl: '', authUrl: '', appUrl: 'https://centific-dc.github.io/Onsite-Tracker/', project: '', locations: [], stations: [], shiftHours: 6, earlyGraceMinutes: 15, weeklyHourCap: 37, pairingMinSessions: 2 },
+  { readUrl: '', writeUrl: '', authUrl: '', appUrl: 'https://centific-dc.github.io/Onsite-Tracker/', project: '', locations: [], stations: [], shiftHours: 6, earlyGraceMinutes: 15, weeklyHourCap: 37, overtimeHours: 40, pairingMinSessions: 2 },
   typeof window !== 'undefined' ? window.ONSITE_CONFIG : {},
 );
 export const READ_URL = String(CFG.readUrl || '').trim();

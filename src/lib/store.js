@@ -449,6 +449,33 @@ export const useStore = create((set, get) => ({
       return out;
     });
   },
+  // Shift swaps (2026-11-23): server-confirmed, in the background like requests.
+  requestSwap(r) {
+    return get().background('Sending your swap request', async () => {
+      const x = await api.requestSwap(r);
+      get().commit((d) => (d ? { ...d, swaps: [...(d.swaps || []).filter((y) => y.id !== x.id), x] } : d));
+      return x;
+    });
+  },
+  cancelSwap(id) {
+    return get().background('Cancelling your swap request', async () => {
+      const x = await api.cancelSwap(id);
+      get().commit((d) => (d ? { ...d, swaps: (d.swaps || []).map((y) => (y.id === x.id ? x : y)) } : d));
+      return x;
+    });
+  },
+  resolveSwap(r, label = 'The swap') {
+    return get().background(label, async () => {
+      const out = await api.resolveSwap(r);
+      get().commit((d) => {
+        if (!d) return d;
+        const linked = new Map(out.linked.map((x) => [x.id, x]));
+        const schedule = (d.schedule || []).filter((x) => x.id !== out.removed).map((x) => linked.get(x.id) || x).concat(out.shift ? [out.shift] : []);
+        return { ...d, schedule, swaps: (d.swaps || []).map((y) => (y.id === out.swap.id ? out.swap : y)) };
+      });
+      return out;
+    });
+  },
   voidStrike(id, reason) {
     return get().background('Cancelling the strike', async () => {
       const st = await api.voidStrike(id, reason);

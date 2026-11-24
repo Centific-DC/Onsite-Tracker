@@ -207,6 +207,26 @@ Each counted miss is one row. The app works out the step from the rows: the 1st 
 
 Never delete a row: a cancelled one stays, with `Voided` = Yes. **At most one row per `Email`, `Date` and `Reason`** that isn't voided: skip the add if one exists.
 
+### `Lotus_Swaps`: shift swap requests (2026-11-23)
+
+An operator who can't make a booked shift asks for a swap and names who is taking it; a scheduler moves the shift or declines. **New list.**
+
+| Column | Type | Example |
+|---|---|---|
+| `Title` | text | `W-` + `guid()`. The swap id |
+| `ShiftID` | text | the requester's `Lotus_Shifts` row |
+| `Date`, `Start`, `End`, `Location` | text | copied from that shift when asked, so the request still reads after the shift moves |
+| `Email`, `Name`, `OperatorID` | text | the requester (`callerEmail`) |
+| `Taker` | text | who they say is taking it, as typed (a name). Never matched or shown to operators |
+| `TakerEmail` | text | set by the scheduler when the shift moves |
+| `Message` | multi-line text | optional note from the operator |
+| `Status` | text | `open`, `done`, `declined` or `cancelled` |
+| `RequestedAt` | text | `utcNow()` |
+| `HoursBefore` | number | hours from `RequestedAt` to the shift's start, one decimal |
+| `ResolvedBy`, `ResolvedAt` | text | who closed it, when |
+| `NewShiftID` | text | the taker's new shift when `done` |
+| `Note` | multi-line text | the scheduler's note; required when declined (the operator sees it) |
+
 ### `Lotus_Approvals`: approvals for each operator and day (append only)
 
 | Column | Type | Example |
@@ -313,8 +333,8 @@ The app opens the first-run screen at `<app URL>?setup=1`. Once an admin exists,
 Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action": "all", "from": "yyyy-MM-dd", "token": "…" }`. `from` defaults to 60 days ago.
 
 1. The token check above gives `callerEmail` and the caller's row. Compose `roles` = `split(Roles, ';')`.
-2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, `Lotus_Corrections` with `Date ge '<from>'`, all of `Lotus_Strikes` (the history is short and the 30-day count needs older rows), and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode`, `RobotNames` and `ScheduleSync` from `Lotus_Settings`, and return `robotNames` = `json(coalesce(RobotNames, '{}'))` to everyone, operators included (names aren't private). Return `scheduleSync` = `json(ScheduleSync)` **to staff only** (it lists operator names); operators and an empty cell get `null`. Return `masterListUrl` = `MasterListUrl` **to staff only** (operators get `""`). The app keeps only the link's document id and file name and drops everything else, such as the sharer's email in `ovuser`. The repo is public, so the link lives only in this column and is never built into the site. Each `schedule` row carries `source` and `sheetKey` too.
-3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals, corrections, strikes and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
+2. Get items from `Lotus_Shifts` with `Date ge '<from>'`, `Lotus_Punches` with `Date ge '<from>'`, `Lotus_FlagResolutions`, `Lotus_Approvals` with `Date ge '<from>'`, `Lotus_Corrections` with `Date ge '<from>'`, `Lotus_Swaps` with `Date ge '<from>'`, all of `Lotus_Strikes` (the history is short and the 30-day count needs older rows), and `Lotus_ClientHours`. Get `Lotus_Users`, `Lotus_Notices` with `WeekStart ge '<from>'` and `Lotus_Templates` too, but only for staff. Read `EmailTestMode`, `RobotNames` and `ScheduleSync` from `Lotus_Settings`, and return `robotNames` = `json(coalesce(RobotNames, '{}'))` to everyone, operators included (names aren't private). Return `scheduleSync` = `json(ScheduleSync)` **to staff only** (it lists operator names); operators and an empty cell get `null`. Return `masterListUrl` = `MasterListUrl` **to staff only** (operators get `""`). The app keeps only the link's document id and file name and drops everything else, such as the sharer's email in `ovuser`. The repo is public, so the link lives only in this column and is never built into the site. Each `schedule` row carries `source` and `sheetKey` too.
+3. **If the caller has only the `operator` role**, keep only rows whose `Email` = `callerEmail` in shifts, punches, approvals, corrections, swaps, strikes and resolutions (resolution keys start with the email). Return `operators` as just their own user row, and `client`, `notices` and `templates` as `[]`. Operators must never receive anyone else's rows.
    - **The one exception is partners' names** (user decision, 2026-11-05). Before filtering, for each of the caller's shifts, find its partners among the other `Lotus_Shifts` rows of the same `Date` with a different `Email`, leaving out any row that another row's `Replaces` points to:
      - if either shift has a `Pair`, partners are the rows with the **same non-empty `Pair`** (robot and times don't matter);
      - if neither has one, partners are rows with the same `Location` and the same non-empty `Robot` whose time overlaps the caller's by **more than 60 minutes** (so the half-hour handover between shifts doesn't count; an end at or before the start runs past midnight).
@@ -334,6 +354,7 @@ Trigger *When an HTTP request is received*, POST, **Anyone**. Body: `{ "action":
   "resolutions": [{ "key": "", "outcome": "accept", "reason": "", "endTime": "", "by": "", "at": "" }],
   "approvals": [{ "email": "", "operatorId": "", "date": "", "status": "approved", "hours": 5.5, "computed": 5.5, "note": "", "final": false, "by": "", "at": "" }],
   "corrections": [{ "id": "C-…", "email": "", "name": "", "operatorId": "", "date": "", "shiftId": "", "missed": "both", "message": "", "source": "app", "requestedAt": "", "status": "open", "partnerConfirmed": false, "timeIn": "", "timeOut": "", "note": "", "counts": true, "noCountReason": "", "resolvedBy": "", "resolvedAt": "" }],
+  "swaps": [{ "id": "W-…", "shiftId": "", "date": "", "start": "", "end": "", "location": "RED", "email": "", "name": "", "operatorId": "", "taker": "", "takerEmail": "", "message": "", "status": "open", "requestedAt": "", "hoursBefore": 52.5, "resolvedBy": "", "resolvedAt": "", "newShiftId": "", "note": "" }],
   "strikes": [{ "id": "K-…", "email": "", "name": "", "operatorId": "", "date": "", "reason": "missed_in", "ref": "", "at": "", "by": "", "voided": false, "voidReason": "", "voidedBy": "", "voidedAt": "" }],
   "client": [{ "week": "2026-11-02", "hours": 61.5 }],
   "notices": [{ "id": "N-…", "email": "", "operatorId": "", "weekStart": "2026-11-09", "kind": "operator-schedule", "subject": "", "sentAt": "", "by": "", "test": true, "snapshot": [] }],
@@ -474,6 +495,26 @@ Body `{ "id", "status": "approved" | "declined", "timeIn"?, "timeOut"?, "partner
 
 Body `{ "id", "reason" }`. `reason` must not be empty (400). Set `Voided` = Yes, `VoidReason`, `VoidedBy` = `callerEmail`, `VoidedAt` = `utcNow()`. Never delete the row. Respond `{ "ok": true, "strike": { … } }`.
 
+### Shift swaps on **Lotus Corrections** (`swap_request`, `swap_cancel`, `swap_resolve`), 2026-11-23
+
+From the 2026-11-23 meeting (Spencer Woods, John Uraya, David): swaps are fine, last-minute ones are the problem, and Brian Leong warned that a swap button could make them easier. So **a swap must be asked for at least 24 hours before the shift starts**; later than that it is refused, and the operator talks to their lead (whoever covers can clock in without a shift for review, see `punch`). These live on the Corrections flow (Write is near its step limit); while `LOTUS_CORRECTIONS_URL` is unset the app sends them to Write.
+
+**`swap_request`**, role `operator`. Body `{ "shiftId", "taker", "message" }`.
+1. Get the shift. Its `Email` must be `callerEmail`, else 403.
+2. `taker` must not be empty (400 `{"error":"Say who is taking the shift.","code":"taker"}`).
+3. Compute the shift's start (site-local `Date` + `Start`, in UTC). If `utcNow()` is less than **24 hours** before it: **409** `{"error":"Swaps close 24 hours before the shift. Talk to your lead: whoever covers can clock in without a shift, and a manager reviews it.","code":"too_late"}`, no row.
+4. An `open` `Lotus_Swaps` row for that `ShiftID`: **409** `{"error":"There's already a swap request for that shift.","code":"pending"}`.
+5. Add the row (`Status` = `open`, copy `Date`, `Start`, `End`, `Location`, `Name`, `OperatorID`, `HoursBefore`). Audit row. Respond `{ "ok": true, "swap": { …same shape as Read… } }`.
+6. After responding, email the schedulers (`Lotus_Users` with `scheduler` in `Roles`; test mode rules apply): subject `Swap request: <Name>, <ddd MMM d>`, body: the shift (lab, times), who is taking it (as typed), the note, and "Make the change or decline it on Schedule in Lotus."
+
+**`swap_cancel`**, role `operator`. Body `{ "id" }`. Only the caller's own `open` row (else 409 `{"error":"That request is no longer open."}`). Set `Status` = `cancelled`, `ResolvedBy`, `ResolvedAt`. Respond `{ "ok": true, "swap": { … } }`.
+
+**`swap_resolve`**, role `scheduler`. Body `{ "id", "status": "done" | "declined", "note", "takerEmail", "shift": { …a shift as in shift_upsert, no id… }, "linked": [ …partner shifts to re-save with the new pair… ], "removed": "<the requester's ShiftID>" }`. The row must be `open` (else 409).
+- `declined`: `note` must not be empty (400). Set `Status`, `Note`, `ResolvedBy`, `ResolvedAt`.
+- `done`: check the taker the same way Save Shift does: `takerEmail` is an active `Lotus_Users` row and isn't the requester; their `HomeLocation` (if set) equals the shift's `Location` (400 otherwise); **no third shift** for them that `Date` (400 `third_shift`, as in `shift_upsert`). Then, in this order: create the taker's shift from `shift` (`Source` = `app`, `Note` = `Swapped from <Name>`); save each `linked` row's `Pair`; delete the `removed` shift **as Delete Shift does** (add its `SheetKey` to `Lotus_SheetSkips` when it has one and its `Date` is today or later, so the Master List sync doesn't put it back). Set `Status` = `done`, `TakerEmail`, `NewShiftID`, `Note`, `ResolvedBy`, `ResolvedAt`. The 24-hour rule is not checked here: the request was on time, and a scheduler may still make the change later.
+- Audit row. Respond `{ "ok": true, "swap": { … }, "shift": { …the new shift, as Read… } | null, "linked": [ … ], "removed": "<ShiftID>" | "" }`.
+- After responding, email the requester the outcome (subject `Your swap for <ddd MMM d>: done` or `: declined`, with the note). The taker is told by the usual "Your schedule changed" email from Schedule → Email schedules, which lists them as changed.
+
 ### `email_send`: role `scheduler` (and `admin` for welcome and password reset emails)
 
 The app fills in each email from the templates and sends them ready to go. Body:
@@ -604,6 +645,18 @@ Both tables have the headers `Date, Day, Shift, Time, Team Member, Email, Notes`
 
 **Not this flow's job:** emails. Reminders (§5) and the Thursday schedule emails (Schedule → Email schedules in the app) pick up the synced shifts; the app shows who's "changed since" their last email.
 
+## 6b. Flow: **Lotus Hours Watch** (scheduled), approaching 40 hours
+
+John Uraya, 2026-11-23: 40 hours a week is where overtime starts (California) and the goal is to avoid paying it, so people near it get a heads-up. The 37-hour scheduling flag (Schedule, Roster) stays as it is. This looks at the week as it's going. **Nobody is blocked.** The app shows the same thing on the operator's page and on Today and Schedule (`src/lib/overtime.js` is the reference: when in doubt, match it).
+
+- **Trigger:** recurrence, daily at 6:00 PM Pacific. **Sender:** the shared mailbox; honour `EmailTestMode`.
+
+1. This week = Monday to Sunday (site-local) containing today.
+2. Per operator with a shift or a punch this week: `worked` = their own clocked hours this week (pair each `IN` with the next `OUT`, as the app does; an open `IN` counts up to now), and `ahead` = their `Lotus_Shifts` rows this week that haven't started yet and that no other row `Replaces` (a back-to-back double's overlap counts once). `total` = `worked + ahead`.
+3. Level: `over` when `total` ≥ 40, `near` when `total` > 37 (`weeklyHourCap`), else nothing.
+4. For each operator with a level, if there is no `Lotus_Notices` row with that `Email`, `WeekStart` = this Monday and `Kind` = `hours-near` (or `hours-over`), email them: subject `Lotus: you're near 40 hours this week` (or `…at 40 hours this week`), body: worked, still booked, total, and "40 hours is overtime. Check with your lead before taking more shifts." Add the `Lotus_Notices` row (`Kind` as above, `Test` as usual). So each operator gets at most one email per level per week.
+5. If anyone was emailed this run, send the approvers and schedulers one summary email: subject `Lotus: <n> operators near 40 hours this week`, one line each (name, worked, booked, total, level). Operators never see anyone else's hours.
+
 ## 7. Flow: **Lotus Auto Clock-out** (scheduled)
 
 User rule, 2026-11-06, changed 2026-11-18 from 15 to **30 minutes**: an operator who forgets to clock out is clocked out by the system 30 minutes after their shift's scheduled end, and the punch is labelled `Auto clock-out` so approvers can use it in performance reviews. The approver still reviews the day; the app flags it as "Auto clock-out".
@@ -659,6 +712,8 @@ User rule, 2026-11-06, changed 2026-11-18 from 15 to **30 minutes**: an operator
 16t. Delete User: as an admin, add an operator with a made-up email and book them one future shift, then `user_delete` with a reason: 200 `removedShifts` = 1 and `removedNotices` = the number of `Lotus_Notices` rows they had, their `Lotus_Users`, `Lotus_Shifts` and `Lotus_Notices` rows are gone, and one `user_delete` audit row has no password, hash or token in it. Again: 404. For an operator with any punch: 409 `has_records`, nothing deleted. As a scheduler without `admin`: 403. With an empty reason, or your own email: 400.
 16v. Provisional clock-in: as an operator with no shift now, `punch` `in` with `provisional` = true, a `note` and `until` = 3 hours from now: one `IN` row with empty `ShiftID`, `Flag` = `Provisional`, `PlannedEnd` set, and the approvers get the email (at the alias in test mode). Read returns `flag` = `provisional`, `template` and `until`. Without a `note`: 400 `reason`. With a shift booked whose window is open now: 409 `has_shift`. Clock out: a normal `OUT`. Don't clock out on a second test: 30 minutes after `PlannedEnd`, Auto clock-out adds the `OUT` at `PlannedEnd`.
 16w. No third shift: book A on Morning and Afternoon. `shift_upsert` a Night shift for A that day: 400 `third_shift`, nothing saved. As A, `punch` `in` provisional that day: 409 `third_shift`. Replace A's Afternoon (C `Replaces` it), then the Night saves. A sheet row giving A a third shift that day is skipped with `third_shift`.
+16x. Swaps: as operator A, `swap_request` on your shift 3 days out with `taker` = "Sky": one `open` row, the schedulers get the email. Again for the same shift: 409 `pending`. On a shift that starts in 10 hours: 409 `too_late`, no row. On someone else's shift: 403. `swap_cancel` your own: `cancelled`. As a scheduler, `swap_resolve` `done` with B (other lab): 400; with B at the same lab: A's shift is gone (and its `SheetKey` is in `Lotus_SheetSkips` if it came from the sheet), B has the new shift with A's `Pair`, A gets the email. `declined` with no note: 400. Read as A: only A's swaps.
+16y. Hours Watch: book an operator so that clocked plus booked this week is 38 hours and run the flow: one `hours-near` email and notice row (at the alias in test mode), plus the summary to approvers. Run again: no second email. Push them to 40: one `hours-over` email.
 16u. Open spots per shift: book A on Morning and Afternoon back to back. A clocks in to Morning only, out at its end, and doesn't clock in to Afternoon. 15 minutes after the Afternoon start, Read as C lists A's Afternoon shift in `openSpots`, and `fill_in` takes it.
 17. Read `Lotus_Users` as a staff member through SharePoint itself: access is denied (only the flow account can).
 

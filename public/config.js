@@ -68,6 +68,9 @@ window.ONSITE_CONFIG = {
 
   // Scheduling guardrails.
   weeklyHourCap: 37,
+  // Overtime starts here (California, 40 hrs a week). Operators whose week (clocked plus
+  // booked still ahead) goes over weeklyHourCap are shown as near it; nobody is blocked.
+  overtimeHours: 40,
   // A slot where every operator has fewer completed sessions than this is a pairing risk.
   pairingMinSessions: 2,
 
