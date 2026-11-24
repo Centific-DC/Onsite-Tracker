@@ -191,7 +191,7 @@ export const useStore = create((set, get) => ({
   // records it with the server's time; that time replaces the tap time when it lands.
   // The sign-in is captured now, so the lab laptop can sign out for the next person.
   punch(body) {
-    const tmp = { id: `tmp-${crypto.randomUUID().slice(0, 8)}`, ts: new Date().toISOString(), type: body.type, email: body.email, name: body.name, operatorId: body.operatorId, shiftId: body.shiftId || '', station: body.station || '', location: body.location || '', source: body.source, flag: body.flag ? 'Left early' : '', note: body.note || '', grace: 0, pending: true };
+    const tmp = { id: `tmp-${crypto.randomUUID().slice(0, 8)}`, ts: new Date().toISOString(), type: body.type, email: body.email, name: body.name, operatorId: body.operatorId, shiftId: body.shiftId || '', station: body.station || '', location: body.location || '', source: body.source, flag: body.provisional ? 'provisional' : body.flag ? 'Left early' : '', note: body.note || '', template: body.template || '', until: body.until || '', grace: 0, pending: true };
     get().commit((d) => (d ? { ...d, punches: [...d.punches, tmp] } : d));
     const token = getAuth()?.token;
     // One person's punches go in order: a clock-out never overtakes its clock-in.
@@ -446,6 +446,33 @@ export const useStore = create((set, get) => ({
     return get().background(label, async () => {
       const out = await api.resolveCorrection(r);
       get().commit((d) => (d ? { ...d, corrections: (d.corrections || []).map((x) => (x.id === out.correction.id ? out.correction : x)), strikes: [...(d.strikes || []), ...out.strikes] } : d));
+      return out;
+    });
+  },
+  // Shift swaps (2026-11-23): server-confirmed, in the background like requests.
+  requestSwap(r) {
+    return get().background('Sending your swap request', async () => {
+      const x = await api.requestSwap(r);
+      get().commit((d) => (d ? { ...d, swaps: [...(d.swaps || []).filter((y) => y.id !== x.id), x] } : d));
+      return x;
+    });
+  },
+  cancelSwap(id) {
+    return get().background('Cancelling your swap request', async () => {
+      const x = await api.cancelSwap(id);
+      get().commit((d) => (d ? { ...d, swaps: (d.swaps || []).map((y) => (y.id === x.id ? x : y)) } : d));
+      return x;
+    });
+  },
+  resolveSwap(r, label = 'The swap') {
+    return get().background(label, async () => {
+      const out = await api.resolveSwap(r);
+      get().commit((d) => {
+        if (!d) return d;
+        const linked = new Map(out.linked.map((x) => [x.id, x]));
+        const schedule = (d.schedule || []).filter((x) => x.id !== out.removed).map((x) => linked.get(x.id) || x).concat(out.shift ? [out.shift] : []);
+        return { ...d, schedule, swaps: (d.swaps || []).map((y) => (y.id === out.swap.id ? out.swap : y)) };
+      });
       return out;
     });
   },

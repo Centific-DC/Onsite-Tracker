@@ -22,6 +22,10 @@ export const FLAG = {
   auto_clockout: { label: 'Auto clock-out', tone: 'warn', time: false },
   no_clockin: { label: 'No clock-in', tone: 'warn', time: false },
   unscheduled: { label: 'Not on the schedule', tone: 'warn', time: true },
+  // An operator with no shift booked clocked in anyway (2026-11-23: a last-minute swap,
+  // a schedule slip-up, covering a no-show). Accepted, its time counts; declined, it
+  // doesn't. Approvers get an email when it happens.
+  provisional: { label: 'Provisional clock-in', tone: 'warn', time: true },
   // An admin corrected the times for a shift after a missed clock-in or out request.
   corrected: { label: 'Corrected', tone: 'muted', time: false, info: true },
 };
@@ -82,7 +86,8 @@ export function reviewDays(data, from, to, now = new Date(), { trackFrom = track
       flags.push({ key, code, detail, ...FLAG[code], ...extra, resolution: res.get(key) || null });
     };
     const live = d.sessions.some((s) => s.live);
-    const shiftOf = (s) => d.shifts.find((r) => r.id === s.shiftId) || d.shifts.find((r) => s.start < r.end && r.start < s.end) || null;
+    // A provisional clock-in never belongs to a booked shift, even one it overlaps.
+    const shiftOf = (s) => (s.provisional ? null : d.shifts.find((r) => r.id === s.shiftId) || d.shifts.find((r) => s.start < r.end && r.start < s.end) || null);
     const fixedShifts = d.shifts.filter((r) => fixes.has(r.id));
     const fixedAt = (t) => fixedShifts.some((r) => +t >= +r.start - 36e5 && +t <= +r.end + 3 * 36e5);
 
@@ -104,7 +109,9 @@ export function reviewDays(data, from, to, now = new Date(), { trackFrom = track
       if (r && fixes.has(r.id)) continue;
       const st = +s.start, en = +s.end;
       if (!r) {
-        if (!s.live) flag('unscheduled', 'Clocked in with no shift booked', { ref: +s.start, minutes: Math.round(s.hours * 60), start: s.start, end: s.end });
+        if (s.provisional) {
+          if (!s.live) flag('provisional', `Clocked in for review, ${hm(s.start)}–${hm(s.end)}${s.auto ? ' (Auto clock-out)' : ''}${s.reason ? ` · “${s.reason}”` : ''}`, { ref: +s.start, minutes: Math.round(s.hours * 60), start: s.start, end: s.end, reason: s.reason });
+        } else if (!s.live) flag('unscheduled', 'Clocked in with no shift booked', { ref: +s.start, minutes: Math.round(s.hours * 60), start: s.start, end: s.end });
         continue;
       }
       inShift += clip(st, en, +r.start, +r.end);
@@ -118,14 +125,14 @@ export function reviewDays(data, from, to, now = new Date(), { trackFrom = track
       if (!s.live && !s.auto && !switchedOut(s, r) && (s.early || (r.end - en) / 6e4 > CFG.earlyGraceMinutes)) flag('left_early', `Left ${Math.round((r.end - en) / 6e4)} min before the end${s.note ? ` · “${s.note}”` : ''}`, { ref: +s.start });
     }
     for (const i of d.noouts) {
-      const r = d.shifts.find((x) => x.id === i.shiftId) || d.shifts.find((x) => +i.at < +x.end) || null;
+      const r = i.provisional ? null : d.shifts.find((x) => x.id === i.shiftId) || d.shifts.find((x) => +i.at < +x.end) || null;
       if (r ? fixes.has(r.id) : fixedAt(i.at)) continue;
       // Never invent a departure. The scheduled end is offered as a suggestion,
       // marked system-generated, and only counts once someone accepts it.
-      const suggested = r ? r.end : null;
+      const suggested = r ? r.end : i.until ? new Date(i.until) : null;
       // Time before the shift's start isn't counted here; grace is reviewed on its own.
       const from = r ? new Date(Math.max(+i.at, +r.start)) : i.at;
-      flag('no_clockout', 'Clocked in, never clocked out', { ref: +i.at, start: i.at, from, suggested, minutes: suggested ? Math.round(clip(+from, +suggested, -Infinity, Infinity) * 60) : 0 });
+      flag('no_clockout', i.provisional ? `Provisional clock-in, never clocked out${i.reason ? ` · “${i.reason}”` : ''}` : 'Clocked in, never clocked out', { ref: +i.at, start: i.at, from, suggested, minutes: suggested ? Math.round(clip(+from, +suggested, -Infinity, Infinity) * 60) : 0 });
     }
     for (const i of d.noins) if (!fixedAt(i.at)) flag('no_clockin', 'Clocked out with no clock-in', { ref: +i.at });
     for (const r of fixedShifts) {
@@ -135,7 +142,7 @@ export function reviewDays(data, from, to, now = new Date(), { trackFrom = track
     }
     for (const r of d.shifts) {
       if (fixes.has(r.id)) continue;
-      const came = d.sessions.some((s) => shiftOf(s) === r) || d.noouts.some((i) => +i.at < +r.end && +i.at >= +r.start - 36e5);
+      const came = d.sessions.some((s) => shiftOf(s) === r) || d.noouts.some((i) => !i.provisional && +i.at < +r.end && +i.at >= +r.start - 36e5);
       if (!came && now >= r.end) flag('no_show', `Booked ${r.startHM}–${r.endHM} on ${r.station}, never clocked in`, { ref: r.id });
     }
 

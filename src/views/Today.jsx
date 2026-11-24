@@ -3,13 +3,14 @@ import { Bot, CalendarX, ChevronLeft, ChevronRight, ClockAlert, LogOut, Triangle
 import { useStore } from '../lib/store.js';
 import { CFG, LOCATIONS, locOf, locationName } from '../lib/config.js';
 import { buildSessions, union } from '../lib/hours.js';
-import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, hoursBetween, fmtHrsU } from '../lib/time.js';
+import { addDays, dayKey, fmtDay, fmtLongDay, fmtTime, hoursBetween, fmtHrsU, mondayOf } from '../lib/time.js';
 import { go, useNow } from '../lib/hooks.js';
 import { Avatar, Group, Num, Row, Tag } from '../components/ui.jsx';
 import { RobotLanes } from '../components/RobotLanes.jsx';
 import { ShiftSheet } from '../components/ShiftSheet.jsx';
 import { backfillStart, backfills, dayPlan, robotLabel } from '../lib/schedule.js';
 import { robotTitle } from '../lib/robots.js';
+import { hoursWatch } from '../lib/overtime.js';
 
 export const ISSUE = {
   early: { label: 'Left early', tone: 'bad', icon: <LogOut size={12} /> },
@@ -19,12 +20,17 @@ export const ISSUE = {
   noshow: { label: 'No-show', tone: 'bad', icon: <UserX size={12} /> },
   untracked: { label: 'Not tracked', tone: 'muted', icon: <UserX size={12} /> },
   unscheduled: { label: 'Not on the schedule', tone: 'warn', icon: <CalendarX size={12} /> },
+  provisional: { label: 'Provisional clock-in', tone: 'warn', icon: <CalendarX size={12} /> },
+  hours: { label: 'Near 40 hrs', tone: 'warn', icon: <ClockAlert size={12} /> },
+  hours_over: { label: '40 hrs or more', tone: 'bad', icon: <ClockAlert size={12} /> },
+  swap: { label: 'Swap request', tone: 'warn', icon: <CalendarX size={12} /> },
 };
 
 export function issueDetail(i) {
   if (i.kind === 'early') return `Out at ${fmtTime(i.at)} after ${fmtHrsU(i.hours)}${i.note ? ` · “${i.note}”` : ''}`;
   if (i.kind === 'noout') return `In at ${fmtTime(i.at)}, never checked out · hours not counted`;
   if (i.kind === 'unscheduled') return `In at ${fmtTime(i.at)} with no shift booked that day`;
+  if (i.kind === 'provisional') return `In at ${fmtTime(i.at)} with no shift booked · counts once a manager accepts it in Review${i.reason ? ` · “${i.reason}”` : ''}`;
   return `Out at ${fmtTime(i.at)} with no check-in`;
 }
 
@@ -60,14 +66,20 @@ export function Today() {
         out.push({ key: `${r.status}-${r.id}`, kind: r.status, name: r.name, at: r.startAt, sub: `${fmtDay(r.startAt)} · ${robotLabel(r)} · due ${fmtTime(r.startAt)}–${fmtTime(r.endAt)}${r.status === 'late' ? ', no check-in yet' : ', never checked in'}` });
       }
       for (const u of p.unscheduled) {
-        if (!schedule.length) break;
+        if (u.provisional) { out.push({ key: `prov-${u.email}-${+u.start}`, kind: 'provisional', name: u.name, at: u.start, sub: `${fmtDay(u.start)} · ${robotTitle(u.station)} · ${issueDetail({ kind: 'provisional', at: u.start, reason: u.reason })}` }); continue; }
+        if (!schedule.length) continue;
         out.push({ key: `unsch-${u.email}-${dayKey(d)}`, kind: 'unscheduled', name: u.name, at: u.start, sub: `${fmtDay(u.start)} · ${robotTitle(u.station)} · in at ${fmtTime(u.start)}` });
       }
     }
-    const rank = { late: 0, noshow: 1, early: 2, noout: 3, noin: 4, unscheduled: 5 };
+    if (isToday) {
+      // Approaching 40 hrs this week (clocked plus booked still ahead), and swaps waiting.
+      for (const x of hoursWatch(data, mondayOf(now), now)) out.push({ key: `ot-${x.email}`, kind: x.level === 'over' ? 'hours_over' : 'hours', name: x.name, at: now, sub: `This week · ${fmtHrsU(x.worked)} clocked + ${fmtHrsU(x.ahead)} booked = ${fmtHrsU(x.total)} · 40 hrs is overtime` });
+      for (const w of (data.swaps || []).filter((y) => y.status === 'open')) out.push({ key: `swap-${w.id}`, kind: 'swap', name: w.name, at: now, sub: `${fmtDay(new Date(`${w.date}T12:00`))} · ${w.start}–${w.end} · to ${w.taker || 'someone'} · make the change on Schedule` });
+    }
+    const rank = { late: 0, noshow: 1, early: 2, noout: 3, noin: 4, provisional: 5, unscheduled: 6, hours_over: 7, hours: 8, swap: 9 };
     // People missing right now first, then the rest newest first.
     return out.sort((a, b) => (a.kind === 'late' ? 0 : 1) - (b.kind === 'late' ? 0 : 1) || b.at - a.at || rank[a.kind] - rank[b.kind]);
-  }, [issues, plan, schedule, sessions, isToday, k, now]);
+  }, [issues, plan, schedule, sessions, isToday, k, now, data]); // eslint-disable-line react-hooks/exhaustive-deps
   const missingNow = plan.rows.filter((r) => r.status === 'late').length;
 
   return (

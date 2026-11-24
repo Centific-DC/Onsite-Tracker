@@ -110,6 +110,20 @@ export function wrongLab(schedule, operators) {
   return (schedule || []).filter((r) => homeLabProblem(r, operators)).map((r) => ({ kind: 'wrong_lab', date: r.date, name: r.name, email: r.email, ids: [r.id] }));
 }
 
+// Doubles are fine, a third shift in one day isn't (2026-11-23). Unlike the warnings
+// below, this one blocks the booking: Add shift, Import and the Master List sync all
+// refuse a third shift for one operator on one date. A shift someone else replaced (a
+// no-show's) doesn't count, nor does the shift being edited.
+export const MAX_DAY_SHIFTS = 2;
+export function dayShiftCount(schedule, email, date, exceptId = '') {
+  const gone = replacedIds(schedule);
+  return (schedule || []).filter((r) => r.email === email && r.date === date && r.id !== exceptId && !gone.has(r.id)).length;
+}
+export function thirdShiftProblem(shift, schedule) {
+  const n = dayShiftCount(schedule, shift.email, shift.date, shift.id || '');
+  return n >= MAX_DAY_SHIFTS ? `${shift.name || 'This operator'} already has ${n} shifts that day. Doubles are fine, but a third shift in one day isn’t allowed.` : '';
+}
+
 // Warnings for a shift about to be saved, so the scheduler sees them before booking.
 export function checkNewShift(shift, schedule, operators, sessions, wk0) {
   const id = shift.id || '__new__';

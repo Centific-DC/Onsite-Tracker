@@ -98,6 +98,8 @@
 .op-hint.is-warn { color: var(--op-yellow-text); }
 .op-hint .link { font-size: 13px; }
 .op-switch { display: grid; gap: 8px; justify-items: center; width: 100%; margin-top: 4px; }
+.op-provisional { margin-top: 4px; }
+.op-prov-slot { text-align: left; margin: 0 4px 12px; }
 .op-err { margin: 12px 0 0; text-align: center; font-size: 14px; color: var(--op-red-text); }
 
 /* The big round Clock in button. Raised at rest, pressed into the page when tapped. */
@@ -232,3 +234,9 @@
   .op-big, .op-dial-plate, .op-btn, .op-dial, .op-dial-sweep, .op-bar-fill { transition: none; }
   .op-big:active:not(:disabled), .op-dial-plate.is-button:active:not(:disabled), .op-btn:active { scale: none; }
 }
+
+/* Approaching 40 hours (2026-11-23) and shift swaps */
+.op-ot { text-align: left; margin-top: 10px; }
+.op-small.is-warn { color: var(--op-yellow-text); }
+.op-small.is-red { color: var(--op-red-text, var(--op-red)); }
+.op-swap-link { padding: 6px 10px; font-size: 13px; }

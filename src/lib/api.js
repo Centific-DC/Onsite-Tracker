@@ -2,10 +2,11 @@ import { timed } from './timing.js';
 import { CFG, CORRECTIONS_URL, DEMO, LOCATIONS, READ_URL, SYNC_URL, WRITE_URL, locOf, locationName, locationOfRobot } from './config.js';
 import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
-import { clockInCheck } from './attendance.js';
+import { THIRD_SHIFT_TEXT, clockInCheck, provisionalCheck } from './attendance.js';
 import { openSpots, samePair, shiftTimes } from './schedule.js';
 import { writeFlowName, writeUrlFor } from './routes.js';
 import { mustEmail, normCorrection, normStrike, reasonsFor, standing } from './strikes.js';
+import { normSwap, planSwap, swapCheck, TOO_LATE_TEXT } from './swaps.js';
 import { SHEET_SOURCE, cleanSheetUrl, normScheduleSync, planSheetSync, sheetKey, syncIncludesToday, syncSummary } from './sheetSync.js';
 
 export const storage = {
@@ -102,15 +103,23 @@ export function normPunch(p) {
     grace: Number(p.grace ?? p.GraceMinutes) || 0,
     source: String(p.source ?? p.Device ?? ''),
     note: String(p.note ?? p.Note ?? ''),
-    // `Left early` (the operator's own clock-out) or `Auto clock-out` (the flow closed
-    // a shift nobody clocked out of, 30 minutes after its end).
+    // `Left early` (the operator's own clock-out), `Auto clock-out` (the flow closed
+    // a shift nobody clocked out of, 30 minutes after its end) or, on a clock-in,
+    // `Provisional` (no shift booked: it counts only once a manager accepts it).
     flag: punchFlag(p.flag ?? p.Flag),
+    // A provisional clock-in's lab shift (template id) and when that shift ends (ISO),
+    // so Auto clock-out can close it like a booked shift.
+    template: String(p.template ?? p.Template ?? ''),
+    until: isoOrEmpty(p.until ?? p.PlannedEnd),
   };
 }
+
+const isoOrEmpty = (v) => { const t = v ? Date.parse(v) : NaN; return Number.isNaN(t) ? '' : new Date(t).toISOString(); };
 
 export function punchFlag(v) {
   const f = String(v ?? '').trim().toLowerCase();
   if (!f) return '';
+  if (/provisional/.test(f)) return 'provisional';
   return /auto/.test(f) ? 'auto' : 'early';
 }
 
@@ -179,6 +188,8 @@ const normAll = (d) => ({
   // operator's Read holds only their own.
   corrections: (d.corrections || []).map(normCorrection).filter((c) => c.id && c.email),
   strikes: (d.strikes || []).map(normStrike).filter((x) => x.id && x.email),
+  // Shift swap requests (2026-11-23). An operator's Read holds only their own.
+  swaps: (d.swaps || []).map(normSwap).filter((x) => x.id && x.email),
   audit: d.audit || [],
   // Schedule emails already sent (staff only), the email templates, and whether
   // emails still go to the project alias only (test mode).
@@ -296,6 +307,24 @@ export const api = {
     const out = await paPost(CORRECTIONS_URL, { action: 'correction_resolve', ...r });
     return { correction: normCorrection(out.correction || {}), strikes: (out.strikes || []).map(normStrike) };
   },
+  // Shift swaps (2026-11-23), on the Corrections flow. An operator asks (`swap_request`,
+  // at least 24 hours before the shift) or cancels their own open request
+  // (`swap_cancel`); a scheduler makes the change or declines it (`swap_resolve`).
+  async requestSwap(r) {
+    if (DEMO) return demo.requestSwap(r);
+    return normSwap((await paPost(CORRECTIONS_URL, { action: 'swap_request', ...r })).swap || {});
+  },
+  async cancelSwap(id) {
+    if (DEMO) return demo.cancelSwap(id);
+    return normSwap((await paPost(CORRECTIONS_URL, { action: 'swap_cancel', id })).swap || {});
+  },
+  // `status` done: `shift` is the new shift for the taker (planSwap), `linked` the
+  // partners who get its pair id. The flow saves them and removes the old shift.
+  async resolveSwap(r) {
+    if (DEMO) return demo.resolveSwap(r);
+    const out = await paPost(CORRECTIONS_URL, { action: 'swap_resolve', ...r });
+    return { swap: normSwap(out.swap || {}), shift: out.shift ? normShift(out.shift) : null, linked: (out.linked || []).map(normShift), removed: String(out.removed || '') };
+  },
   // Admins only: cancel a warning or strike, with a reason. It stays in the history.
   async voidStrike(id, reason) {
     if (DEMO) return demo.voidStrike(id, reason);
@@ -317,7 +346,7 @@ export const demo = {
   load() {
     let d = storage.get(this.KEY, null);
     if (!d) { d = seed(); storage.set(this.KEY, d); }
-    for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit', 'notices', 'templates', 'corrections', 'strikes', 'demoSheet', 'sheetSkips']) d[k] ||= [];
+    for (const k of ['schedule', 'operators', 'resolutions', 'approvals', 'audit', 'notices', 'templates', 'corrections', 'strikes', 'demoSheet', 'sheetSkips', 'swaps']) d[k] ||= [];
     d.robotNames ||= {};
     // Demo mode never sends email, so it behaves like test mode.
     d.emailTestMode = true;
@@ -335,9 +364,21 @@ export const demo = {
       const me = d.operators.find((o) => o.email === b.email);
       const at = shift ? locOf(shift) : b.location;
       if (me?.location && at && at !== me.location) { const e = new Error(`You can only clock in at ${locationName(me.location)}.`); e.code = 'lab'; throw e; }
-      const c = clockInCheck(shift, new Date());
-      if (!c.allowed) { const e = new Error(c.reason === 'no_shift' ? 'You have no shift to clock into.' : c.reason === 'early' ? `Clock-in opens at ${c.window.opensAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'That shift has ended'); e.code = c.reason; throw e; }
-      b = { ...b, grace: c.grace };
+      const open = [...d.punches].reverse().find((p) => p.email === b.email);
+      if (open?.type === 'in' && Date.now() - Date.parse(open.ts) < 18 * 36e5) { const e = new Error('You’re already clocked in'); e.code = 'open'; e.body = { punch: open }; throw e; }
+      if (b.provisional && !shift) {
+        // A provisional clock-in (2026-11-23): no shift booked, so it needs a reason and
+        // waits for a manager in Review. Never a third shift that day.
+        if (!String(b.note || '').trim()) { const e = new Error('Say why you’re clocking in without a shift.'); e.code = 'reason'; throw e; }
+        const c = provisionalCheck({ schedule: d.schedule, punches: d.punches, email: b.email }, new Date());
+        if (!c.allowed) { const e = new Error(c.reason === 'third_shift' ? THIRD_SHIFT_TEXT : 'You have a shift to clock into now. Use Clock in.'); e.code = c.reason; throw e; }
+        const until = b.until && Date.parse(b.until) > Date.now() && Date.parse(b.until) - Date.now() <= 12 * 36e5 ? b.until : '';
+        b = { ...b, shiftId: '', flag: 'Provisional', until, grace: 0 };
+      } else {
+        const c = clockInCheck(shift, new Date(), { schedule: d.schedule, punches: d.punches, email: b.email });
+        if (!c.allowed) { const e = new Error(c.reason === 'no_shift' ? 'You have no shift to clock into.' : c.reason === 'third_shift' ? THIRD_SHIFT_TEXT : c.reason === 'early' ? `Clock-in opens at ${c.window.opensAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'That shift has ended'); e.code = c.reason; throw e; }
+        b = { ...b, grace: c.grace, flag: '', note: '', template: '', until: '' };
+      }
     } else {
       const open = [...d.punches].reverse().find((p) => p.email === b.email);
       if (open?.type === 'in') b = { ...b, shiftId: open.shiftId, location: open.location, station: open.station };
@@ -461,6 +502,50 @@ export const demo = {
     d.strikes.push(st);
     d.audit.push({ id: crypto.randomUUID(), at: st.at, by: demoActor, action: 'strike_add', target: st.id, before: null, after: st });
     return st;
+  },
+  requestSwap(r) {
+    const d = this.load();
+    const shift = d.schedule.find((x) => x.id === r.shiftId);
+    if (!shift || shift.email !== demoActor) throw new Error('That shift isn’t yours.');
+    if (!String(r.taker || '').trim()) throw Object.assign(new Error('Say who is taking the shift.'), { code: 'taker' });
+    const c = swapCheck(shift, d.swaps, new Date());
+    if (!c.allowed) throw Object.assign(new Error(c.reason === 'too_late' ? TOO_LATE_TEXT : 'There’s already a swap request for that shift.'), { code: c.reason });
+    const x = normSwap({ id: `W-${crypto.randomUUID().slice(0, 8)}`, shiftId: shift.id, date: shift.date, start: shift.start, end: shift.end, location: locOf(shift), email: shift.email, name: shift.name, operatorId: shift.operatorId, taker: r.taker.trim(), message: String(r.message || '').trim(), status: 'open', requestedAt: new Date().toISOString(), hoursBefore: Math.round(c.hours * 10) / 10 });
+    d.swaps.push(x);
+    this.save(d, 'swap_request', x.id, null, x);
+    return x;
+  },
+  cancelSwap(id) {
+    const d = this.load();
+    const i = d.swaps.findIndex((x) => x.id === id && x.email === demoActor && x.status === 'open');
+    if (i < 0) throw new Error('That request is no longer open.');
+    const before = d.swaps[i];
+    d.swaps[i] = { ...before, status: 'cancelled', resolvedBy: demoActor, resolvedAt: new Date().toISOString() };
+    this.save(d, 'swap_cancel', id, before, d.swaps[i]);
+    return d.swaps[i];
+  },
+  resolveSwap(r) {
+    const d = this.load();
+    const i = d.swaps.findIndex((x) => x.id === r.id && x.status === 'open');
+    if (i < 0) throw new Error('That request is no longer open.');
+    const before = d.swaps[i];
+    if (r.status === 'declined') {
+      if (!String(r.note || '').trim()) throw new Error('Say why it’s declined.');
+      d.swaps[i] = { ...before, status: 'declined', note: r.note.trim(), resolvedBy: demoActor, resolvedAt: new Date().toISOString() };
+      this.save(d, 'swap_resolve', r.id, before, d.swaps[i]);
+      return { swap: d.swaps[i], shift: null, linked: [], removed: '' };
+    }
+    // The same checks the flow makes before moving the shift.
+    const taker = d.operators.find((o) => o.email === r.takerEmail);
+    const plan = planSwap(before, d.schedule, d.operators, taker);
+    if (plan.problem) throw new Error(plan.problem);
+    const shift = normShift({ ...plan.next, id: `S-${crypto.randomUUID().slice(0, 8)}` });
+    const linked = plan.linked.map(normShift);
+    d.schedule = d.schedule.filter((x) => x.id !== plan.shift.id).map((x) => linked.find((l) => l.id === x.id) || x).concat(shift);
+    if (plan.shift.sheetKey && !d.sheetSkips.includes(plan.shift.sheetKey)) d.sheetSkips.push(plan.shift.sheetKey);
+    d.swaps[i] = { ...before, status: 'done', takerEmail: taker.email, newShiftId: shift.id, note: String(r.note || '').trim(), resolvedBy: demoActor, resolvedAt: new Date().toISOString() };
+    this.save(d, 'swap_resolve', r.id, before, d.swaps[i]);
+    return { swap: d.swaps[i], shift, linked, removed: plan.shift.id };
   },
   requestCorrection(r) {
     if (!String(r.message || '').trim()) throw new Error('Say what happened.');
@@ -635,7 +720,8 @@ function seed() {
   // Someone who came in with no shift last Friday.
   const fri = dayKey(addDays(start, 4));
   const sky = op('Sky Patel');
-  punch(at(fri, '12:05'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'in');
+  // A provisional clock-in (no shift booked; demo): swapped at the last minute.
+  punch(at(fri, '12:05'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'in', { flag: 'provisional', note: 'Swapped with a teammate this morning (demo)', template: 'RED-MID', until: at(fri, '17:30').toISOString() });
   punch(at(fri, '15:10'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'out');
   // Next week: Morgan picks up extra mornings (over 37 hrs). Nobody works at both
   // labs: each operator stays at their home lab.
@@ -720,5 +806,8 @@ function seed() {
   const k3 = dayKey(addDays(now, 3));
   demoSheet.push({ lab: R.id, date: k3, shift: 'Night', time: '5:00 PM - 11:00 PM PT', name: 'Jesse Lane', email: 'jesse.lane@example.com' });
   demoSheet.push({ lab: M.id, date: k3, shift: 'Morning', time: '7:00 AM - 12:00 PM PT', name: 'Robin Vale', email: '' });
-  return { operators: ops, punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule, resolutions: [], approvals, audit: [], notices, templates: [], corrections, strikes, demoSheet, sheetSkips: [], scheduleSync: null };
+  // A swap request waiting for a scheduler (demo): a Redmond shift a few days out.
+  const swapOf = schedule.find((r) => r.location === R.id && shiftTimes(r).start - now > 3 * 864e5);
+  const swaps = swapOf ? [{ id: `W-demo${seq++}`, shiftId: swapOf.id, date: swapOf.date, start: swapOf.start, end: swapOf.end, location: swapOf.location, email: swapOf.email, name: swapOf.name, operatorId: swapOf.operatorId, taker: 'Sky Patel', message: 'Demo: family event that day, Sky agreed to take it.', status: 'open', requestedAt: new Date(+now - 2 * 36e5).toISOString(), hoursBefore: Math.round((shiftTimes(swapOf).start - now) / 36e5) }] : [];
+  return { operators: ops, punches, client: [{ week: dayKey(start), hours: 61.5 }], schedule, resolutions: [], approvals, audit: [], notices, templates: [], corrections, strikes, demoSheet, sheetSkips: [], scheduleSync: null, swaps };
 }

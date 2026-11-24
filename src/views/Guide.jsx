@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  CalendarCheck, CalendarDays, ChartColumn, ChevronRight, CircleHelp, ClipboardCheck, Clock, FileSpreadsheet, Flag, IdCard, Lightbulb,
+  CalendarCheck, CalendarX, CalendarDays, ChartColumn, ChevronRight, CircleHelp, ClipboardCheck, Clock, FileSpreadsheet, Flag, IdCard, Lightbulb,
   LogIn, LogOut, Mail, MessageSquareWarning, RefreshCw, Repeat, Settings, ShieldAlert, Timer, Upload, UserPlus, Users,
 } from 'lucide-react';
 import { useStore } from '../lib/store.js';
@@ -10,7 +10,7 @@ import { OPERATOR_GUIDE, STAFF_GUIDE } from '../lib/guide.js';
 import { useTour } from '../tour/tourStore.js';
 import { Segmented } from '../components/ui.jsx';
 
-const ICONS = { CalendarCheck, CalendarDays, ChartColumn, ClipboardCheck, Clock, FileSpreadsheet, Flag, IdCard, LogIn, LogOut, Mail, MessageSquareWarning, RefreshCw, Repeat, Settings, ShieldAlert, Timer, Upload, UserPlus, Users };
+const ICONS = { CalendarCheck, CalendarDays, CalendarX, ChartColumn, ClipboardCheck, Clock, FileSpreadsheet, Flag, IdCard, LogIn, LogOut, Mail, MessageSquareWarning, RefreshCw, Repeat, Settings, ShieldAlert, Timer, Upload, UserPlus, Users };
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // The Lotus guide: every feature, as short numbered steps and "good to know" notes.

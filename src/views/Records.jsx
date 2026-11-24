@@ -19,7 +19,7 @@ export function Records() {
   const { sessions, issues } = useMemo(() => buildSessions(data.punches), [data.punches]);
   const offSchedule = useMemo(() => unscheduledIns(data.schedule, data.punches), [data.schedule, data.punches]);
   const offIds = useMemo(() => new Set(offSchedule.map((p) => p.id)), [offSchedule]);
-  const flags = useMemo(() => issues.concat(offSchedule.map((p) => ({ kind: 'unscheduled', name: p.name, email: p.email, station: p.station, at: new Date(p.ts) }))), [issues, offSchedule]);
+  const flags = useMemo(() => issues.concat(offSchedule.map((p) => ({ kind: p.flag === 'provisional' ? 'provisional' : 'unscheduled', name: p.name, email: p.email, station: p.station, at: new Date(p.ts), reason: p.note }))), [issues, offSchedule]);
   const ids = useMemo(() => new Map((data.operators || []).map((o) => [o.email, o.id])), [data.operators]);
   const opId = (email) => ids.get(email) || '';
   const match = (x) => `${x.name} ${x.email} ${robotTitle(x.station)}`.toLowerCase().includes(q.toLowerCase());
@@ -42,7 +42,7 @@ export function Records() {
     const rows = [['Date', 'Time', 'Operator ID', 'Name', 'Email', 'In/Out', 'Location', 'Robot', 'Shift ID', 'Grace minutes', 'Device', 'Note', 'Flag', 'Timestamp (UTC)']];
     for (const p of [...data.punches].sort((a, b) => a.ts.localeCompare(b.ts))) {
       const t = new Date(p.ts);
-      rows.push([dayKey(t), hhmm(t), opId(p.email), p.name, p.email, p.type.toUpperCase(), locationName(locOf(p)), p.station, p.shiftId, p.grace || '', p.source, p.note, p.flag === 'auto' ? 'Auto clock-out' : p.flag ? 'Left early' : offIds.has(p.id) ? 'Not on the schedule' : '', p.ts]);
+      rows.push([dayKey(t), hhmm(t), opId(p.email), p.name, p.email, p.type.toUpperCase(), locationName(locOf(p)), p.station, p.shiftId, p.grace || '', p.source, p.note, p.flag === 'auto' ? 'Auto clock-out' : p.flag === 'provisional' ? 'Provisional' : p.flag ? 'Left early' : offIds.has(p.id) ? 'Not on the schedule' : '', p.ts]);
     }
     download(`lotus-raw-checkins-${dayKey(new Date())}.csv`, rows);
   };
@@ -104,7 +104,7 @@ export function Records() {
             <Row
               key={it.p.id}
               leading={<span className={`row-icon icon-${it.p.type}`}>{it.p.type === 'in' ? <LogIn size={16} /> : <LogOut size={16} />}</span>}
-              title={<>{it.p.name}{it.p.flag === 'auto' ? <Tag tone="warn">Auto clock-out</Tag> : it.p.flag && <Tag tone="bad">Left early</Tag>}{offIds.has(it.p.id) && <Tag tone="warn">Not on the schedule</Tag>}</>}
+              title={<>{it.p.name}{it.p.flag === 'auto' ? <Tag tone="warn">Auto clock-out</Tag> : it.p.flag === 'provisional' ? <Tag tone="warn">Provisional</Tag> : it.p.flag && <Tag tone="bad">Left early</Tag>}{offIds.has(it.p.id) && it.p.flag !== 'provisional' && <Tag tone="warn">Not on the schedule</Tag>}</>}
               subtitle={`${it.p.type === 'in' ? 'In' : 'Out'} · ${locationName(locOf(it.p))} · ${robotTitle(it.p.station)}${it.p.note ? ` · “${it.p.note}”` : ''}`}
               trailing={<span className="mono-num">{fmtTime(it.at)}</span>}
             />

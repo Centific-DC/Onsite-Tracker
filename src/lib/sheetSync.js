@@ -13,8 +13,10 @@
 // - A sheet shift someone removed in Lotus stays removed while that row is unchanged
 //   (Lotus_SheetSkips holds its key).
 // - Blank Team Member rows are open slots, not shifts.
+// - Nobody gets a third shift in one day (2026-11-23): doubles only.
 
 export const SHEET_SOURCE = 'sheet';
+const MAX_DAY_SHIFTS = 2; // same as rules.js; this file stays standalone for the flow
 // Pair ids the sync owns (it may change or clear them). Any other pair was set by a scheduler.
 export const SHEET_PAIR = 'P-sheet-';
 
@@ -134,6 +136,7 @@ export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], 
   const add = [];
   const update = [];
   const kept = [];
+  const replacedBy = new Set(shifts.map((r) => r.replaces).filter(Boolean));
   const want = (v) => ({ date: v.date, operatorId: v.user.id, name: v.user.name, email: v.user.email, location: v.lab, template: v.template, start: v.start, end: v.end, source: SHEET_SOURCE, sheetKey: v.key });
 
   for (const v of valid) {
@@ -152,6 +155,10 @@ export function planSheetSync({ rows = [], shifts = [], users = [], skips = [], 
     // Someone already booked by hand at that time (a shift added in Lotus) keeps theirs.
     const clash = future.find((r) => r.email === v.user.email && r.date === v.date && r.source !== SHEET_SOURCE && overlaps(r, v));
     if (clash) { kept.push({ ...info, reason: 'booked_in_lotus' }); continue; }
+    // No triples (2026-11-23): a person who already has two shifts that date (kept by
+    // this sync, booked in Lotus, or added earlier in this run) doesn't get a third.
+    const staying = (r) => r.email === v.user.email && r.date === v.date && !replacedBy.has(r.id) && (r.source !== SHEET_SOURCE || !r.sheetKey || present.has(r.sheetKey));
+    if (future.filter(staying).length + add.filter((r) => r.email === v.user.email && r.date === v.date).length >= MAX_DAY_SHIFTS) { skipped.push({ ...info, reason: 'third_shift' }); continue; }
     add.push({ ...want(v), station: '', pair: v.pair, replaces: '', note: '' });
   }
 
@@ -203,6 +210,7 @@ export const SYNC_REASONS = {
   bad_date: 'The Date cell couldn’t be read',
   name_mismatch: 'The email belongs to someone else in Lotus',
   duplicate: 'Listed twice for the same shift',
+  third_shift: 'Already has two shifts that day (no third shift)',
   removed_in_lotus: 'Removed in Lotus, so the sync leaves it out',
   changed_in_lotus: 'Changed in Lotus, so Lotus’s version stays',
   booked_in_lotus: 'Already booked by hand in Lotus at that time',
