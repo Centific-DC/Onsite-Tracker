@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useStore } from '../lib/store.js';
 import { LOCATIONS, locationById, locationOfRobot } from '../lib/config.js';
 import { buildSessions } from '../lib/hours.js';
-import { checkNewShift, homeLabProblem, isNew } from '../lib/rules.js';
+import { checkNewShift, homeLabProblem, isNew, thirdShiftProblem } from '../lib/rules.js';
 import { fmtDay, fmtTime, mondayOf, parseDay } from '../lib/time.js';
 import { newPairId, pairOf, replacedIds, robotLabel, samePair, shiftTimes } from '../lib/schedule.js';
 import { Group, Select, Sheet } from './ui.jsx';
@@ -82,6 +82,9 @@ export function ShiftSheet({ open, onOpenChange, initial, backfill }) {
       shift.pair = anchor.pair || newPairId();
       for (const r of group) if (r.pair !== shift.pair) linked.push({ ...r, pair: shift.pair });
     }
+    // No triples (2026-11-23): a hard stop, not a warning to book past.
+    const third = thirdShiftProblem(shift, schedule);
+    if (third) return setWarn(null) || setErr(third);
     setErr('');
     if (!warn) {
       const w = checkNewShift(shift, [...schedule.filter((r) => !linked.some((x) => x.id === r.id)), ...linked], data.operators, sessions, mondayOf(parseDay(f.date)));

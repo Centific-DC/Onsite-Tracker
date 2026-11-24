@@ -2,7 +2,7 @@ import { timed } from './timing.js';
 import { CFG, CORRECTIONS_URL, DEMO, LOCATIONS, READ_URL, SYNC_URL, WRITE_URL, locOf, locationName, locationOfRobot } from './config.js';
 import { getToken } from './auth/session.js';
 import { addDays, dayKey, mondayOf } from './time.js';
-import { clockInCheck } from './attendance.js';
+import { THIRD_SHIFT_TEXT, clockInCheck, provisionalCheck } from './attendance.js';
 import { openSpots, samePair, shiftTimes } from './schedule.js';
 import { writeFlowName, writeUrlFor } from './routes.js';
 import { mustEmail, normCorrection, normStrike, reasonsFor, standing } from './strikes.js';
@@ -102,15 +102,23 @@ export function normPunch(p) {
     grace: Number(p.grace ?? p.GraceMinutes) || 0,
     source: String(p.source ?? p.Device ?? ''),
     note: String(p.note ?? p.Note ?? ''),
-    // `Left early` (the operator's own clock-out) or `Auto clock-out` (the flow closed
-    // a shift nobody clocked out of, 30 minutes after its end).
+    // `Left early` (the operator's own clock-out), `Auto clock-out` (the flow closed
+    // a shift nobody clocked out of, 30 minutes after its end) or, on a clock-in,
+    // `Provisional` (no shift booked: it counts only once a manager accepts it).
     flag: punchFlag(p.flag ?? p.Flag),
+    // A provisional clock-in's lab shift (template id) and when that shift ends (ISO),
+    // so Auto clock-out can close it like a booked shift.
+    template: String(p.template ?? p.Template ?? ''),
+    until: isoOrEmpty(p.until ?? p.PlannedEnd),
   };
 }
+
+const isoOrEmpty = (v) => { const t = v ? Date.parse(v) : NaN; return Number.isNaN(t) ? '' : new Date(t).toISOString(); };
 
 export function punchFlag(v) {
   const f = String(v ?? '').trim().toLowerCase();
   if (!f) return '';
+  if (/provisional/.test(f)) return 'provisional';
   return /auto/.test(f) ? 'auto' : 'early';
 }
 
@@ -335,9 +343,21 @@ export const demo = {
       const me = d.operators.find((o) => o.email === b.email);
       const at = shift ? locOf(shift) : b.location;
       if (me?.location && at && at !== me.location) { const e = new Error(`You can only clock in at ${locationName(me.location)}.`); e.code = 'lab'; throw e; }
-      const c = clockInCheck(shift, new Date());
-      if (!c.allowed) { const e = new Error(c.reason === 'no_shift' ? 'You have no shift to clock into.' : c.reason === 'early' ? `Clock-in opens at ${c.window.opensAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'That shift has ended'); e.code = c.reason; throw e; }
-      b = { ...b, grace: c.grace };
+      const open = [...d.punches].reverse().find((p) => p.email === b.email);
+      if (open?.type === 'in' && Date.now() - Date.parse(open.ts) < 18 * 36e5) { const e = new Error('You’re already clocked in'); e.code = 'open'; e.body = { punch: open }; throw e; }
+      if (b.provisional && !shift) {
+        // A provisional clock-in (2026-11-23): no shift booked, so it needs a reason and
+        // waits for a manager in Review. Never a third shift that day.
+        if (!String(b.note || '').trim()) { const e = new Error('Say why you’re clocking in without a shift.'); e.code = 'reason'; throw e; }
+        const c = provisionalCheck({ schedule: d.schedule, punches: d.punches, email: b.email }, new Date());
+        if (!c.allowed) { const e = new Error(c.reason === 'third_shift' ? THIRD_SHIFT_TEXT : 'You have a shift to clock into now. Use Clock in.'); e.code = c.reason; throw e; }
+        const until = b.until && Date.parse(b.until) > Date.now() && Date.parse(b.until) - Date.now() <= 12 * 36e5 ? b.until : '';
+        b = { ...b, shiftId: '', flag: 'Provisional', until, grace: 0 };
+      } else {
+        const c = clockInCheck(shift, new Date(), { schedule: d.schedule, punches: d.punches, email: b.email });
+        if (!c.allowed) { const e = new Error(c.reason === 'no_shift' ? 'You have no shift to clock into.' : c.reason === 'third_shift' ? THIRD_SHIFT_TEXT : c.reason === 'early' ? `Clock-in opens at ${c.window.opensAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'That shift has ended'); e.code = c.reason; throw e; }
+        b = { ...b, grace: c.grace, flag: '', note: '', template: '', until: '' };
+      }
     } else {
       const open = [...d.punches].reverse().find((p) => p.email === b.email);
       if (open?.type === 'in') b = { ...b, shiftId: open.shiftId, location: open.location, station: open.station };
@@ -635,7 +655,8 @@ function seed() {
   // Someone who came in with no shift last Friday.
   const fri = dayKey(addDays(start, 4));
   const sky = op('Sky Patel');
-  punch(at(fri, '12:05'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'in');
+  // A provisional clock-in (no shift booked; demo): swapped at the last minute.
+  punch(at(fri, '12:05'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'in', { flag: 'provisional', note: 'Swapped with a teammate this morning (demo)', template: 'RED-MID', until: at(fri, '17:30').toISOString() });
   punch(at(fri, '15:10'), { ...sky, operatorId: sky.id, location: R.id, station: R.robots[0], shiftId: '' }, 'out');
   // Next week: Morgan picks up extra mornings (over 37 hrs). Nobody works at both
   // labs: each operator stays at their home lab.

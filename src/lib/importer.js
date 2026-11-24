@@ -1,6 +1,7 @@
 import { LOCATIONS, ROBOTS, locationOfRobot } from './config.js';
 import { robotName } from './robots.js';
 import { newPairId, shiftTimes } from './schedule.js';
+import { MAX_DAY_SHIFTS, dayShiftCount } from './rules.js';
 
 // Recruiting's sheets (Active Roster 2, the scheduling tracker) come in as CSV,
 // pasted or uploaded, or (the schedule) as the Schedulers' Excel template. Columns are matched by header name, so their order and
@@ -237,6 +238,8 @@ export function planScheduleImport(input, operators, schedule, today = '') {
     if (!cur) {
       const other = [...(schedule || []), ...plan.add].find((x) => x.email === op.email && x.date === date && clash(x, { date, start, end }));
       if (other) { plan.skip.push({ line, name: op.name, reason: `Already booked ${other.start}–${other.end} that day` }); continue; }
+      // No triples (2026-11-23): a third shift for one person on one date is skipped.
+      if (dayShiftCount([...(schedule || []), ...plan.add], op.email, date) >= MAX_DAY_SHIFTS) { plan.skip.push({ line, name: op.name, reason: 'Already has two shifts that day (no third shift)' }); continue; }
     }
     const label = pick(r, map, 'pair');
     let pair = cur?.pair || '';

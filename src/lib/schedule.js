@@ -97,7 +97,8 @@ export function dayPlan(schedule, sessions, issues, day, now = new Date(), { tra
   // Each shift has its own status, so an operator on a double who works the first
   // shift and skips the second shows as missing for the second. A clock-in names
   // its shift; one from before shift ids (no shiftId) counts for the whole day.
-  const forShift = (x, r) => x.email === r.email && (x.shiftId ? x.shiftId === r.id : true);
+  // A provisional clock-in (no shift booked) never counts for a booked shift.
+  const forShift = (x, r) => !x.provisional && x.email === r.email && (x.shiftId ? x.shiftId === r.id : true);
   const rows = shifts.map((r) => {
     const { start, end } = shiftTimes(r);
     const mine = daySessions.filter((s) => forShift(s, r));
@@ -114,7 +115,8 @@ export function dayPlan(schedule, sessions, issues, day, now = new Date(), { tra
   }).sort((a, b) => a.station.localeCompare(b.station) || a.startAt - b.startAt || a.name.localeCompare(b.name));
   const planned = new Set(shifts.map((r) => r.email));
   // Only a day with a schedule can have someone off it; an unplanned day would flag everyone.
-  const unscheduled = shifts.length ? [...new Map(daySessions.filter((s) => !planned.has(s.email)).map((s) => [s.email, s])).values()] : [];
+  // Provisional clock-ins always show here, whatever else the person has booked.
+  const unscheduled = [...new Map(daySessions.filter((s) => s.provisional || (shifts.length && !planned.has(s.email))).map((s) => [`${s.email}|${+s.start}`, s])).values()];
   return { rows, unscheduled };
 }
 
@@ -153,14 +155,15 @@ export function backfillStart(row, now = new Date()) {
   return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-// Check-ins (IN taps) by someone with no shift that day, on days that have a schedule.
+// Check-ins (IN taps) by someone with no shift that day, on days that have a schedule,
+// and every provisional clock-in.
 export function unscheduledIns(schedule, punches) {
   const rows = schedule || [];
   const days = new Set(rows.map((r) => r.date));
   const booked = new Set(rows.map((r) => `${r.date}|${r.email}`));
   return punches.filter((p) => {
     const k = dayKey(new Date(p.ts));
-    return p.type === 'in' && days.has(k) && !booked.has(`${k}|${p.email}`);
+    return p.type === 'in' && (p.flag === 'provisional' || (days.has(k) && !booked.has(`${k}|${p.email}`)));
   });
 }
 
@@ -209,7 +212,10 @@ export function openSpots(data, email, home, now = new Date(), graceMin = GRACE_
   if (insToday.some((p) => p.email === email)) return [];
   // Per shift: someone on a double who worked the first shift and skipped the second
   // leaves the second open.
-  const cameFor = (r) => insToday.some((p) => p.email === r.email && (p.shiftId ? p.shiftId === r.id : true));
+  const cameFor = (r) => insToday.some((p) => p.email === r.email && p.flag !== 'provisional' && (p.shiftId ? p.shiftId === r.id : true));
+  // No triples (2026-11-23): someone already booked twice today can't take a spot.
+  const mineToday = (data.schedule || []).filter((r) => r.email === email && r.date === k && !gone.has(r.id));
+  if (mineToday.length >= 2) return [];
   return (data.schedule || [])
     .filter((r) => r.date === k && r.email !== email && !gone.has(r.id) && !cameFor(r) && (!home || (r.location || '') === home))
     .filter((r) => { const t = shiftTimes(r); return now >= new Date(t.start.getTime() + graceMin * 6e4) && now < new Date(t.end.getTime() - 30 * 6e4); })

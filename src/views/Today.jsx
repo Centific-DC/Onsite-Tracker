@@ -19,12 +19,14 @@ export const ISSUE = {
   noshow: { label: 'No-show', tone: 'bad', icon: <UserX size={12} /> },
   untracked: { label: 'Not tracked', tone: 'muted', icon: <UserX size={12} /> },
   unscheduled: { label: 'Not on the schedule', tone: 'warn', icon: <CalendarX size={12} /> },
+  provisional: { label: 'Provisional clock-in', tone: 'warn', icon: <CalendarX size={12} /> },
 };
 
 export function issueDetail(i) {
   if (i.kind === 'early') return `Out at ${fmtTime(i.at)} after ${fmtHrsU(i.hours)}${i.note ? ` · “${i.note}”` : ''}`;
   if (i.kind === 'noout') return `In at ${fmtTime(i.at)}, never checked out · hours not counted`;
   if (i.kind === 'unscheduled') return `In at ${fmtTime(i.at)} with no shift booked that day`;
+  if (i.kind === 'provisional') return `In at ${fmtTime(i.at)} with no shift booked · counts once a manager accepts it in Review${i.reason ? ` · “${i.reason}”` : ''}`;
   return `Out at ${fmtTime(i.at)} with no check-in`;
 }
 
@@ -60,11 +62,12 @@ export function Today() {
         out.push({ key: `${r.status}-${r.id}`, kind: r.status, name: r.name, at: r.startAt, sub: `${fmtDay(r.startAt)} · ${robotLabel(r)} · due ${fmtTime(r.startAt)}–${fmtTime(r.endAt)}${r.status === 'late' ? ', no check-in yet' : ', never checked in'}` });
       }
       for (const u of p.unscheduled) {
-        if (!schedule.length) break;
+        if (u.provisional) { out.push({ key: `prov-${u.email}-${+u.start}`, kind: 'provisional', name: u.name, at: u.start, sub: `${fmtDay(u.start)} · ${robotTitle(u.station)} · ${issueDetail({ kind: 'provisional', at: u.start, reason: u.reason })}` }); continue; }
+        if (!schedule.length) continue;
         out.push({ key: `unsch-${u.email}-${dayKey(d)}`, kind: 'unscheduled', name: u.name, at: u.start, sub: `${fmtDay(u.start)} · ${robotTitle(u.station)} · in at ${fmtTime(u.start)}` });
       }
     }
-    const rank = { late: 0, noshow: 1, early: 2, noout: 3, noin: 4, unscheduled: 5 };
+    const rank = { late: 0, noshow: 1, early: 2, noout: 3, noin: 4, provisional: 5, unscheduled: 6 };
     // People missing right now first, then the rest newest first.
     return out.sort((a, b) => (a.kind === 'late' ? 0 : 1) - (b.kind === 'late' ? 0 : 1) || b.at - a.at || rank[a.kind] - rank[b.kind]);
   }, [issues, plan, schedule, sessions, isToday, k, now]);

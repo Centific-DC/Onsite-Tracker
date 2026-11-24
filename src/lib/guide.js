@@ -72,6 +72,7 @@ export const OPERATOR_GUIDE = [
       'Each shift is recorded on its own, so your hours are counted shift by shift.',
       'Switching at the handover is never flagged as late or leaving early.',
       'Only shifts your scheduler has booked for you count. Ask before you stay on for a second shift.',
+      'Two shifts in a day is the most. Lotus won’t book or clock you in for a third.',
     ],
   },
   {
@@ -84,6 +85,20 @@ export const OPERATOR_GUIDE = [
       'If your lead asked you to cover, press Take this spot and clock in, and pick the robot if Lotus asks.',
       'You’re booked on that shift and clocked in at the same time. You’ll then see your partner’s name.',
     ],
+  },
+  {
+    id: 'provisional',
+    icon: 'CalendarX',
+    title: 'Here but not on the schedule',
+    summary: 'A last-minute swap or a schedule mix-up: clock in anyway, and your manager reviews the time.',
+    steps: [
+      'If you have no shift to clock into now, press Clock in without a shift under the Clock in button.',
+      'Pick your robot and say why you’re here, for example who you swapped with or who asked you to cover.',
+      'You’re clocked in for review. The approvers get an email with your reason.',
+      'Clock out as usual. If you forget, Lotus clocks you out when that shift slot ends.',
+      'Your manager accepts the time (it counts) or declines it (it doesn’t). Your timesheet shows Provisional clock-in until then.',
+    ],
+    tips: ['If someone booked in your lab didn’t show, take their open spot instead: that books the shift for you.', 'Not allowed as a third shift in one day.'],
   },
   {
     id: 'forgot',
@@ -247,7 +262,8 @@ export const STAFF_GUIDE = [
         ['No clock-out', 'Clocked in, never clocked out. Lotus suggests the scheduled end'],
         ['Auto clock-out', 'The operator forgot. Lotus closed the shift at its end'],
         ['No-show', 'Booked, never clocked in'],
-        ['Not on the schedule', 'Clocked in with no shift booked'],
+        ['Provisional clock-in', 'An operator with no shift clocked in for review, with a reason. Accept to count the time, decline to leave it out'],
+        ['Not on the schedule', 'Clocked in with no shift booked (before provisional clock-ins)'],
         ['Corrected', 'An admin set the times after a request'],
       ],
     },

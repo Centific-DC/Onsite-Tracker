@@ -20,6 +20,7 @@ const FLAG_WORDS = [
   [/\bleft early\b|\bleaving early\b|\bearly (?:out|leave)\b/, { flag: 'left_early' }],
   [/\blate\b|\btardy\b/, { flag: 'late' }],
   [/\bgrace\b/, { flag: 'grace_used' }],
+  [/\bprovisional(?: clock[\s-]?ins?)?\b|\bswaps?\b|\bswapped\b/, { flag: 'provisional' }],
   [/\bunscheduled\b|\bnot (?:on the )?schedule[d]?\b|\boff[\s-]?shift\b/, { flag: 'unscheduled' }],
   [/\bflag(?:s|ged)?\b|\banomal(?:y|ies)\b|\bissues?\b/, { flag: '*' }],
   [/\bneeds? review\b|\bto review\b|\bto do\b|\bunresolved\b|\bopen flags?\b/, { status: 'needs_review' }],

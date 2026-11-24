@@ -191,7 +191,7 @@ export const useStore = create((set, get) => ({
   // records it with the server's time; that time replaces the tap time when it lands.
   // The sign-in is captured now, so the lab laptop can sign out for the next person.
   punch(body) {
-    const tmp = { id: `tmp-${crypto.randomUUID().slice(0, 8)}`, ts: new Date().toISOString(), type: body.type, email: body.email, name: body.name, operatorId: body.operatorId, shiftId: body.shiftId || '', station: body.station || '', location: body.location || '', source: body.source, flag: body.flag ? 'Left early' : '', note: body.note || '', grace: 0, pending: true };
+    const tmp = { id: `tmp-${crypto.randomUUID().slice(0, 8)}`, ts: new Date().toISOString(), type: body.type, email: body.email, name: body.name, operatorId: body.operatorId, shiftId: body.shiftId || '', station: body.station || '', location: body.location || '', source: body.source, flag: body.provisional ? 'provisional' : body.flag ? 'Left early' : '', note: body.note || '', template: body.template || '', until: body.until || '', grace: 0, pending: true };
     get().commit((d) => (d ? { ...d, punches: [...d.punches, tmp] } : d));
     const token = getAuth()?.token;
     // One person's punches go in order: a clock-out never overtakes its clock-in.

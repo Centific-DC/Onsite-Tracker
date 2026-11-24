@@ -18,10 +18,13 @@ export function buildSessions(punches, now = new Date()) {
   }
   const sessions = [];
   const issues = [];
-  const noout = (p) => ({ kind: 'noout', at: new Date(p.ts), name: p.name, email: p.email, station: p.station, location: p.location || '', shiftId: p.shiftId || '' });
+  // A provisional clock-in (no shift booked, 2026-11-23) keeps its reason and the lab
+  // shift it falls in, for the approver.
+  const prov = (p) => (p.flag === 'provisional' ? { provisional: true, reason: p.note || '', template: p.template || '', until: p.until || '' } : {});
+  const noout = (p) => ({ kind: 'noout', at: new Date(p.ts), name: p.name, email: p.email, station: p.station, location: p.location || '', shiftId: p.shiftId || '', ...prov(p) });
   const make = (inP, end, extra) => {
     const start = new Date(inP.ts);
-    return { name: inP.name, email: inP.email, station: inP.station, location: inP.location || '', shiftId: inP.shiftId || '', grace: inP.grace || 0, source: inP.source || '', start, end, day: dayKey(start), hours: hoursBetween(start, end), ...extra };
+    return { name: inP.name, email: inP.email, station: inP.station, location: inP.location || '', shiftId: inP.shiftId || '', grace: inP.grace || 0, source: inP.source || '', start, end, day: dayKey(start), hours: hoursBetween(start, end), ...prov(inP), ...extra };
   };
   for (const list of byEmail.values()) {
     let cur = null;
